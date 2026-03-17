@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "animeflv",
+  "name": "zetanime",
   "compatibility_date": "2025-08-25",
   "main": "dist/server/index.mjs",
   "compatibility_flags": ["nodejs_compat"],
