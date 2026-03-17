@@ -29,7 +29,7 @@ export default defineNuxtConfig({
     "~/assets/css/main.css"
   ],
   modules: [
-    "@nuxthub/core",
+    // "@nuxthub/core",
     "@nuxt/eslint",
     "@scalar/nuxt"
   ],
@@ -54,10 +54,10 @@ export default defineNuxtConfig({
   experimental: {
     typedPages: true
   },
-  hub: {
+  /* hub: {
     workers: true,
     cache: true
-  },
+  }, */
   routeRules: {
     "/": { prerender: true },
     "/_openapi.json": { prerender: true },
