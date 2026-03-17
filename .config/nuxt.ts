@@ -31,7 +31,7 @@ export default defineNuxtConfig({
   modules: [
     // "@nuxthub/core",
     "@nuxt/eslint",
-    "@scalar/nuxt"
+    // "@scalar/nuxt"
   ],
   runtimeConfig: {
     openapi: {
