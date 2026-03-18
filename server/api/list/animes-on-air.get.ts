@@ -1,34 +1,44 @@
 import { getOnAir } from "animeflv-scraper";
 
 export default defineEventHandler(async (event) => {
-  // 1. PERMISOS CORS (FUNDAMENTAL PARA EL SENA Y TU PROYECTO)
+  // 1. CONFIGURACIÓN DE AUTORIDAD TOTAL (CORS)
   setResponseHeaders(event, {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "*", // Esto permite cualquier cabecera
+    "Access-Control-Max-Age": "86400",
   });
 
-  // 2. RESPUESTA PARA LA PRE-CONSULTA
+  // 2. MANEJO DE PRE-CONSULTA (IMPORTANTE PARA EL NAVEGADOR)
   if (getMethod(event) === 'OPTIONS') {
+    event.node.res.statusCode = 204;
     return 'ok';
   }
 
   // 3. LÓGICA DE OBTENCIÓN DE DATOS
-  const onair = await getOnAir();
-  if (!onair) {
+  try {
+    const onair = await getOnAir();
+    if (!onair) {
+      throw createError({
+        statusCode: 404,
+        message: "No se han encontrado resultados",
+        data: { success: false, error: "No se han encontrado resultados" }
+      });
+    }
+    return {
+      success: true,
+      data: onair
+    };
+  } catch (error) {
     throw createError({
-      statusCode: 404,
-      message: "No se han encontrado resultados",
-      data: { success: false, error: "No se han encontrado resultados" }
+      statusCode: 500,
+      message: "Error interno del servidor",
+      data: { success: false, error: error.message }
     });
   }
-  return {
-    success: true,
-    data: onair
-  };
 });
 
-// DOCUMENTACIÓN OPENAPI (SE MANTIENE IGUAL)
+// DOCUMENTACIÓN OPENAPI (SE MANTIENE IGUAL PARA TU PROYECTO DEL SENA)
 defineRouteMeta({
   openAPI: {
     tags: ["List"],
