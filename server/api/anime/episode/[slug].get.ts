@@ -1,8 +1,23 @@
 import { getEpisode } from "animeflv-scraper";
 
 export default defineCachedEventHandler(async (event) => {
+  // --- LIBERACIÓN DE CORS (AUTORIDAD TOTAL) ---
+  setResponseHeaders(event, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "*",
+    "Access-Control-Max-Age": "86400",
+  });
+
+  // Respuesta rápida para el navegador (Pre-consulta)
+  if (getMethod(event) === 'OPTIONS') {
+    event.node.res.statusCode = 204;
+    return 'ok';
+  }
+
   const { slug } = getRouterParams(event) as { slug: string };
   const episode = await getEpisode(slug);
+  
   if (!episode) {
     throw createError({
       statusCode: 404,
@@ -10,6 +25,7 @@ export default defineCachedEventHandler(async (event) => {
       data: { success: false, error: "No se ha encontrado el episodio" }
     });
   }
+  
   return {
     success: true,
     data: episode
@@ -44,7 +60,7 @@ defineRouteMeta({
     ],
     responses: {
       200: {
-        description: "Retorna un objeto que contiene información como el título, número y un arreglo de servers con nombres, url de descarga y url de embed.",
+        description: "Retorna un objeto con servidores, títulos y URLs.",
         content: {
           "application/json": {
             schema: {
