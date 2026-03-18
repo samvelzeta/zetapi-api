@@ -1,8 +1,23 @@
 import { getAnimeInfo } from "animeflv-scraper";
 
 export default defineCachedEventHandler(async (event) => {
+  // --- LIBERACIÓN DE CORS (AUTORIDAD TOTAL) ---
+  setResponseHeaders(event, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "*",
+    "Access-Control-Max-Age": "86400",
+  });
+
+  // Respuesta rápida para el navegador (Pre-consulta)
+  if (getMethod(event) === 'OPTIONS') {
+    event.node.res.statusCode = 204;
+    return 'ok';
+  }
+
   const { slug } = getRouterParams(event) as { slug: string };
   const info = await getAnimeInfo(slug).catch(() => null);
+  
   if (!info) {
     throw createError({
       statusCode: 404,
@@ -10,6 +25,7 @@ export default defineCachedEventHandler(async (event) => {
       data: { success: false, error: "No se ha encontrado el anime" }
     });
   }
+  
   return {
     success: true,
     data: info
@@ -41,7 +57,7 @@ defineRouteMeta({
     description: "Obtiene un anime especificado por \"slug\".",
     responses: {
       200: {
-        description: "Retorna información como el título, títulos alternativos, estado, rating, tipo, portada, sinopsis, géneros, fecha del siguiente episodio, episodios, url y relacionados.",
+        description: "Retorna información detallada del anime.",
         content: {
           "application/json": {
             schema: {
@@ -87,20 +103,10 @@ defineRouteMeta({
                       }
                     }
                   },
-                  required: [
-                    "title",
-                    "alternative_titles",
-                    "status",
-                    "rating",
-                    "type",
-                    "cover",
-                    "synopsis",
-                    "genres",
-                    "episodes",
-                    "url"
-                  ]
+                  required: ["title", "alternative_titles", "status", "rating", "type", "cover", "synopsis", "genres", "episodes", "url"]
                 }
-              }
+              },
+              required: ["success", "data"]
             }
           }
         }
