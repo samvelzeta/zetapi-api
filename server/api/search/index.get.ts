@@ -1,21 +1,47 @@
 import { searchAnime } from "animeflv-scraper";
 
 export default defineEventHandler(async (event) => {
+  // 1. CONFIGURACIÓN DE AUTORIDAD TOTAL (CORS)
+  setResponseHeaders(event, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "*",
+    "Access-Control-Max-Age": "86400",
+  });
+
+  // 2. MANEJO DE PRE-CONSULTA (OPTIONS)
+  if (getMethod(event) === 'OPTIONS') {
+    event.node.res.statusCode = 204;
+    return 'ok';
+  }
+
+  // 3. LÓGICA DE BÚSQUEDA
   const { query, page } = getQuery(event) as { query: string, page: string };
-  const search = await searchAnime(query, Number(page) || 1);
-  if (!search || !search?.media?.length) {
+  
+  try {
+    const search = await searchAnime(query, Number(page) || 1);
+    
+    if (!search || !search?.media?.length) {
+      throw createError({
+        statusCode: 404,
+        message: "No se han encontrado resultados en la búsqueda",
+        data: { success: false, error: "No se han encontrado resultados en la búsqueda" }
+      });
+    }
+
+    return {
+      success: true,
+      data: search
+    };
+  } catch (error) {
     throw createError({
-      statusCode: 404,
-      message: "No se han encontrado resultados en la búsqueda",
-      data: { success: false, error: "No se han encontrado resultados en la búsqueda" }
+      statusCode: error.statusCode || 500,
+      message: error.message || "Error en el servidor de búsqueda",
     });
   }
-  return {
-    success: true,
-    data: search
-  };
 });
 
+// TU DOCUMENTACIÓN OPENAPI (SE MANTIENE IGUAL)
 defineRouteMeta({
   openAPI: {
     tags: ["Search"],
@@ -45,7 +71,7 @@ defineRouteMeta({
     ],
     responses: {
       200: {
-        description: "Retorna un objeto con varios atributos, incluyendo \"previousPage\" y \"nextPage\", que indican si hay más páginas de resultados disponibles antes o después de la página actual. El atributo \"foundPages\" indica cuántas páginas de resultados se encontraron en total. El atributo \"data\" es un arreglo que contiene objetos con información detallada sobre cada anime encontrado. Cada objeto contiene información como el título, la portada, el sinopsis, la calificación, el slug, el tipo y la url del anime.",
+        description: "Retorna un objeto con resultados de búsqueda...",
         content: {
           "application/json": {
             schema: {
@@ -77,14 +103,7 @@ defineRouteMeta({
                       }
                     }
                   },
-                  required: [
-                    "currentPage",
-                    "hasNextPage",
-                    "previousPage",
-                    "nextPage",
-                    "foundPages",
-                    "media"
-                  ]
+                  required: ["currentPage", "hasNextPage", "previousPage", "nextPage", "foundPages", "media"]
                 }
               },
               required: ["success", "data"]
@@ -93,7 +112,7 @@ defineRouteMeta({
         }
       },
       404: {
-        description: "No se han encontrado resultados en la búsqueda.",
+        description: "No se han encontrado resultados.",
         content: {
           "application/json": {
             schema: {
