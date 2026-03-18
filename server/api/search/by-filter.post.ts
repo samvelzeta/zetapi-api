@@ -6,9 +6,24 @@ const types = Object.values(TypeEnum);
 const orders = Object.values(OrderEnum);
 
 export default defineEventHandler(async (event) => {
+  // --- LIBERACIÓN DE CORS (AUTORIDAD TOTAL) ---
+  setResponseHeaders(event, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "*",
+    "Access-Control-Max-Age": "86400",
+  });
+
+  // Respuesta rápida para el navegador (Pre-consulta)
+  if (getMethod(event) === 'OPTIONS') {
+    event.node.res.statusCode = 204;
+    return 'ok';
+  }
+
   const body = await readBody(event);
   const { order, page } = getQuery(event) as { order: string, page: number };
 
+  // Validaciones de seguridad
   const invalid_order = !orders?.includes(order);
   if (order && invalid_order) {
     throw createError({
@@ -63,18 +78,28 @@ export default defineEventHandler(async (event) => {
 
   const mappedOrder = orderKeyMap[order];
 
-  const search = await searchAnimesByFilter({ ...body, order: mappedOrder, page });
-  if (!search || !search?.media?.length) {
+  try {
+    const search = await searchAnimesByFilter({ ...body, order: mappedOrder, page });
+    
+    if (!search || !search?.media?.length) {
+      throw createError({
+        statusCode: 404,
+        message: "No se han encontrado resultados",
+        data: { success: false, error: "No se han encontrado resultados" }
+      });
+    }
+
+    return {
+      success: true,
+      data: search
+    };
+  } catch (error) {
     throw createError({
-      statusCode: 404,
-      message: "No se han encontrado resultados en la búsqueda",
-      data: { success: false, error: "No se han encontrado resultados en la búsqueda" }
+      statusCode: 500,
+      message: "Error interno al filtrar animes",
+      data: { success: false, error: error.message }
     });
   }
-  return {
-    success: true,
-    data: search
-  };
 });
 
 defineRouteMeta({
@@ -90,72 +115,16 @@ defineRouteMeta({
             properties: {
               types: {
                 type: "array",
-                description: "Tipos de anime.",
-                example: ["tv", "movie", "special", "ova"],
-                items: {
-                  type: "string",
-                  enum: ["tv", "movie", "special", "ova"]
-                }
+                items: { type: "string", enum: ["tv", "movie", "special", "ova"] }
               },
               genres: {
                 type: "array",
-                description: "Géneros de anime.",
-                example: ["accion", "artes-marciales", "aventura", "carreras"],
-                items: {
-                  type: "string",
-                  enum: [
-                    "accion",
-                    "artes-marciales",
-                    "aventura",
-                    "carreras",
-                    "ciencia-ficcion",
-                    "comedia",
-                    "demencia",
-                    "demonios",
-                    "deportes",
-                    "drama",
-                    "ecchi",
-                    "escolares",
-                    "espacial",
-                    "fantasia",
-                    "harem",
-                    "historico",
-                    "infantil",
-                    "josei",
-                    "juegos",
-                    "magia",
-                    "mecha",
-                    "militar",
-                    "misterio",
-                    "musica",
-                    "parodia",
-                    "policia",
-                    "psicologico",
-                    "recuentos-de-la-vida",
-                    "romance",
-                    "samurai",
-                    "seinen",
-                    "shoujo",
-                    "shounen",
-                    "sobrenatural",
-                    "superpoderes",
-                    "suspenso",
-                    "terror",
-                    "vampiros",
-                    "yaoi",
-                    "yuri"
-                  ]
-                },
+                items: { type: "string" },
                 maxItems: 4
               },
               statuses: {
                 type: "array",
-                description: "Estados de anime. (1: En emisión, 2: Finalizado, 3: Próximamente)",
-                example: [1, 2, 3],
-                items: {
-                  type: "number",
-                  enum: [1, 2, 3]
-                }
+                items: { type: "number", enum: [1, 2, 3] }
               }
             }
           }
@@ -163,120 +132,13 @@ defineRouteMeta({
       }
     },
     parameters: [
-      {
-        name: "order",
-        in: "query",
-        summary: "Especificar el orden de los resultados.",
-        required: false,
-        example: "default",
-        schema: {
-          type: "string",
-          enum: ["default", "updated", "added", "title", "rating"]
-        }
-      },
-      {
-        name: "page",
-        in: "query",
-        summary: "Especificar el número de página.",
-        example: 1,
-        required: false,
-        schema: {
-          type: "number"
-        }
-      }
+      { name: "order", in: "query", schema: { type: "string", enum: ["default", "updated", "added", "title", "rating"] } },
+      { name: "page", in: "query", schema: { type: "number" } }
     ],
     responses: {
-      200: {
-        description: "Retorna un objeto con varios atributos, incluyendo \"previousPage\" y \"nextPage\", que indican si hay más páginas de resultados disponibles antes o después de la página actual. El atributo \"foundPages\" indica cuántas páginas de resultados se encontraron en total. El atributo \"data\" es un arreglo que contiene objetos con información detallada sobre cada anime encontrado. Cada objeto contiene información como el título, la portada, el sinopsis, la calificación, el slug, el tipo y la url del anime.",
-        content: {
-          "application/json": {
-            schema: {
-              type: "object",
-              properties: {
-                success: { type: "boolean", example: true },
-                data: {
-                  type: "object",
-                  properties: {
-                    currentPage: { type: "number", example: 1 },
-                    hasNextPage: { type: "boolean" },
-                    previousPage: { type: "string", nullable: true },
-                    nextPage: { type: "string", nullable: true },
-                    foundPages: { type: "number", example: 10 },
-                    media: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        properties: {
-                          title: { type: "string" },
-                          cover: { type: "string" },
-                          synopsis: { type: "string" },
-                          rating: { type: "string" },
-                          slug: { type: "string" },
-                          type: { type: "string" },
-                          url: { type: "string" }
-                        },
-                        required: ["title", "cover", "synopsis", "rating", "slug", "type", "url"]
-                      }
-                    }
-                  },
-                  required: ["currentPage", "hasNextPage", "previousPage", "nextPage", "foundPages", "media"]
-                }
-              },
-              required: ["success", "data"]
-            }
-          }
-        }
-      },
-      404: {
-        description: "No se han encontrado resultados en la búsqueda.",
-        content: {
-          "application/json": {
-            schema: {
-              type: "object",
-              properties: {
-                error: { type: "boolean", example: true },
-                url: { type: "string" },
-                statusCode: { type: "number", example: 404 },
-                message: { type: "string" },
-                data: {
-                  type: "object",
-                  properties: {
-                    success: { type: "boolean", example: false },
-                    error: { type: "string" }
-                  },
-                  required: ["success", "error"]
-                }
-              },
-              required: ["error", "url", "statusCode", "message", "data"]
-            }
-          }
-        }
-      },
-      400: {
-        description: "Bad Request.",
-        content: {
-          "application/json": {
-            schema: {
-              type: "object",
-              properties: {
-                error: { type: "boolean", example: true },
-                url: { type: "string" },
-                statusCode: { type: "number", example: 400 },
-                message: { type: "string" },
-                data: {
-                  type: "object",
-                  properties: {
-                    success: { type: "boolean", example: false },
-                    error: { type: "string" }
-                  },
-                  required: ["success", "error"]
-                }
-              },
-              required: ["error", "url", "statusCode", "message", "data"]
-            }
-          }
-        }
-      }
+      200: { description: "Resultados de la búsqueda filtrada." },
+      400: { description: "Parámetros de filtro inválidos." },
+      404: { description: "Sin resultados." }
     }
   }
 });
