@@ -1,4 +1,5 @@
-import { getAnimeEpisodeServers } from "animeflv-scraper";
+// Cambiamos el nombre de la importación al correcto: getEpisodeServers
+import { getEpisodeServers } from "animeflv-scraper";
 
 export default defineCachedEventHandler(async (event) => {
   // 1. CONFIGURACIÓN DE CORS
@@ -14,7 +15,7 @@ export default defineCachedEventHandler(async (event) => {
     return 'ok';
   }
 
-  // 2. OBTENER SLUG DE LOS PARÁMETROS
+  // 2. OBTENER SLUG
   const slug = getRouterParam(event, 'slug');
 
   try {
@@ -25,8 +26,8 @@ export default defineCachedEventHandler(async (event) => {
       });
     }
 
-    // 3. LÓGICA PARA OBTENER SERVIDORES
-    const servers = await getAnimeEpisodeServers(slug);
+    // 3. USAR LA FUNCIÓN CORRECTA
+    const servers = await getEpisodeServers(slug);
 
     if (!servers || servers.length === 0) {
       throw createError({
@@ -47,7 +48,7 @@ export default defineCachedEventHandler(async (event) => {
     });
   }
 }, {
-  // Configuración de Caché (1 hora para episodios)
+  // Configuración de Caché (1 hora)
   swr: true,
   maxAge: 3600,
   name: "episode-servers",
