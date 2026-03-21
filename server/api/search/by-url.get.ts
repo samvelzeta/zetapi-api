@@ -1,281 +1,102 @@
 import { searchAnime } from "animeflv-scraper";
 
-
-
-export default defineEventHandler(async (event) => {
-
+export default defineCachedEventHandler(async (event) => {
   // 1. CONFIGURACIÓN DE AUTORIDAD TOTAL (CORS)
-
   setResponseHeaders(event, {
-
     "Access-Control-Allow-Origin": "*",
-
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-
     "Access-Control-Allow-Headers": "*",
-
     "Access-Control-Max-Age": "86400",
-
   });
 
-
-
   // 2. MANEJO DE PRE-CONSULTA (OPTIONS)
-
   if (getMethod(event) === 'OPTIONS') {
-
     event.node.res.statusCode = 204;
-
     return 'ok';
-
   }
-
-
 
   // 3. LÓGICA DE BÚSQUEDA
-
-  const { query, page } = getQuery(event) as { query: string, page: string };
-
+  const queryParams = getQuery(event);
+  const query = String(queryParams.query || "");
+  const page = Number(queryParams.page) || 1;
   
-
   try {
-
-    const search = await searchAnime(query, Number(page) || 1);
-
-    
-
-    if (!search || !search?.media?.length) {
-
+    if (!query) {
       throw createError({
-
-        statusCode: 404,
-
-        message: "No se han encontrado resultados en la búsqueda",
-
-        data: { success: false, error: "No se han encontrado resultados en la búsqueda" }
-
+        statusCode: 400,
+        message: "Se requiere el parámetro 'query' para buscar",
       });
-
     }
 
-
+    const search = await searchAnime(query, page);
+    
+    if (!search || !search.media || search.media.length === 0) {
+      throw createError({
+        statusCode: 404,
+        message: "No se han encontrado resultados en la búsqueda",
+        data: { success: false, error: "No se han encontrado resultados" }
+      });
+    }
 
     return {
-
       success: true,
-
       data: search
-
     };
-
-  } catch (error) {
-
+  } catch (error: any) {
     throw createError({
-
       statusCode: error.statusCode || 500,
-
       message: error.message || "Error en el servidor de búsqueda",
-
     });
-
   }
-
+}, {
+  // Configuración de Caché (6 horas)
+  swr: true,
+  maxAge: 21600,
+  name: "search-url",
+  group: "anime",
+  getKey: (event) => {
+    const q = getQuery(event);
+    return `by-url-${q.query}-${q.page || 1}`;
+  }
 });
 
-
-
-// TU DOCUMENTACIÓN OPENAPI (SE MANTIENE IGUAL)
-
+// --- DOCUMENTACIÓN OPENAPI ---
 defineRouteMeta({
-
   openAPI: {
-
     tags: ["Search"],
-
-    summary: "Busca un anime con texto",
-
-    description: "Ejecuta una búsqueda de animes utilizando una consulta de texto.",
-
+    summary: "Busca un anime con texto (URL)",
+    description: "Ejecuta una búsqueda de animes utilizando parámetros en la URL.",
     parameters: [
-
       {
-
         name: "query",
-
         in: "query",
-
-        summary: "La consulta.",
-
-        example: "isekai",
-
         required: true,
-
-        schema: {
-
-          type: "string"
-
-        }
-
+        schema: { type: "string" },
+        example: "isekai"
       },
-
       {
-
         name: "page",
-
         in: "query",
-
-        summary: "El número de página.",
-
-        example: 1,
-
         required: false,
-
-        schema: {
-
-          type: "number"
-
-        }
-
+        schema: { type: "number", default: 1 }
       }
-
     ],
-
     responses: {
-
       200: {
-
-        description: "Retorna un objeto con resultados de búsqueda...",
-
+        description: "Resultados encontrados",
         content: {
-
           "application/json": {
-
             schema: {
-
               type: "object",
-
               properties: {
-
-                success: { type: "boolean", example: true },
-
-                data: {
-
-                  type: "object",
-
-                  properties: {
-
-                    currentPage: { type: "number", example: 1 },
-
-                    hasNextPage: { type: "boolean" },
-
-                    previousPage: { type: "string", nullable: true },
-
-                    nextPage: { type: "string", nullable: true },
-
-                    foundPages: { type: "number", example: 10 },
-
-                    media: {
-
-                      type: "array",
-
-                      items: {
-
-                        type: "object",
-
-                        properties: {
-
-                          title: { type: "string" },
-
-                          cover: { type: "string" },
-
-                          synopsis: { type: "string" },
-
-                          rating: { type: "string" },
-
-                          slug: { type: "string" },
-
-                          type: { type: "string" },
-
-                          url: { type: "string" }
-
-                        },
-
-                        required: ["title", "cover", "synopsis", "rating", "slug", "type", "url"]
-
-                      }
-
-                    }
-
-                  },
-
-                  required: ["currentPage", "hasNextPage", "previousPage", "nextPage", "foundPages", "media"]
-
-                }
-
-              },
-
-              required: ["success", "data"]
-
+                success: { type: "boolean" },
+                data: { type: "object" }
+              }
             }
-
           }
-
         }
-
       },
-
-      404: {
-
-        description: "No se han encontrado resultados.",
-
-        content: {
-
-          "application/json": {
-
-            schema: {
-
-              type: "object",
-
-              properties: {
-
-                error: { type: "boolean", example: true },
-
-                url: { type: "string" },
-
-                statusCode: { type: "number", example: 404 },
-
-                message: { type: "string" },
-
-                data: {
-
-                  type: "object",
-
-                  properties: {
-
-                    success: { type: "boolean", example: false },
-
-                    error: { type: "string" }
-
-                  },
-
-                  required: ["success", "error"]
-
-                }
-
-              },
-
-              required: ["error", "url", "statusCode", "message", "data"]
-
-            }
-
-          }
-
-        }
-
-      }
-
+      404: { description: "No se han encontrado resultados." }
     }
-
   }
-
 });
