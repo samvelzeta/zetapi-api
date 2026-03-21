@@ -26,4 +26,4 @@ export default defineEventHandler(async (event) => {
       data: { success: false, error: error.message }
     });
   }
-});edita
+});
