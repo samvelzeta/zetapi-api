@@ -83,8 +83,7 @@ async function getLatinoInfo(slug: string) {
       const epNum = match[1];
       episodes.push({
         number: Number(epNum),
-        // IMPORTANTE: El url debe apuntar a TU API para que el video cargue
-        url: `/anime/${slug}/episode/${epNum}?lang=latino`
+        url: `/api/anime/${slug}/episode/${epNum}?lang=latino`
       });
     }
 
@@ -92,12 +91,40 @@ async function getLatinoInfo(slug: string) {
       title: title.trim(),
       type: "Anime",
       cover: cover,
-      synopsis: synopsisMatch.replace(/<[^>]*>?/gm, '').trim(), // Limpia el HTML de la sinopsis
+      synopsis: synopsisMatch.replace(/<[^>]*>?/gm, '').trim(),
       genres: ["Latino"],
-      episodes: episodes.sort((a, b) => b.number - a.number), // Ordenados de mayor a menor
+      episodes: episodes.sort((a, b) => b.number - a.number),
       source: "latino"
     };
   } catch (e) {
     return null;
   }
 }
+
+// --- DOCUMENTACIÓN OPENAPI ---
+defineRouteMeta({
+  openAPI: {
+    tags: ["Anime"],
+    summary: "Detalles del Anime y Lista de Episodios",
+    description: "Obtiene la información completa de un anime (sinopsis, géneros, episodios) filtrada por idioma (Sub o Latino).",
+    parameters: [
+      {
+        name: "slug",
+        in: "path",
+        required: true,
+        description: "Slug único del anime (ej: black-clover)",
+        schema: { type: "string" }
+      },
+      {
+        name: "lang",
+        in: "query",
+        description: "Idioma: 'latino' para AnimeLatinoHD o vacío para Subtitulado",
+        schema: { type: "string", enum: ["latino", ""] }
+      }
+    ],
+    responses: {
+      200: { description: "Información cargada correctamente" },
+      404: { description: "Anime no encontrado" }
+    }
+  }
+});
