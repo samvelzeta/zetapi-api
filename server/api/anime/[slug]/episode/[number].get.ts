@@ -1,7 +1,7 @@
 import { getEpisode } from "animeflv-scraper";
 
 export default defineCachedEventHandler(async (event) => {
-  // 1. CONFIGURACIÓN DE CORS (AUTORIDAD TOTAL)
+  // 1. CONFIGURACIÓN DE CORS
   setResponseHeaders(event, {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -14,7 +14,7 @@ export default defineCachedEventHandler(async (event) => {
     return 'ok';
   }
 
-  // 2. PARÁMETROS: Slug, Número y ahora 'lang'
+  // 2. PARÁMETROS
   const { slug, number } = getRouterParams(event) as { slug: string, number: string };
   const { lang } = getQuery(event) as { lang?: string };
   
@@ -22,17 +22,16 @@ export default defineCachedEventHandler(async (event) => {
     let episodeData;
 
     if (lang === 'latino') {
-      // Motor para obtener servidores de AnimeLatinoHD
       episodeData = await getLatinoEpisode(slug, number);
     } else {
-      // Por defecto usa AnimeFLV
+      // AnimeFLV (Subtitulado)
       episodeData = await getEpisode(slug, Number(number));
     }
 
-    if (!episodeData) {
+    if (!episodeData || (episodeData.servers && episodeData.servers.length === 0)) {
       throw createError({
         statusCode: 404,
-        message: "No se ha encontrado el episodio",
+        message: "No se han encontrado servidores para este episodio",
       });
     }
 
@@ -44,7 +43,7 @@ export default defineCachedEventHandler(async (event) => {
   } catch (error: any) {
     throw createError({
       statusCode: error.statusCode || 500,
-      message: error.message || "Error al cargar el episodio",
+      message: error.message || "Error al cargar el video del episodio",
     });
   }
 }, {
@@ -59,44 +58,57 @@ export default defineCachedEventHandler(async (event) => {
   }
 });
 
-// --- MOTOR DE EPISODIOS LATINO ---
+// --- MOTOR DE EPISODIOS LATINO (BLINDADO) ---
 
 async function getLatinoEpisode(slug: string, number: string) {
   const url = `https://www.animelatinohd.com/ver/${slug}/${number}`;
   
   try {
     const html = await $fetch<string>(url, {
-      headers: { "User-Agent": "Mozilla/5.0" }
+      headers: { "User-Agent": "Mozilla/5.0" },
+      timeout: 10000
     });
 
-    // Buscamos la variable que contiene los videos en el HTML
-    // AnimeLatinoHD suele usar un JSON dentro del script o cargarlos dinámicamente
-    const videoDataMatch = html.match(/var video = (\[.*?\]);/);
     const servers = [];
 
+    // Buscamos el JSON de videos que suele estar en un script
+    const videoDataMatch = html.match(/var\s+video\s*=\s*(\[.*?\]);/);
+    
     if (videoDataMatch) {
-      const videos = JSON.parse(videoDataMatch[1]);
-      for (const vid of videos) {
-        servers.push({
-          name: vid.server.toUpperCase(),
-          embed: vid.code,
-          download: ""
-        });
+      try {
+        const videos = JSON.parse(videoDataMatch[1]);
+        for (const vid of videos) {
+          // Limpiamos el embed si viene con HTML
+          const cleanEmbed = vid.code.match(/src="(.*?)"/)?.[1] || vid.code;
+          
+          servers.push({
+            name: (vid.server || "Server").toUpperCase(),
+            embed: cleanEmbed,
+            title: vid.title || "Latino",
+          });
+        }
+      } catch (e) {
+        console.error("Error parseando JSON de video latino");
       }
-    } else {
-      // Intento secundario: buscar iframes directos si el JSON falla
-      const iframeMatch = html.match(/<iframe.*?src="(.*?)"/);
-      if (iframeMatch) {
-        servers.push({
-          name: "LATINO-MAIN",
-          embed: iframeMatch[1],
-          download: ""
-        });
+    }
+
+    // Backup: Si el JSON falla, intentamos capturar cualquier iframe de video
+    if (servers.length === 0) {
+      const iframeRegex = /<iframe.*?src="(.*?)"/g;
+      let m;
+      while ((m = iframeRegex.exec(html)) !== null) {
+        if (m[1].includes('embed') || m[1].includes('player')) {
+          servers.push({
+            name: "DIRECT-LINK",
+            embed: m[1],
+            title: "Opcion Alternativa"
+          });
+        }
       }
     }
 
     return {
-      title: `${slug} - Episodio ${number}`,
+      title: `${slug.replace(/-/g, " ")} - Episodio ${number}`,
       number: Number(number),
       servers: servers
     };
@@ -104,5 +116,3 @@ async function getLatinoEpisode(slug: string, number: string) {
     return null;
   }
 }
-
-// TU DOCUMENTACIÓN OPENAPI SE MANTIENE ABAJO...
