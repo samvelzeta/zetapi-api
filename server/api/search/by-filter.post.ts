@@ -1,101 +1,281 @@
-import { searchAnimesByFilter, GenreEnum, StatusEnum, TypeEnum, OrderEnum } from "animeflv-scraper";
+import { searchAnime } from "animeflv-scraper";
 
-const genres = Object.values(GenreEnum);
-const statuses = Object.values(StatusEnum);
-const types = Object.values(TypeEnum);
-const orders = Object.values(OrderEnum);
+
 
 export default defineEventHandler(async (event) => {
-  // 1. CONFIGURACIÓN DE CABECERAS (CORS Total)
+
+  // 1. CONFIGURACIÓN DE AUTORIDAD TOTAL (CORS)
+
   setResponseHeaders(event, {
+
     "Access-Control-Allow-Origin": "*",
+
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+
     "Access-Control-Allow-Headers": "*",
+
     "Access-Control-Max-Age": "86400",
+
   });
 
-  // Respuesta rápida para pre-flight
+
+
+  // 2. MANEJO DE PRE-CONSULTA (OPTIONS)
+
   if (getMethod(event) === 'OPTIONS') {
+
     event.node.res.statusCode = 204;
+
     return 'ok';
+
   }
 
-  const body = await readBody(event);
-  const { order, page } = getQuery(event) as { order: string, page: number };
 
-  // 2. VALIDACIONES DE SEGURIDAD
-  if (order && !orders?.includes(order)) {
-    throw createError({
-      statusCode: 400,
-      message: `Orden no válido: ${order}`,
-    });
-  }
 
-  const invalid_types = body?.types?.filter((t: string) => !types?.includes(t));
-  if (invalid_types?.length) {
-    throw createError({
-      statusCode: 400,
-      message: `Tipos no válidos: ${invalid_types?.join(", ")}`,
-    });
-  }
+  // 3. LÓGICA DE BÚSQUEDA
 
-  const invalid_genres = body?.genres?.filter((g: string) => !genres?.includes(g));
-  if (invalid_genres?.length) {
-    throw createError({
-      statusCode: 400,
-      message: `Géneros no válidos: ${invalid_genres?.join(", ")}`,
-    });
-  }
+  const { query, page } = getQuery(event) as { query: string, page: string };
 
-  // 3. MAPEO DE ORDEN
-  const orderKeyMap: Record<string, string> = {
-    default: "Por Defecto",
-    updated: "Recientemente Actualizados",
-    added: "Recientemente Agregados",
-    title: "Nombre A-Z",
-    rating: "Calificación"
-  };
-
-  const mappedOrder = orderKeyMap[order] || "Por Defecto";
+  
 
   try {
-    // 4. EJECUCIÓN DE BÚSQUEDA FILTRADA
-    const search = await searchAnimesByFilter({ 
-      ...body, 
-      order: mappedOrder, 
-      page: Number(page) || 1 
-    });
+
+    const search = await searchAnime(query, Number(page) || 1);
+
     
+
     if (!search || !search?.media?.length) {
+
       throw createError({
+
         statusCode: 404,
-        message: "No se han encontrado resultados para estos filtros",
+
+        message: "No se han encontrado resultados en la búsqueda",
+
+        data: { success: false, error: "No se han encontrado resultados en la búsqueda" }
+
       });
+
     }
 
+
+
     return {
+
       success: true,
+
       data: search
+
     };
 
-  } catch (error: any) {
+  } catch (error) {
+
     throw createError({
+
       statusCode: error.statusCode || 500,
-      message: "Error al filtrar animes en AnimeFLV",
-      data: { error: error.message }
+
+      message: error.message || "Error en el servidor de búsqueda",
+
     });
+
   }
+
 });
 
-// --- DOCUMENTACIÓN OPENAPI ---
+
+
+// TU DOCUMENTACIÓN OPENAPI (SE MANTIENE IGUAL)
+
 defineRouteMeta({
+
   openAPI: {
+
     tags: ["Search"],
-    summary: "Busca usando filtros",
-    description: "Filtra animes por género, estado y tipo (Solo AnimeFLV).",
+
+    summary: "Busca un anime con texto",
+
+    description: "Ejecuta una búsqueda de animes utilizando una consulta de texto.",
+
     parameters: [
-      { name: "order", in: "query", schema: { type: "string", enum: ["default", "updated", "added", "title", "rating"] } },
-      { name: "page", in: "query", schema: { type: "number" } }
-    ]
+
+      {
+
+        name: "query",
+
+        in: "query",
+
+        summary: "La consulta.",
+
+        example: "isekai",
+
+        required: true,
+
+        schema: {
+
+          type: "string"
+
+        }
+
+      },
+
+      {
+
+        name: "page",
+
+        in: "query",
+
+        summary: "El número de página.",
+
+        example: 1,
+
+        required: false,
+
+        schema: {
+
+          type: "number"
+
+        }
+
+      }
+
+    ],
+
+    responses: {
+
+      200: {
+
+        description: "Retorna un objeto con resultados de búsqueda...",
+
+        content: {
+
+          "application/json": {
+
+            schema: {
+
+              type: "object",
+
+              properties: {
+
+                success: { type: "boolean", example: true },
+
+                data: {
+
+                  type: "object",
+
+                  properties: {
+
+                    currentPage: { type: "number", example: 1 },
+
+                    hasNextPage: { type: "boolean" },
+
+                    previousPage: { type: "string", nullable: true },
+
+                    nextPage: { type: "string", nullable: true },
+
+                    foundPages: { type: "number", example: 10 },
+
+                    media: {
+
+                      type: "array",
+
+                      items: {
+
+                        type: "object",
+
+                        properties: {
+
+                          title: { type: "string" },
+
+                          cover: { type: "string" },
+
+                          synopsis: { type: "string" },
+
+                          rating: { type: "string" },
+
+                          slug: { type: "string" },
+
+                          type: { type: "string" },
+
+                          url: { type: "string" }
+
+                        },
+
+                        required: ["title", "cover", "synopsis", "rating", "slug", "type", "url"]
+
+                      }
+
+                    }
+
+                  },
+
+                  required: ["currentPage", "hasNextPage", "previousPage", "nextPage", "foundPages", "media"]
+
+                }
+
+              },
+
+              required: ["success", "data"]
+
+            }
+
+          }
+
+        }
+
+      },
+
+      404: {
+
+        description: "No se han encontrado resultados.",
+
+        content: {
+
+          "application/json": {
+
+            schema: {
+
+              type: "object",
+
+              properties: {
+
+                error: { type: "boolean", example: true },
+
+                url: { type: "string" },
+
+                statusCode: { type: "number", example: 404 },
+
+                message: { type: "string" },
+
+                data: {
+
+                  type: "object",
+
+                  properties: {
+
+                    success: { type: "boolean", example: false },
+
+                    error: { type: "string" }
+
+                  },
+
+                  required: ["success", "error"]
+
+                }
+
+              },
+
+              required: ["error", "url", "statusCode", "message", "data"]
+
+            }
+
+          }
+
+        }
+
+      }
+
+    }
+
   }
+
 });
