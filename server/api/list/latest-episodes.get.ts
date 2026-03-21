@@ -1,4 +1,4 @@
-bien entinces edita:import { getLatest } from "animeflv-scraper";
+import { getLatest } from "animeflv-scraper";
 
 export default defineEventHandler(async (event) => {
   // 1. CONFIGURACIÓN DE CABECERAS (Autoridad Total para Base44)
