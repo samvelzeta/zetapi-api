@@ -3,27 +3,51 @@ import { getLatest } from "animeflv-scraper";
 export default defineEventHandler(async (event) => {
   // 1. CONFIGURACIÓN DE CABECERAS (Autoridad Total para Base44)
   setResponseHeaders(event, {
-    // Permite que cualquier dominio (incluyendo Base44) acceda a los datos
     "Access-Control-Allow-Origin": "*", 
-    // Métodos permitidos para la API
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    // Permitimos todas las cabeceras para evitar bloqueos por 'Accept' o 'Content-Type'
     "Access-Control-Allow-Headers": "*",
-    // Cache de permisos por 24 horas para mejorar la velocidad
     "Access-Control-Max-Age": "86400" 
   });
 
-  // 2. MANEJO DE PRE-CONSULTA (IMPORTANTE)
-  // El navegador envía un OPTIONS antes del GET. Si respondemos 204, el bloqueo desaparece.
+  // 2. MANEJO DE PRE-CONSULTA
   if (getMethod(event) === 'OPTIONS') {
     event.node.res.statusCode = 204;
     return 'ok';
   }
 
-  // 3. LÓGICA DE OBTENCIÓN DE DATOS
+  // 3. OBTENCIÓN DE PARÁMETROS
+  const { lang } = getQuery(event) as { lang?: string };
+
+  // 4. LÓGICA DE OBTENCIÓN DE DATOS HÍBRIDA
   try {
-    const latest = await getLatest();
-    if (!latest) {
+    let results;
+
+    if (lang === 'latino') {
+      // Scraper para AnimeLatinoHD (Contenido Doblado)
+      const html = await $fetch<string>("https://www.animelatinohd.com", {
+        headers: { "User-Agent": "Mozilla/5.0" }
+      });
+
+      const regex = /<div class="capitulo-item">[\s\S]*?href="\/ver\/(.*?)\/(.*?)"[\s\S]*?src="(.*?)"[\s\S]*?<h3.*?>(.*?)<\/h3>/g;
+      const episodes = [];
+      let match;
+
+      while ((match = regex.exec(html)) !== null) {
+        episodes.push({
+          title: match[4].trim(),
+          number: Number(match[2]),
+          cover: match[3],
+          slug: match[1],
+          url: `/anime/${match[1]}/episode/${match[2]}?lang=latino`
+        });
+      }
+      results = episodes;
+    } else {
+      // Scraper original de AnimeFLV (Contenido Subtitulado)
+      results = await getLatest();
+    }
+
+    if (!results || results.length === 0) {
       throw createError({
         statusCode: 404,
         message: "No se encontraron episodios",
@@ -32,12 +56,12 @@ export default defineEventHandler(async (event) => {
 
     return {
       success: true,
-      data: latest
+      data: results
     };
-  } catch (error) {
+  } catch (error: any) {
     throw createError({
-      statusCode: 500,
-      message: "Error en el servidor de Anime",
+      statusCode: error.statusCode || 500,
+      message: error.message || "Error en el servidor de Anime",
     });
   }
 });
@@ -47,10 +71,19 @@ defineRouteMeta({
   openAPI: {
     tags: ["List"],
     summary: "Lista de últimos episodios lanzados",
-    description: "Obtiene una lista de últimos episodios lanzados.",
+    description: "Obtiene una lista de últimos episodios lanzados (Soporta ?lang=latino).",
+    parameters: [
+      {
+        name: "lang",
+        in: "query",
+        description: "Idioma de los episodios (latino o sub)",
+        required: false,
+        schema: { type: "string" }
+      }
+    ],
     responses: {
       200: {
-        description: "Retorna un arreglo de objetos...",
+        description: "Retorna un arreglo de objetos de episodios.",
         content: {
           "application/json": {
             schema: {
@@ -67,37 +100,10 @@ defineRouteMeta({
                       cover: { type: "string" },
                       slug: { type: "string" },
                       url: { type: "string" }
-                    },
-                    required: ["title", "number", "cover", "slug", "url"]
+                    }
                   }
                 }
-              },
-              required: ["success", "data"]
-            }
-          }
-        }
-      },
-      404: {
-        description: "No se han encontrado resultados.",
-        content: {
-          "application/json": {
-            schema: {
-              type: "object",
-              properties: {
-                error: { type: "boolean", example: true },
-                url: { type: "string" },
-                statusCode: { type: "number", example: 404 },
-                message: { type: "string" },
-                data: {
-                  type: "object",
-                  properties: {
-                    success: { type: "boolean", example: false },
-                    error: { type: "string" }
-                  },
-                  required: ["success", "error"]
-                }
-              },
-              required: ["error", "url", "statusCode", "message", "data"]
+              }
             }
           }
         }
