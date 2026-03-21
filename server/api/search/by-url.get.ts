@@ -1,7 +1,7 @@
 import { searchAnimesByURL } from "animeflv-scraper";
 
 export default defineEventHandler(async (event) => {
-  // --- LIBERACIÓN DE CORS (AUTORIDAD TOTAL) ---
+  // 1. CONFIGURACIÓN DE CABECERAS (CORS Total)
   setResponseHeaders(event, {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -9,7 +9,6 @@ export default defineEventHandler(async (event) => {
     "Access-Control-Max-Age": "86400",
   });
 
-  // Respuesta rápida para el navegador (Pre-consulta)
   if (getMethod(event) === 'OPTIONS') {
     event.node.res.statusCode = 204;
     return 'ok';
@@ -17,14 +16,47 @@ export default defineEventHandler(async (event) => {
 
   const { url } = getQuery(event) as { url: string };
 
+  if (!url) {
+    throw createError({
+      statusCode: 400,
+      message: "Se requiere una URL para procesar la búsqueda",
+    });
+  }
+
   try {
+    // 2. DETECCIÓN HÍBRIDA DE FUENTE
+    if (url.includes("animelatinohd.com")) {
+      // Lógica para URLs de AnimeLatinoHD
+      const slug = url.split("/anime/")[1]?.split("/")[0];
+      
+      if (!slug) {
+        throw createError({ statusCode: 400, message: "URL de LatinoHD no válida" });
+      }
+
+      // Devolvemos un formato compatible con lo que espera tu frontend
+      return {
+        success: true,
+        data: {
+          currentPage: 1,
+          hasNextPage: false,
+          media: [{
+            title: slug.replace(/-/g, " "),
+            slug: slug,
+            cover: "", // La info completa se cargará al entrar al perfil
+            type: "Anime",
+            url: `/anime/${slug}?lang=latino`
+          }]
+        }
+      };
+    }
+
+    // 3. LÓGICA ORIGINAL (AnimeFLV)
     const search = await searchAnimesByURL(url);
     
     if (!search || !search?.media?.length) {
       throw createError({
         statusCode: 404,
-        message: "No se han encontrado resultados en la búsqueda",
-        data: { success: false, error: "No se han encontrado resultados en la búsqueda" }
+        message: "No se han encontrado resultados",
       });
     }
 
@@ -32,58 +64,30 @@ export default defineEventHandler(async (event) => {
       success: true,
       data: search
     };
-  } catch (error) {
+
+  } catch (error: any) {
+    // 4. CAPTURA DE ERRORES PARA EVITAR CRASH
     throw createError({
-      statusCode: 500,
-      message: "Error al procesar la URL de búsqueda",
+      statusCode: error.statusCode || 500,
+      message: "Error al procesar la URL",
       data: { success: false, error: error.message }
     });
   }
 });
 
+// --- DOCUMENTACIÓN OPENAPI ---
 defineRouteMeta({
   openAPI: {
     tags: ["Search"],
     summary: "Busca con URL de búsqueda",
-    description: "Ejecuta una búsqueda de animes utilizando una URL de búsqueda.",
+    description: "Soporta URLs de AnimeFLV y AnimeLatinoHD.",
     parameters: [
       {
         name: "url",
         in: "query",
-        summary: "La URL de consulta.",
-        example: "https://www3.animeflv.net/browse?genre%5B%5D=shounen&type%5B%5D=tv&order=default&page=2",
         required: true,
-        schema: {
-          type: "string",
-          format: "uri"
-        }
+        schema: { type: "string", format: "uri" }
       }
-    ],
-    responses: {
-      200: {
-        description: "Retorna los resultados paginados del anime.",
-        content: {
-          "application/json": {
-            schema: {
-              type: "object",
-              properties: {
-                success: { type: "boolean", example: true },
-                data: {
-                  type: "object",
-                  properties: {
-                    currentPage: { type: "number" },
-                    hasNextPage: { type: "boolean" },
-                    media: { type: "array", items: { type: "object" } }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      404: {
-        description: "No se han encontrado resultados."
-      }
-    }
+    ]
   }
 });
