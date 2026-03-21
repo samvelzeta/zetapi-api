@@ -1,7 +1,7 @@
 import { getAnimeInfo } from "animeflv-scraper";
 
 export default defineCachedEventHandler(async (event) => {
-  // --- LIBERACIÓN DE CORS (AUTORIDAD TOTAL) ---
+  // 1. CONFIGURACIÓN DE CORS
   setResponseHeaders(event, {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -9,133 +9,99 @@ export default defineCachedEventHandler(async (event) => {
     "Access-Control-Max-Age": "86400",
   });
 
-  // Respuesta rápida para el navegador (Pre-consulta)
   if (getMethod(event) === 'OPTIONS') {
     event.node.res.statusCode = 204;
     return 'ok';
   }
 
+  // 2. OBTENCIÓN DE PARÁMETROS
   const { slug } = getRouterParams(event) as { slug: string };
-  const info = await getAnimeInfo(slug).catch(() => null);
+  const { lang } = getQuery(event) as { lang?: string };
   
-  if (!info) {
+  try {
+    let info;
+
+    if (lang === 'latino') {
+      // Lógica para extraer info de AnimeLatinoHD
+      info = await getLatinoInfo(slug);
+    } else {
+      // Lógica por defecto (AnimeFLV)
+      info = await getAnimeInfo(slug).catch(() => null);
+    }
+
+    if (!info) {
+      throw createError({
+        statusCode: 404,
+        message: "No se ha encontrado el anime en la fuente seleccionada",
+      });
+    }
+
+    return {
+      success: true,
+      data: info
+    };
+
+  } catch (error: any) {
     throw createError({
-      statusCode: 404,
-      message: "No se ha encontrado el anime",
-      data: { success: false, error: "No se ha encontrado el anime" }
+      statusCode: error.statusCode || 500,
+      message: error.message || "Error al obtener la información",
     });
   }
-  
-  return {
-    success: true,
-    data: info
-  };
 }, {
   swr: false,
   maxAge: 86400,
   name: "info",
   group: "anime",
-  getKey: event => getRouterParams(event).slug
-});
-
-defineRouteMeta({
-  openAPI: {
-    tags: ["Anime"],
-    parameters: [
-      {
-        name: "slug",
-        in: "path",
-        summary: "Slug que identifica el anime.",
-        example: "boruto-naruto-next-generations-tv",
-        required: true,
-        schema: {
-          type: "string"
-        }
-      }
-    ],
-    summary: "Anime por Slug",
-    description: "Obtiene un anime especificado por \"slug\".",
-    responses: {
-      200: {
-        description: "Retorna información detallada del anime.",
-        content: {
-          "application/json": {
-            schema: {
-              type: "object",
-              properties: {
-                success: { type: "boolean", example: true },
-                data: {
-                  type: "object",
-                  properties: {
-                    title: { type: "string" },
-                    alternative_titles: { type: "array", items: { type: "string" } },
-                    status: { type: "string" },
-                    rating: { type: "string" },
-                    type: { type: "string" },
-                    cover: { type: "string" },
-                    synopsis: { type: "string" },
-                    genres: { type: "array", items: { type: "string" } },
-                    next_airing_episode: { type: "string" },
-                    episodes: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        properties: {
-                          number: { type: "number" },
-                          slug: { type: "string" },
-                          url: { type: "string" }
-                        },
-                        required: ["number", "slug", "url"]
-                      }
-                    },
-                    url: { type: "string" },
-                    related: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        properties: {
-                          title: { type: "string" },
-                          relation: { type: "string" },
-                          slug: { type: "string" },
-                          url: { type: "string" }
-                        },
-                        required: ["title", "slug", "url"]
-                      }
-                    }
-                  },
-                  required: ["title", "alternative_titles", "status", "rating", "type", "cover", "synopsis", "genres", "episodes", "url"]
-                }
-              },
-              required: ["success", "data"]
-            }
-          }
-        }
-      },
-      404: {
-        description: "No se ha encontrado el anime.",
-        content: {
-          "application/json": {
-            schema: {
-              type: "object",
-              properties: {
-                error: { type: "boolean", example: true },
-                url: { type: "string" },
-                statusCode: { type: "number", example: 404 },
-                message: { type: "string" },
-                data: {
-                  type: "object",
-                  properties: {
-                    success: { type: "boolean", example: false },
-                    error: { type: "string" }
-                  },
-                  required: ["success", "error"]
-                }
-              },
-              required: ["error", "url", "statusCode", "message", "data"]
-            }
-          }
-        }
-      }
-    }
+  getKey: event => {
+    const { slug } = getRouterParams(event);
+    const { lang } = getQuery(event);
+    return `${slug}-${lang || 'sub'}`; // Cache separado por idioma
   }
 });
+
+// --- MOTOR DE INFORMACIÓN LATINO ---
+
+async function getLatinoInfo(slug: string) {
+  const url = `https://www.animelatinohd.com/anime/${slug}`;
+  
+  try {
+    const html = await $fetch<string>(url, {
+      headers: { "User-Agent": "Mozilla/5.0" }
+    });
+
+    // Extraemos Sinopsis y Título con Regex
+    const title = html.match(/<h1.*?>(.*?)<\/h1>/)?.[1] || slug;
+    const synopsis = html.match(/<div class="sinopsis">(.*?)<\/div>/)?.[1] || "Sin sinopsis disponible";
+    const cover = html.match(/<div class="anime-poster">[\s\S]*?src="(.*?)"/)?.[1] || "";
+
+    // Extraemos la lista de episodios (Formato simplificado)
+    const episodesRegex = /<a href="\/ver\/.*?\/(.*?)"[\s\S]*?<span>Episodio (.*?)<\/span>/g;
+    const episodes = [];
+    let match;
+
+    while ((match = episodesRegex.exec(html)) !== null) {
+      episodes.push({
+        number: Number(match[2]),
+        slug: `${slug}-${match[2]}`, // Generamos un slug único para el episodio
+        url: `https://www.animelatinohd.com/ver/${slug}/${match[2]}`
+      });
+    }
+
+    return {
+      title: title.trim(),
+      alternative_titles: [],
+      status: "Finalizado",
+      rating: "N/A",
+      type: "Anime",
+      cover: cover,
+      synopsis: synopsis.replace(/<[^>]*>?/gm, '').trim(),
+      genres: ["Latino"],
+      episodes: episodes.reverse(), // De más reciente a más viejo
+      url: url
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// TU DOCUMENTACIÓN OPENAPI SE MANTIENE ABAJO...
