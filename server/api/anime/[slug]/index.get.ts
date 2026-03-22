@@ -2,36 +2,39 @@ import { getAnimeInfo } from "animeflv-scraper";
 
 export default defineCachedEventHandler(async (event) => {
 
-  const { slug } = getRouterParams(event);
-  const { lang } = getQuery(event) as { lang?: string };
+  setResponseHeaders(event, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "*",
+    "Access-Control-Max-Age": "86400",
+  });
 
-  if (!lang || lang === "sub") {
-    const info = await getAnimeInfo(slug).catch(() => null);
-
-    if (!info) {
-      throw createError({ statusCode: 404, message: "Anime no encontrado" });
-    }
-
-    return {
-      success: true,
-      lang: "sub",
-      data: info
-    };
+  if (getMethod(event) === 'OPTIONS') {
+    event.node.res.statusCode = 204;
+    return 'ok';
   }
 
-  if (lang === "latino") {
-    const html = await $fetch<string>(`https://monoschinos2.com/anime/${slug}`, {
-      headers: { "User-Agent": "Mozilla/5.0" }
+  const { slug } = getRouterParams(event) as { slug: string };
+
+  const info = await getAnimeInfo(slug).catch(() => null);
+  
+  if (!info) {
+    throw createError({
+      statusCode: 404,
+      message: "No se ha encontrado el anime",
+      data: { success: false }
     });
-
-    const title = html.match(/<h1.*?>(.*?)<\/h1>/)?.[1] || slug;
-    const cover = html.match(/<img.*?src="(.*?)"/)?.[1] || "";
-
-    return {
-      success: true,
-      lang: "latino",
-      data: { title, cover }
-    };
   }
 
+  return {
+    success: true,
+    data: info
+  };
+
+}, {
+  swr: false,
+  maxAge: 86400,
+  name: "info",
+  group: "anime",
+  getKey: event => getRouterParams(event).slug
 });
