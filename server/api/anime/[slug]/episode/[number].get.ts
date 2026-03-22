@@ -16,7 +16,25 @@ export default defineCachedEventHandler(async (event) => {
 
   const { slug, number } = getRouterParams(event) as { slug: string, number: string };
 
-  const episode = await getEpisode(slug, Number(number));
+  // 🔥 VALIDACIONES (IMPORTANTE)
+  if (!slug || !number) {
+    throw createError({
+      statusCode: 400,
+      message: "Slug y número requeridos",
+    });
+  }
+
+  const epNumber = Number(number);
+
+  if (isNaN(epNumber)) {
+    throw createError({
+      statusCode: 400,
+      message: "Número de episodio inválido",
+    });
+  }
+
+  // 🔥 CONTROL DE ERROR
+  const episode = await getEpisode(slug, epNumber).catch(() => null);
   
   if (!episode) {
     throw createError({
