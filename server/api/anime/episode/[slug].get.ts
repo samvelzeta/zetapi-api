@@ -1,4 +1,4 @@
-import { getEpisodeServers } from "animeflv-scraper";
+import { getEpisode } from "animeflv-scraper";
 
 export default defineEventHandler(async (event) => {
 
@@ -16,7 +16,16 @@ export default defineEventHandler(async (event) => {
 
   const { slug } = getRouterParams(event) as { slug: string };
 
-  const episode = await getEpisodeServers(slug).catch(() => null);
+  // 🔥 VALIDACIÓN
+  if (!slug) {
+    throw createError({
+      statusCode: 400,
+      message: "Slug requerido",
+    });
+  }
+
+  // 🔥 USAMOS FUNCIÓN CORRECTA
+  const episode = await getEpisode(slug).catch(() => null);
 
   if (!episode) {
     throw createError({
