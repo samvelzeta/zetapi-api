@@ -6,13 +6,16 @@ const types = Object.values(TypeEnum);
 const orders = Object.values(OrderEnum);
 
 export default defineEventHandler(async (event) => {
-  // 🔐 API KEY
   const apiKey = getHeader(event, "x-api-key");
-  if (apiKey !== process.env.API_KEY) {
+
+  const envKey =
+    process.env.API_KEY ||
+    event.context.cloudflare?.env?.API_KEY;
+
+  if (!envKey || apiKey !== envKey) {
     throw createError({ statusCode: 401 });
   }
 
-  // 🌐 CORS
   setHeader(event, "Access-Control-Allow-Origin", "*");
   setHeader(event, "Access-Control-Allow-Methods", "POST,OPTIONS");
   setHeader(event, "Access-Control-Allow-Headers", "*");
