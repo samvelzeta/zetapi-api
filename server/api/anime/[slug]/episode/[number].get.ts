@@ -14,60 +14,97 @@ export default defineCachedEventHandler(async (event) => {
 
   const { slug, number } = getRouterParams(event) as { slug: string, number: string };
 
-  const episode = await getEpisode(slug, Number(number)).catch(() => null);
-
-  if (!episode) {
-    throw createError({ statusCode: 404 });
-  }
-
-  // 🔥 RESOLVER REALISTA
-  const resolveServers = (servers: any[]) => {
-    return servers.map((server: any) => {
-      const embed = server?.embed || "";
-      const download = server?.download || "";
-
-      let type = "embed";
-      let stream = null;
-
-      if (embed.includes(".m3u8") || download.includes(".m3u8")) {
-        type = "hls";
-        stream = embed || download;
-      } else if (embed.includes(".mp4") || download.includes(".mp4")) {
-        type = "mp4";
-        stream = embed || download;
-      }
-
-      return {
-        name: server?.name,
-        type,
-        stream,
-        embed
-      };
-    });
+  const fetchHTML = async (url: string) => {
+    try {
+      return await $fetch<string>(url, {
+        headers: { "user-agent": "Mozilla/5.0" }
+      });
+    } catch {
+      return null;
+    }
   };
 
-  let servers = resolveServers(episode.servers || []);
+  // 🔥 1. ANIMEFLV
+  const base = await getEpisode(slug, Number(number)).catch(() => null);
 
-  // 🔥 FILTRAR BASURA
-  servers = servers.filter((s) => s.stream || s.embed);
+  // 🔥 2. MONOSCHINOS (REAL SCRAP)
+  const monos = await (async () => {
+    try {
+      const url = `https://monoschinos2.com/ver/${slug}-${number}`;
+      const html = await fetchHTML(url);
+      if (!html) return [];
 
-  // 🔥 ORDEN PRIORIDAD
-  servers.sort((a, b) => {
-    const priority = { hls: 1, mp4: 2, embed: 3 };
-    return priority[a.type] - priority[b.type];
+      const matches = [...html.matchAll(/iframe.*?src="(.*?)"/g)];
+
+      return matches.map((m) => ({
+        name: "monoschinos",
+        embed: m[1]
+      }));
+    } catch {
+      return [];
+    }
+  })();
+
+  // 🔥 3. GOGOANIME (REAL SCRAP)
+  const gogo = await (async () => {
+    try {
+      const url = `https://gogoanime3.co/${slug}-episode-${number}`;
+      const html = await fetchHTML(url);
+      if (!html) return [];
+
+      const matches = [...html.matchAll(/iframe.*?src="(.*?)"/g)];
+
+      return matches.map((m) => ({
+        name: "gogoanime",
+        embed: m[1]
+      }));
+    } catch {
+      return [];
+    }
+  })();
+
+  // 🔥 UNIFICAR SERVERS
+  const allServers = [
+    ...(base?.servers || []),
+    ...monos,
+    ...gogo
+  ];
+
+  // 🔥 RESOLVER
+  const resolved = allServers.map((server: any) => {
+    const embed = server.embed || "";
+    const download = server.download || "";
+
+    let type = "embed";
+    let stream = null;
+
+    if (embed.includes(".m3u8") || download.includes(".m3u8")) {
+      type = "hls";
+      stream = embed || download;
+    } else if (embed.includes(".mp4") || download.includes(".mp4")) {
+      type = "mp4";
+      stream = embed || download;
+    }
+
+    return {
+      name: server.name,
+      type,
+      stream,
+      embed
+    };
   });
 
-  // 🔥 UNIQUE
+  // 🔥 LIMPIAR
   const unique = Array.from(
-    new Map(servers.map((s) => [s.name + s.stream, s])).values()
+    new Map(resolved.map((s) => [s.embed || s.stream, s])).values()
   );
 
   return {
     success: true,
     total: unique.length,
     data: {
-      title: episode.title,
-      number: episode.number,
+      title: base?.title || slug,
+      number: Number(number),
       servers: unique
     }
   };
