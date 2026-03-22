@@ -1,19 +1,12 @@
 import { getEpisode } from "animeflv-scraper";
 
 export default defineCachedEventHandler(async (event) => {
-  // 🌐 CORS (PRIMERO - IMPORTANTE PARA PREFLIGHT)
   setHeader(event, "Access-Control-Allow-Origin", "*");
   setHeader(event, "Access-Control-Allow-Methods", "GET,OPTIONS");
   setHeader(event, "Access-Control-Allow-Headers", "Content-Type, x-api-key");
 
-  // 🔥 RESPUESTA CORRECTA PARA OPTIONS
-  if (event.method === "OPTIONS") {
-    return {
-      status: 200
-    };
-  }
+  if (event.method === "OPTIONS") return "";
 
-  // 🔐 API KEY (DESPUÉS DEL PREFLIGHT)
   const apiKey = getHeader(event, "x-api-key");
   const envKey =
     process.env.API_KEY ||
@@ -23,103 +16,14 @@ export default defineCachedEventHandler(async (event) => {
     throw createError({ statusCode: 401 });
   }
 
-  const { slug, number } = getRouterParams(event) as { slug: string, number: string };
+  const { slug, number } = getRouterParams(event);
 
-  const fetchHTML = async (url: string) => {
-    try {
-      return await $fetch<string>(url, {
-        headers: { "user-agent": "Mozilla/5.0" }
-      });
-    } catch {
-      return null;
-    }
-  };
+  const episode = await getEpisode(slug, Number(number)).catch(() => null);
 
-  const detectLang = (name: string) => {
-    const n = (name || "").toLowerCase();
-
-    if (n.includes("lat") || n.includes("cast") || n.includes("esp") || n.includes("dub")) {
-      return "latam";
-    }
-    if (n.includes("sub")) return "sub";
-
-    return "unknown";
-  };
-
-  const base = await getEpisode(slug, Number(number)).catch(() => null);
-
-  const monos = await (async () => {
-    try {
-      const html = await fetchHTML(`https://monoschinos2.com/ver/${slug}-${number}`);
-      if (!html) return [];
-      return [...html.matchAll(/iframe.*?src="(.*?)"/g)].map(m => ({
-        name: "monoschinos",
-        embed: m[1]
-      }));
-    } catch {
-      return [];
-    }
-  })();
-
-  const gogo = await (async () => {
-    try {
-      const html = await fetchHTML(`https://gogoanime3.co/${slug}-episode-${number}`);
-      if (!html) return [];
-      return [...html.matchAll(/iframe.*?src="(.*?)"/g)].map(m => ({
-        name: "gogoanime",
-        embed: m[1]
-      }));
-    } catch {
-      return [];
-    }
-  })();
-
-  const allServers = [
-    ...(base?.servers || []),
-    ...monos,
-    ...gogo
-  ];
-
-  let servers = allServers.map((server: any) => {
-    const embed = server.embed || "";
-    const download = server.download || "";
-
-    let type = "embed";
-    let stream = null;
-
-    if (embed.includes(".m3u8") || download.includes(".m3u8")) {
-      type = "hls";
-      stream = embed || download;
-    } else if (embed.includes(".mp4") || download.includes(".mp4")) {
-      type = "mp4";
-      stream = embed || download;
-    }
-
-    return {
-      name: server.name,
-      type,
-      stream,
-      embed,
-      lang: detectLang(server.name)
-    };
-  });
-
-  servers = servers.filter(s => s.stream || s.embed);
-
-  const priority: any = { hls: 1, mp4: 2, embed: 3 };
-  servers.sort((a, b) => priority[a.type] - priority[b.type]);
-
-  const unique = Array.from(
-    new Map(servers.map(s => [s.embed || s.stream, s])).values()
-  );
+  if (!episode) throw createError({ statusCode: 404 });
 
   return {
     success: true,
-    total: unique.length,
-    data: {
-      title: base?.title || slug,
-      number: Number(number),
-      servers: unique
-    }
+    data: episode
   };
 });
