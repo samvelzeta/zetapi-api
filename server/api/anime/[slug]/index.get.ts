@@ -1,16 +1,13 @@
-import { getAnimeInfo } from "animeflv-scraper";
-
 export default defineCachedEventHandler(async (event) => {
   // 🌐 CORS (PRIMERO)
   setHeader(event, "Access-Control-Allow-Origin", "*");
-  setHeader(event, "Access-Control-Allow-Methods", "GET,OPTIONS");
+  setHeader(event, "Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   setHeader(event, "Access-Control-Allow-Headers", "Content-Type, x-api-key");
 
-  // 🔥 PREFLIGHT
+  // 🔥 PREFLIGHT (CORRECTO)
   if (event.method === "OPTIONS") {
-    return {
-      status: 200
-    };
+    setResponseStatus(event, 200);
+    return "";
   }
 
   // 🔐 API KEY
