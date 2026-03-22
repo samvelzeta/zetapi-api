@@ -1,64 +1,85 @@
 import { searchAnime } from "animeflv-scraper";
 
 export default defineEventHandler(async (event) => {
-
-  setResponseHeaders(event, {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "*",
-    "Access-Control-Max-Age": "86400",
-  });
-
-  if (getMethod(event) === 'OPTIONS') {
-    event.node.res.statusCode = 204;
-    return 'ok';
+  const apiKey = getHeader(event, "x-api-key");
+  if (apiKey !== process.env.API_KEY) {
+    throw createError({ statusCode: 401, message: "Unauthorized" });
   }
 
-  const { query, page, lang } = getQuery(event) as { query: string, page: string, lang?: string };
-  
-  try {
-    let results;
+  setHeader(event, "Access-Control-Allow-Origin", "*");
+  setHeader(event, "Access-Control-Allow-Methods", "GET,OPTIONS");
+  setHeader(event, "Access-Control-Allow-Headers", "*");
 
-    switch (lang) {
-      case 'latino':
-        results = await searchAnimeLatino(query, page); 
-        break;
-      
-      case 'jkanime':
-        results = await searchInJK(query, page);
-        break;
+  if (event.method === "OPTIONS") return;
 
-      default:
-        results = await searchAnime(query, Number(page) || 1);
-        break;
-    }
-    
-    if (!results || (results.media && results.media.length === 0)) {
-      throw createError({
-        statusCode: 404,
-        message: `No se encontraron resultados para "${query}"`,
-        data: { success: false }
+  const { query, page } = getQuery(event) as { query: string, page: string };
+
+  const fetchHTML = async (url: string) => {
+    try {
+      return await $fetch<string>(url, {
+        headers: { "user-agent": "Mozilla/5.0" }
       });
+    } catch {
+      return null;
     }
+  };
 
-    return {
-      success: true,
-      data: results
-    };
+  const normalize = (items: any[]) =>
+    items.map((i: any) => ({
+      title: i.title,
+      cover: i.cover || "",
+      synopsis: i.synopsis || "",
+      rating: i.rating || "",
+      slug: i.slug || i.title?.toLowerCase().replace(/\s+/g, "-"),
+      type: i.type || "",
+      url: i.url || ""
+    }));
 
-  } catch (error: any) {
-    throw createError({
-      statusCode: error.statusCode || 500,
-      message: error.message || "Error en el servidor de búsqueda",
-    });
-  }
+  const sources = await Promise.allSettled([
+    searchAnime(query, Number(page) || 1),
+
+    (async () => {
+      const html = await fetchHTML(`https://monoschinos2.com/buscar?q=${query}`);
+      if (!html) return [];
+      return [];
+    })(),
+
+    (async () => {
+      const html = await fetchHTML(`https://gogoanime3.co/search.html?keyword=${query}`);
+      if (!html) return [];
+      return [];
+    })(),
+
+    (async () => {
+      const html = await fetchHTML(`https://animeonline.ninja/?s=${query}`);
+      if (!html) return [];
+      return [];
+    })(),
+
+    (async () => {
+      const html = await fetchHTML(`https://animeyt.tv/?s=${query}`);
+      if (!html) return [];
+      return [];
+    })(),
+
+    (async () => {
+      const html = await fetchHTML(`https://animelhd.net/?s=${query}`);
+      if (!html) return [];
+      return [];
+    })()
+  ]);
+
+  const results = sources
+    .filter((r: any) => r.status === "fulfilled" && r.value)
+    .flatMap((r: any) => (r.value.media ? r.value.media : r.value));
+
+  const unique = Array.from(
+    new Map(results.map((i: any) => [i.title, i])).values()
+  );
+
+  return {
+    success: true,
+    total: unique.length,
+    data: normalize(unique)
+  };
 });
-
-// FUNCIONES
-async function searchAnimeLatino(query: string, page: string) {
-  throw createError({ statusCode: 501, message: "Motor Latino en configuración" });
-}
-
-async function searchInJK(query: string, page: string) {
-  throw createError({ statusCode: 501, message: "Motor JKAnime en configuración" });
-}
