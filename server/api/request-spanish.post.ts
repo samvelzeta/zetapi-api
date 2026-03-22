@@ -1,4 +1,17 @@
 export default defineEventHandler(async (event) => {
+  // 🌐 CORS
+  setHeader(event, "Access-Control-Allow-Origin", "*");
+  setHeader(event, "Access-Control-Allow-Methods", "POST,OPTIONS");
+  setHeader(event, "Access-Control-Allow-Headers", "Content-Type, x-api-key");
+
+  // 🔥 PREFLIGHT
+  if (event.method === "OPTIONS") {
+    return {
+      status: 200
+    };
+  }
+
+  // 🔐 API KEY
   const apiKey = getHeader(event, "x-api-key");
 
   const envKey =
@@ -8,12 +21,6 @@ export default defineEventHandler(async (event) => {
   if (!envKey || apiKey !== envKey) {
     throw createError({ statusCode: 401 });
   }
-
-  setHeader(event, "Access-Control-Allow-Origin", "*");
-  setHeader(event, "Access-Control-Allow-Methods", "POST,OPTIONS");
-  setHeader(event, "Access-Control-Allow-Headers", "*");
-
-  if (event.method === "OPTIONS") return;
 
   const body = await readBody(event);
 
