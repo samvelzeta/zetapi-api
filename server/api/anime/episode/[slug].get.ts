@@ -1,13 +1,11 @@
 import { getEpisode } from "animeflv-scraper";
 
 export default defineCachedEventHandler(async (event) => {
-  // 🔐 API KEY
   const apiKey = getHeader(event, "x-api-key");
   if (apiKey !== process.env.API_KEY) {
     throw createError({ statusCode: 401 });
   }
 
-  // 🌐 CORS
   setHeader(event, "Access-Control-Allow-Origin", "*");
   setHeader(event, "Access-Control-Allow-Methods", "GET,OPTIONS");
   setHeader(event, "Access-Control-Allow-Headers", "*");
@@ -26,25 +24,20 @@ export default defineCachedEventHandler(async (event) => {
     }
   };
 
-  // 🔥 BASE (AnimeFLV)
-  const base = await getEpisode(slug).catch(() => null);
-
-  // 🔥 EXTRAER NÚMERO DESDE SLUG
   const numberMatch = slug.match(/(\d+)$/);
   const number = numberMatch ? Number(numberMatch[1]) : null;
+  const cleanSlug = slug.replace(/-\d+$/, "");
+
+  // 🔥 BASE
+  const base = await getEpisode(slug).catch(() => null);
 
   // 🔥 MONOSCHINOS
   const monos = await (async () => {
     try {
       if (!number) return [];
-      const cleanSlug = slug.replace(/-\d+$/, "");
-      const url = `https://monoschinos2.com/ver/${cleanSlug}-${number}`;
-      const html = await fetchHTML(url);
+      const html = await fetchHTML(`https://monoschinos2.com/ver/${cleanSlug}-${number}`);
       if (!html) return [];
-
-      const matches = [...html.matchAll(/iframe.*?src="(.*?)"/g)];
-
-      return matches.map((m) => ({
+      return [...html.matchAll(/iframe.*?src="(.*?)"/g)].map(m => ({
         name: "monoschinos",
         embed: m[1]
       }));
@@ -57,14 +50,9 @@ export default defineCachedEventHandler(async (event) => {
   const gogo = await (async () => {
     try {
       if (!number) return [];
-      const cleanSlug = slug.replace(/-\d+$/, "");
-      const url = `https://gogoanime3.co/${cleanSlug}-episode-${number}`;
-      const html = await fetchHTML(url);
+      const html = await fetchHTML(`https://gogoanime3.co/${cleanSlug}-episode-${number}`);
       if (!html) return [];
-
-      const matches = [...html.matchAll(/iframe.*?src="(.*?)"/g)];
-
-      return matches.map((m) => ({
+      return [...html.matchAll(/iframe.*?src="(.*?)"/g)].map(m => ({
         name: "gogoanime",
         embed: m[1]
       }));
@@ -73,11 +61,59 @@ export default defineCachedEventHandler(async (event) => {
     }
   })();
 
-  // 🔥 UNIFICAR
+  // 🔥 ANIMEYT
+  const animeyt = await (async () => {
+    try {
+      if (!number) return [];
+      const html = await fetchHTML(`https://animeyt.tv/${cleanSlug}-${number}`);
+      if (!html) return [];
+      return [...html.matchAll(/iframe.*?src="(.*?)"/g)].map(m => ({
+        name: "animeyt",
+        embed: m[1]
+      }));
+    } catch {
+      return [];
+    }
+  })();
+
+  // 🔥 ANIMEONLINE NINJA
+  const ninja = await (async () => {
+    try {
+      if (!number) return [];
+      const html = await fetchHTML(`https://animeonline.ninja/${cleanSlug}-${number}`);
+      if (!html) return [];
+      return [...html.matchAll(/iframe.*?src="(.*?)"/g)].map(m => ({
+        name: "ninja",
+        embed: m[1]
+      }));
+    } catch {
+      return [];
+    }
+  })();
+
+  // 🔥 ANIMELHD
+  const animelhd = await (async () => {
+    try {
+      if (!number) return [];
+      const html = await fetchHTML(`https://animelhd.net/${cleanSlug}-${number}`);
+      if (!html) return [];
+      return [...html.matchAll(/iframe.*?src="(.*?)"/g)].map(m => ({
+        name: "animelhd",
+        embed: m[1]
+      }));
+    } catch {
+      return [];
+    }
+  })();
+
+  // 🔥 UNIFICAR TODO
   const allServers = [
     ...(base?.servers || []),
     ...monos,
-    ...gogo
+    ...gogo,
+    ...animeyt,
+    ...ninja,
+    ...animelhd
   ];
 
   // 🔥 RESOLVER
@@ -105,7 +141,7 @@ export default defineCachedEventHandler(async (event) => {
   });
 
   // 🔥 LIMPIAR
-  servers = servers.filter((s) => s.stream || s.embed);
+  servers = servers.filter(s => s.stream || s.embed);
 
   // 🔥 ORDENAR
   const priority: any = { hls: 1, mp4: 2, embed: 3 };
@@ -113,7 +149,7 @@ export default defineCachedEventHandler(async (event) => {
 
   // 🔥 UNIQUE
   const unique = Array.from(
-    new Map(servers.map((s) => [s.name + s.stream, s])).values()
+    new Map(servers.map(s => [s.embed || s.stream, s])).values()
   );
 
   return {
