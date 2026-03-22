@@ -24,14 +24,23 @@ export default defineCachedEventHandler(async (event) => {
     }
   };
 
+  const detectLang = (name: string) => {
+    const n = (name || "").toLowerCase();
+
+    if (n.includes("lat") || n.includes("cast") || n.includes("esp") || n.includes("dub")) {
+      return "latam";
+    }
+    if (n.includes("sub")) return "sub";
+
+    return "unknown";
+  };
+
   const numberMatch = slug.match(/(\d+)$/);
   const number = numberMatch ? Number(numberMatch[1]) : null;
   const cleanSlug = slug.replace(/-\d+$/, "");
 
-  // 🔥 BASE
   const base = await getEpisode(slug).catch(() => null);
 
-  // 🔥 MONOSCHINOS
   const monos = await (async () => {
     try {
       if (!number) return [];
@@ -46,7 +55,6 @@ export default defineCachedEventHandler(async (event) => {
     }
   })();
 
-  // 🔥 GOGOANIME
   const gogo = await (async () => {
     try {
       if (!number) return [];
@@ -61,7 +69,6 @@ export default defineCachedEventHandler(async (event) => {
     }
   })();
 
-  // 🔥 ANIMEYT
   const animeyt = await (async () => {
     try {
       if (!number) return [];
@@ -76,7 +83,6 @@ export default defineCachedEventHandler(async (event) => {
     }
   })();
 
-  // 🔥 ANIMEONLINE NINJA
   const ninja = await (async () => {
     try {
       if (!number) return [];
@@ -91,7 +97,6 @@ export default defineCachedEventHandler(async (event) => {
     }
   })();
 
-  // 🔥 ANIMELHD
   const animelhd = await (async () => {
     try {
       if (!number) return [];
@@ -106,7 +111,6 @@ export default defineCachedEventHandler(async (event) => {
     }
   })();
 
-  // 🔥 UNIFICAR TODO
   const allServers = [
     ...(base?.servers || []),
     ...monos,
@@ -116,7 +120,6 @@ export default defineCachedEventHandler(async (event) => {
     ...animelhd
   ];
 
-  // 🔥 RESOLVER
   let servers = allServers.map((server: any) => {
     const embed = server?.embed || "";
     const download = server?.download || "";
@@ -136,18 +139,16 @@ export default defineCachedEventHandler(async (event) => {
       name: server?.name,
       type,
       stream,
-      embed
+      embed,
+      lang: detectLang(server?.name)
     };
   });
 
-  // 🔥 LIMPIAR
   servers = servers.filter(s => s.stream || s.embed);
 
-  // 🔥 ORDENAR
   const priority: any = { hls: 1, mp4: 2, embed: 3 };
   servers.sort((a, b) => priority[a.type] - priority[b.type]);
 
-  // 🔥 UNIQUE
   const unique = Array.from(
     new Map(servers.map(s => [s.embed || s.stream, s])).values()
   );
