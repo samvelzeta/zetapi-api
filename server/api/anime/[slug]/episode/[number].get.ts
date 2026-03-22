@@ -1,14 +1,14 @@
 import { getEpisode } from "animeflv-scraper";
 
 export default defineCachedEventHandler(async (event) => {
- const apiKey = getHeader(event, "x-api-key");
-const envKey =
-  process.env.API_KEY ||
-  event.context.cloudflare?.env?.API_KEY;
+  const apiKey = getHeader(event, "x-api-key");
+  const envKey =
+    process.env.API_KEY ||
+    event.context.cloudflare?.env?.API_KEY;
 
-if (!envKey || apiKey !== envKey) {
-  throw createError({ statusCode: 401 });
-};
+  if (!envKey || apiKey !== envKey) {
+    throw createError({ statusCode: 401 });
+  }
 
   setHeader(event, "Access-Control-Allow-Origin", "*");
   setHeader(event, "Access-Control-Allow-Methods", "GET,OPTIONS");
