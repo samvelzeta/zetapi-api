@@ -79,35 +79,31 @@ export async function getAllServers({
   // =====================
   // 🔥 LATINO
   // =====================
-  if (lang === "latino") {
-    const core = await Promise.all([
-      getAnimeLHDServers(title),
-      getMonosChinosServers(title)
-    ]);
+ // =====================
+// 🔥 LATINO FULL (ROBUSTO)
+// =====================
+if (lang === "latino") {
 
-    servers.push(...core.flat());
+  // 🔥 CORE
+  const core = await Promise.all([
+    getTioAnimeServers(title, number),
+    getAnimeIDServers(title, number)
+  ]);
 
-    if (!servers.length) {
-      for (const v of variants) {
-        const fallback = await Promise.all([
-          getTioAnimeServers(v),
-          getAnimeIDServers(v),
-          getAnimeFenixServers(v)
-        ]);
+  servers.push(...core.flat());
 
-        servers.push(...fallback.flat());
-      }
+  // 🔥 SI HAY POCOS → MÁS FUENTES
+  if (servers.length < 3) {
+    for (const v of variants) {
+      const fallback = await Promise.all([
+        getAnimeFenixServers(v, number),
+        getMonosChinosServers(v, number),
+        getAnimeLHDServers(v, number)
+      ]);
+
+      servers.push(...fallback.flat());
+
+      if (servers.length > 6) break; // 🔥 evita spam
     }
   }
-
-  // limpiar duplicados
-  const unique = Array.from(
-    new Map(
-      servers
-        .filter(s => s?.embed)
-        .map(s => [s.embed, s])
-    ).values()
-  );
-
-  return sortServers(unique);
 }
