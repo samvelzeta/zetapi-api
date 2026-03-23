@@ -18,3 +18,4 @@ export default defineEventHandler(async (event) => {
     data: latest
   };
 });
+//fix
