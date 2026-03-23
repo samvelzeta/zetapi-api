@@ -127,81 +127,124 @@ export async function getAnimeFenixServers(query: string) {
 }
 
 // =====================
-// 🔥 LATINO
+// 🔥 LATINO REAL (EPISODIO)
 // =====================
 
-// AnimeLHD
-export async function getAnimeLHDServers(query: string) {
-  try {
-    const html = await $fetch(`https://animelhd.com/?s=${encodeURIComponent(query)}`);
-    const links = html.match(/https?:\/\/[^"]+/g) || [];
-    return cleanLinks(links);
-  } catch {
-    return [];
-  }
-}
-
-// MonosChinos
-export async function getMonosChinosServers(query: string) {
-  try {
-    const html = await $fetch(`https://monoschinos2.com/search/${query}`);
-    const links = html.match(/https?:\/\/[^"]+/g) || [];
-    return cleanLinks(links);
-  } catch {
-    return [];
-  }
-}
-
-// TioAnime
-export async function getTioAnimeServers(query: string) {
-  try {
-    const html = await $fetch(`https://tioanime.com/buscar?q=${query}`);
-    const links = html.match(/https?:\/\/[^"]+/g) || [];
-    return cleanLinks(links);
-  } catch {
-    return [];
-  }
-}
-
-// AnimeID
-export async function getAnimeIDServers(query: string) {
-  try {
-    const html = await $fetch(`https://animeid.tv/?s=${query}`);
-    const links = html.match(/https?:\/\/[^"]+/g) || [];
-    return cleanLinks(links);
-  } catch {
-    return [];
-  }
-}
-
+// 🔥 TIOANIME (CORRECTO)
 export async function getTioAnimeServers(query: string, number: number) {
   try {
-    // 🔍 buscar anime
     const search = await $fetch(`https://tioanime.com/buscar?q=${query}`);
 
     const match = search.match(/href="\/anime\/([^"]+)"/);
-
     if (!match) return [];
 
     const slug = match[1];
 
-    // 🎬 ir al episodio
     const epUrl = `https://tioanime.com/ver/${slug}-${number}`;
-
     const html = await $fetch(epUrl);
 
-    // 🔥 SOLO iframe real
-    const iframeMatch = html.match(/<iframe[^>]+src="([^"]+)"/);
-
-    if (!iframeMatch) return [];
-
-    const embed = iframeMatch[1];
+    const iframe = html.match(/<iframe[^>]+src="([^"]+)"/);
+    if (!iframe) return [];
 
     return [{
-      name: detectServer(embed),
-      embed
+      name: detectServer(iframe[1]),
+      embed: iframe[1]
     }];
 
+  } catch {
+    return [];
+  }
+}
+
+
+// 🔥 ANIMEID
+export async function getAnimeIDServers(query: string, number: number) {
+  try {
+    const search = await $fetch(`https://animeid.tv/?s=${query}`);
+
+    const match = search.match(/href="https:\/\/animeid\.tv\/([^"]+)"/);
+    if (!match) return [];
+
+    const slug = match[1];
+
+    const epUrl = `https://animeid.tv/${slug}/${number}`;
+    const html = await $fetch(epUrl);
+
+    const iframe = html.match(/<iframe[^>]+src="([^"]+)"/);
+    if (!iframe) return [];
+
+    return [{
+      name: detectServer(iframe[1]),
+      embed: iframe[1]
+    }];
+
+  } catch {
+    return [];
+  }
+}
+
+
+// 🔥 ANIMEFENIX (MEJORADO)
+export async function getAnimeFenixServers(query: string, number: number) {
+  try {
+    const search = await $fetch(`https://animefenix.com/search?q=${query}`);
+
+    const match = search.match(/href="\/anime\/([^"]+)"/);
+    if (!match) return [];
+
+    const slug = match[1];
+
+    const epUrl = `https://animefenix.com/ver/${slug}/${number}`;
+    const html = await $fetch(epUrl);
+
+    const iframe = html.match(/<iframe[^>]+src="([^"]+)"/);
+    if (!iframe) return [];
+
+    return [{
+      name: detectServer(iframe[1]),
+      embed: iframe[1]
+    }];
+
+  } catch {
+    return [];
+  }
+}
+
+
+// 🔥 MONOSCHINOS (LIMITADO PERO FUNCIONAL)
+export async function getMonosChinosServers(query: string, number: number) {
+  try {
+    const search = await $fetch(`https://monoschinos2.com/search/${query}`);
+
+    const match = search.match(/href="\/ver\/([^"]+)"/);
+    if (!match) return [];
+
+    const slug = match[1];
+
+    const epUrl = `https://monoschinos2.com/ver/${slug}-${number}`;
+    const html = await $fetch(epUrl);
+
+    const iframe = html.match(/<iframe[^>]+src="([^"]+)"/);
+    if (!iframe) return [];
+
+    return [{
+      name: detectServer(iframe[1]),
+      embed: iframe[1]
+    }];
+
+  } catch {
+    return [];
+  }
+}
+
+
+// 🔥 ANIMELHD (fallback simple)
+export async function getAnimeLHDServers(query: string, number: number) {
+  try {
+    const html = await $fetch(`https://animelhd.com/?s=${encodeURIComponent(query)}`);
+    const links = html.match(/https?:\/\/[^"]+/g) || [];
+
+    return cleanLinks(links);
   } catch {
     return [];
   }
