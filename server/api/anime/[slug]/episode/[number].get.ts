@@ -1,6 +1,7 @@
-import { getEpisode } from "animeflv-scraper";
+import { getEpisode, searchAnime, getAnimeInfo } from "animeflv-scraper";
 
-const { id } = getRouterParams(event) as { id: string };
+export default defineEventHandler(async (event) => {
+  const { id } = getRouterParams(event) as { id: string };
 
   const anilist = await $fetch<any>("https://graphql.anilist.co", {
     method: "POST",
@@ -64,4 +65,3 @@ const { id } = getRouterParams(event) as { id: string };
     }
   };
 });
-  
