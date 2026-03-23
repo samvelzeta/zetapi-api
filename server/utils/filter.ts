@@ -12,3 +12,4 @@ export async function filterWorkingServers(servers: any[]) {
 
   return results.filter(Boolean);
 }
+//fix
