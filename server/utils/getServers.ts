@@ -47,6 +47,12 @@ export async function getAllServers({
       ? `${proxyBase}${encodeURIComponent(s.embed)}`
       : s.embed
   }));
+  const proxyBase = "/api/proxy?url=";
+
+servers = servers.map(s => ({
+  ...s,
+  embed: `${proxyBase}${encodeURIComponent(s.embed)}`
+}));
 
   // 🔥 ELIMINAR DUPLICADOS
   return Array.from(
