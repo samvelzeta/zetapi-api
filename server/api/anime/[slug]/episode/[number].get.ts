@@ -3,7 +3,7 @@ import { filterWorkingServers } from "../../../../utils/filter";
 
 export default defineEventHandler(async (event) => {
 
- // 🔥 CORS FIX
+ // ðŸ”¥ CORS FIX
   setHeader(event, "Access-Control-Allow-Origin", "*");
   setHeader(event, "Access-Control-Allow-Methods", "GET,OPTIONS");
   setHeader(event, "Access-Control-Allow-Headers", "Content-Type, x-api-key");
@@ -14,10 +14,10 @@ export default defineEventHandler(async (event) => {
 
   const { lang } = getQuery(event) as { lang?: string };
 
-  // 🔥 fallback idioma
+  // ðŸ”¥ fallback idioma
   const language = lang === "latino" ? "latino" : "sub";
 
-  // 🔥 title fallback (puedes mejorar luego)
+  // ðŸ”¥ title fallback (puedes mejorar luego)
   const title = slug.replace(/-/g, " ");
 
   const servers = await getAllServers({
