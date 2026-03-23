@@ -1,8 +1,8 @@
 import { searchAnime } from "animeflv-scraper";
 
 export default defineEventHandler(async (event) => {
-  // 🌐 CORS GLOBAL
- setHeader(event, "Access-Control-Allow-Headers", "Content-Type, x-api-key");
+ // 🔥 CORS FIX
+  setHeader(event, "Access-Control-Allow-Origin", "*");
   setHeader(event, "Access-Control-Allow-Methods", "GET,OPTIONS");
   setHeader(event, "Access-Control-Allow-Headers", "Content-Type, x-api-key");
 
