@@ -6,9 +6,7 @@ export default defineEventHandler(async (event) => {
   if (event.method === "OPTIONS") return "";
 
   const apiKey = getHeader(event, "x-api-key");
-  const envKey =
-    process.env.API_KEY ||
-    event.context.cloudflare?.env?.API_KEY;
+  const envKey = process.env.API_KEY || event.context.cloudflare?.env?.API_KEY;
 
   if (!envKey || apiKey !== envKey) {
     throw createError({ statusCode: 401 });
@@ -18,10 +16,6 @@ export default defineEventHandler(async (event) => {
 
   return {
     success: true,
-    message: "Solicitud enviada",
-    data: {
-      ...body,
-      createdAt: new Date().toISOString()
-    }
+    data: body
   };
 });
