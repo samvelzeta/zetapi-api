@@ -116,7 +116,7 @@ export async function getHiAnimeServers(query: string) {
 }
 
 // AnimeFenix
-export async function getAnimeFenixServers(query: string) {
+export async function getAnimeFenixSearch(query: string) {
   try {
     const html = await $fetch(`https://animefenix.com/search?q=${query}`);
     const links = html.match(/https?:\/\/[^"]+/g) || [];
