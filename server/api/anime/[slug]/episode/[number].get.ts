@@ -1,14 +1,18 @@
+// REEMPLAZAR COMPLETO
+
 import { getAllServers } from "../../../../utils/getServers";
 import { filterWorkingServers } from "../../../../utils/filter";
 
-function generateTitleVariants(slug: string) {
+function generateVariants(slug: string) {
   const base = slug.replace(/-/g, " ");
 
   return [
     base,
     slug,
     base + " tv",
-    base + " online"
+    base + " online",
+    base.replace("season", ""),
+    base.replace(/\d+/g, "")
   ];
 }
 
@@ -18,20 +22,20 @@ export default defineEventHandler(async (event) => {
 
   if (event.method === "OPTIONS") return "";
 
-  const { slug, number } = getRouterParams(event) as { slug: string, number: string };
-  const { lang } = getQuery(event) as { lang?: string };
+  const { slug, number } = getRouterParams(event);
+  const { lang } = getQuery(event);
 
   const language = lang === "latino" ? "latino" : "sub";
 
-  const titles = generateTitleVariants(slug);
+  const variants = generateVariants(slug);
 
   let servers: any[] = [];
 
-  for (const t of titles) {
+  for (const title of variants) {
     const result = await getAllServers({
       slug,
       number: Number(number),
-      title: t,
+      title,
       lang: language
     });
 
