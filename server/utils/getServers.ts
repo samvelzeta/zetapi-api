@@ -1,4 +1,3 @@
-// 🔥 SOLO proxear si es necesario
 import {
   getAnimeFLVServers,
   getJKAnimeServers,
@@ -17,7 +16,6 @@ export async function getAllServers({
   title: string;
   lang: "sub" | "latino";
 }) {
-
   let servers: any[] = [];
 
   if (lang === "sub") {
@@ -37,25 +35,6 @@ export async function getAllServers({
 
     servers = [...lhd, ...mono];
   }
-
-  // 🔥 PROXY SOLO SI HAY URL
-  const proxyBase = "/api/proxy?url=";
-
-  servers = servers.map(s => ({
-    ...s,
-    embed: s?.embed
-      ? `${proxyBase}${encodeURIComponent(s.embed)}`
-      : s.embed
-  }));
-  const proxyBase = "/api/proxy?url=";
-
-servers = servers.map(s => ({
-  ...s,
-  embed: `${proxyBase}${encodeURIComponent(s.embed)}`
-}));
-
-  // 🔥 ELIMINAR DUPLICADOS
-  return Array.from(
-    new Map(servers.map(s => [s.embed, s])).values()
-  );
+//fix
+  return Array.from(new Map(servers.map(s => [s.embed, s])).values());
 }
