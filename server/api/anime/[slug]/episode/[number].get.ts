@@ -3,7 +3,7 @@ import { filterWorkingServers } from "~/server/utils/filter";
 
 export default defineEventHandler(async (event) => {
 
-  // 🌐 CORS
+ // 🔥 CORS FIX
   setHeader(event, "Access-Control-Allow-Origin", "*");
   setHeader(event, "Access-Control-Allow-Methods", "GET,OPTIONS");
   setHeader(event, "Access-Control-Allow-Headers", "Content-Type, x-api-key");
