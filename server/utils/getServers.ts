@@ -1,11 +1,16 @@
 import {
   getAnimeFLVServers,
   getJKAnimeServers,
+  getGogoServers,
+  getHiAnimeServers,
+  getAnimeFenixServers,
   getAnimeLHDServers,
-  getMonosChinosServers
+  getMonosChinosServers,
+  getTioAnimeServers,
+  getAnimeIDServers
 } from "./sources";
 
-// 🔥 generar variantes del nombre
+// variantes
 function generateVariants(title: string) {
   const base = title.toLowerCase();
 
@@ -18,7 +23,7 @@ function generateVariants(title: string) {
   ];
 }
 
-// 🔥 prioridad de servidores
+// prioridad
 function sortServers(servers: any[]) {
   const priority = ["streamwish", "filemoon", "streamtape"];
 
@@ -32,48 +37,60 @@ export async function getAllServers({
   number,
   title,
   lang
-}: {
-  slug: string;
-  number: number;
-  title: string;
-  lang: "sub" | "latino";
-}) {
+}: any) {
 
   let servers: any[] = [];
-
   const variants = generateVariants(title);
 
-  // 🔥 FASE 1 (core)
+  // =====================
+  // 🔥 JAPONES
+  // =====================
   if (lang === "sub") {
-    const [flv, jk] = await Promise.all([
+    const core = await Promise.all([
       getAnimeFLVServers(slug, number),
       getJKAnimeServers(slug, number)
     ]);
 
-    servers = [...flv, ...jk];
-  }
+    servers.push(...core.flat());
 
-  if (lang === "latino") {
-    const [lhd, mono] = await Promise.all([
-      getAnimeLHDServers(title),
-      getMonosChinosServers(title)
-    ]);
+    if (!servers.length) {
+      for (const v of variants) {
+        const fallback = await Promise.all([
+          getGogoServers(v),
+          getHiAnimeServers(v),
+          getAnimeFenixServers(v)
+        ]);
 
-    servers = [...lhd, ...mono];
-  }
-
-  // 🔥 FASE 2 (fallback si vacío)
-  if (!servers.length) {
-    for (const variant of variants) {
-      const fallback = await getAnimeLHDServers(variant);
-      if (fallback.length) {
-        servers.push(...fallback);
-        break;
+        servers.push(...fallback.flat());
       }
     }
   }
 
-  // 🔥 eliminar duplicados
+  // =====================
+  // 🔥 LATINO
+  // =====================
+  if (lang === "latino") {
+    const core = await Promise.all([
+      getAnimeLHDServers(title),
+      getMonosChinosServers(title)
+    ]);
+
+    servers.push(...core.flat());
+
+    if (!servers.length) {
+      for (const v of variants) {
+        const fallback = await Promise.all([
+          getTioAnimeServers(v),
+          getAnimeIDServers(v),
+          getAnimeFenixServers(v)
+        ]);
+
+        servers.push(...fallback.flat());
+      }
+    }
+  }
+
+  // limpiar duplicados
   const unique = Array.from(
     new Map(
       servers
