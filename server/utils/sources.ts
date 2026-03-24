@@ -2,7 +2,7 @@
 
 import { $fetch } from "ofetch";
 
-// =====================
+// =====================s
 function detectServer(url: string) {
   const u = url.toLowerCase();
 
