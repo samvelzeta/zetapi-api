@@ -2,8 +2,6 @@ import { $fetch } from "ofetch";
 import { getEpisode } from "animeflv-scraper";
 
 // =====================
-// 🔥 DETECTAR SERVIDOR
-// =====================
 function detectServer(url: string) {
   const u = url.toLowerCase();
 
@@ -13,56 +11,68 @@ function detectServer(url: string) {
   if (u.includes("dood")) return "doodstream";
   if (u.includes("ok.ru")) return "okru";
   if (u.includes("mp4upload")) return "mp4upload";
-  if (u.includes("yourupload")) return "yourupload";
   if (u.includes("jkanime")) return "jkanime";
 
   return "unknown";
 }
 
 // =====================
-// 🔥 EXTRAER LINKS
-// =====================
 function extractMatches(html: string, regex: RegExp) {
   return [...html.matchAll(regex)].map(m => m[1]);
 }
 
-// =====================
-// 🔥 EXTRAER IFRAMES
 // =====================
 function extractIframes(html: string) {
   return [...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)].map(m => m[1]);
 }
 
 // =====================
-// 🔥 VALIDAR EMBED REAL
+// 🔥 RESOLVER EMBED REAL (CLAVE)
 // =====================
-function getValidEmbed(iframes: string[]) {
-  return iframes.find(src =>
-    src.includes("stream") ||
-    src.includes("mp4") ||
-    src.includes("embed") ||
-    src.includes("player")
-  );
+async function resolveRealEmbed(url: string): Promise<string | null> {
+  try {
+    if (
+      url.includes("stream") ||
+      url.includes("filemoon") ||
+      url.includes("mp4") ||
+      url.includes("embed")
+    ) {
+      return url;
+    }
+
+    const html = await $fetch(url);
+    const iframes = extractIframes(html);
+
+    const valid = iframes.find(src =>
+      src.includes("stream") ||
+      src.includes("filemoon") ||
+      src.includes("mp4") ||
+      src.includes("embed")
+    );
+
+    return valid || null;
+  } catch {
+    return null;
+  }
 }
 
 // =======================================================
-// ===================== LATINO ===========================
+// 🔥 LATINO (ORDEN OPTIMIZADO)
 // =======================================================
 
-// 🔥 TIOANIME
 export async function getTioAnimeServers(query: string, number: number) {
   try {
     const search = await $fetch(`https://tioanime.com/buscar?q=${query}`);
     const matches = extractMatches(search, /href="\/anime\/([^"]+)"/g);
 
-    for (const slug of matches.slice(0, 6)) {
+    for (const slug of matches.slice(0, 4)) {
       const html = await $fetch(`https://tioanime.com/ver/${slug}-${number}`);
 
       const iframes = extractIframes(html);
-      const valid = getValidEmbed(iframes);
 
-      if (valid) {
-        return [{ name: detectServer(valid), embed: valid }];
+      for (const frame of iframes) {
+        const real = await resolveRealEmbed(frame);
+        if (real) return [{ name: detectServer(real), embed: real }];
       }
     }
 
@@ -72,20 +82,19 @@ export async function getTioAnimeServers(query: string, number: number) {
   }
 }
 
-// 🔥 ANIMEID
 export async function getAnimeIDServers(query: string, number: number) {
   try {
     const search = await $fetch(`https://animeid.tv/search?q=${query}`);
     const matches = extractMatches(search, /href="\/anime\/([^"]+)"/g);
 
-    for (const slug of matches.slice(0, 6)) {
+    for (const slug of matches.slice(0, 4)) {
       const html = await $fetch(`https://animeid.tv/ver/${slug}/${number}`);
 
       const iframes = extractIframes(html);
-      const valid = getValidEmbed(iframes);
 
-      if (valid) {
-        return [{ name: detectServer(valid), embed: valid }];
+      for (const frame of iframes) {
+        const real = await resolveRealEmbed(frame);
+        if (real) return [{ name: detectServer(real), embed: real }];
       }
     }
 
@@ -95,20 +104,19 @@ export async function getAnimeIDServers(query: string, number: number) {
   }
 }
 
-// 🔥 ANIMEFENIX
 export async function getAnimeFenixServers(query: string, number: number) {
   try {
     const search = await $fetch(`https://animefenix.com/search?q=${query}`);
     const matches = extractMatches(search, /href="\/anime\/([^"]+)"/g);
 
-    for (const slug of matches.slice(0, 6)) {
+    for (const slug of matches.slice(0, 4)) {
       const html = await $fetch(`https://animefenix.com/ver/${slug}/${number}`);
 
       const iframes = extractIframes(html);
-      const valid = getValidEmbed(iframes);
 
-      if (valid) {
-        return [{ name: detectServer(valid), embed: valid }];
+      for (const frame of iframes) {
+        const real = await resolveRealEmbed(frame);
+        if (real) return [{ name: detectServer(real), embed: real }];
       }
     }
 
@@ -118,20 +126,19 @@ export async function getAnimeFenixServers(query: string, number: number) {
   }
 }
 
-// 🔥 MONOSCHINOS
 export async function getMonosChinosServers(query: string, number: number) {
   try {
     const search = await $fetch(`https://monoschinos2.com/buscar?q=${query}`);
     const matches = extractMatches(search, /href="\/ver\/([^"]+)"/g);
 
-    for (const slug of matches.slice(0, 6)) {
+    for (const slug of matches.slice(0, 4)) {
       const html = await $fetch(`https://monoschinos2.com/ver/${slug}`);
 
       const iframes = extractIframes(html);
-      const valid = getValidEmbed(iframes);
 
-      if (valid) {
-        return [{ name: detectServer(valid), embed: valid }];
+      for (const frame of iframes) {
+        const real = await resolveRealEmbed(frame);
+        if (real) return [{ name: detectServer(real), embed: real }];
       }
     }
 
@@ -141,27 +148,15 @@ export async function getMonosChinosServers(query: string, number: number) {
   }
 }
 
-// 🔥 ANIMELHD (fallback simple)
+// 🔥 ANIMELHD → SOLO fallback final (PROBLEMA CONTROLADO)
 export async function getAnimeLHDServers(query: string, number: number) {
-  try {
-    const html = await $fetch(`https://animelhd.com/?s=${query}`);
-
-    const links = html.match(/https?:\/\/[^"]+/g) || [];
-
-    return links.map(link => ({
-      name: detectServer(link),
-      embed: link
-    }));
-  } catch {
-    return [];
-  }
+  return [];
 }
 
 // =======================================================
-// ===================== SUB ==============================
+// 🔥 SUB (RÁPIDO)
 // =======================================================
 
-// 🔥 ANIMEFLV (FUENTE PRINCIPAL)
 export async function getAnimeFLVServers(slug: string, number: number) {
   try {
     const res = await getEpisode(slug, number);
@@ -175,72 +170,16 @@ export async function getAnimeFLVServers(slug: string, number: number) {
   }
 }
 
-// 🔥 JKANIME (FIX REAL)
 export async function getJKAnimeServers(slug: string, number: number) {
   try {
     const html = await $fetch(`https://jkanime.net/${slug}/${number}/`);
 
     const iframes = extractIframes(html);
-    const valid = getValidEmbed(iframes);
 
-    if (valid) {
-      return [{
-        name: "jkanime",
-        embed: valid
-      }];
-    }
-
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-// 🔥 GOGO (fallback)
-export async function getGogoServers(query: string) {
-  try {
-    const html = await $fetch(`https://gogoanime.pe/search.html?keyword=${query}`);
-
-    const matches = extractMatches(html, /href="\/category\/([^"]+)"/g);
-
-    for (const slug of matches.slice(0, 3)) {
-      const epHtml = await $fetch(`https://gogoanime.pe/${slug}-episode-1`);
-
-      const iframes = extractIframes(epHtml);
-      const valid = getValidEmbed(iframes);
-
-      if (valid) {
-        return [{
-          name: detectServer(valid),
-          embed: valid
-        }];
-      }
-    }
-
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-// 🔥 HIANIME (fallback)
-export async function getHiAnimeServers(query: string) {
-  try {
-    const html = await $fetch(`https://hianime.to/search?keyword=${query}`);
-
-    const matches = extractMatches(html, /href="\/watch\/([^"]+)"/g);
-
-    for (const slug of matches.slice(0, 3)) {
-      const epHtml = await $fetch(`https://hianime.to/watch/${slug}`);
-
-      const iframes = extractIframes(epHtml);
-      const valid = getValidEmbed(iframes);
-
-      if (valid) {
-        return [{
-          name: detectServer(valid),
-          embed: valid
-        }];
+    for (const frame of iframes) {
+      const real = await resolveRealEmbed(frame);
+      if (real) {
+        return [{ name: "jkanime", embed: real }];
       }
     }
 
