@@ -14,7 +14,7 @@ import {
 // 🔥 CACHE EN MEMORIA
 // =====================
 const CACHE = new Map<string, { data: any[], time: number }>();
-const CACHE_TTL = 1000 * 60 * 5; // 5 minutos
+const CACHE_TTL = 1000 * 60 * 5; // 5 min
 
 function getCache(key: string) {
   const entry = CACHE.get(key);
@@ -36,14 +36,14 @@ function setCache(key: string, data: any[]) {
 }
 
 // =====================
-// 🔥 RESOLVER TITULOS (INTERNET)
+// 🔥 RESOLVER TITULOS (SOLO LATINO)
 // =====================
 async function resolveTitles(title: string) {
   const results = new Set<string>();
 
   try {
     const res: any = await $fetch(
-      `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(title)}&limit=3`
+      `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(title)}&limit=2`
     );
 
     for (const anime of res.data || []) {
@@ -81,13 +81,9 @@ function generateVariants(title: string) {
     clean.replace(/ /g, "_"),
     clean.replace(/season \d+/g, ""),
     clean.replace(/temporada \d+/g, ""),
-    clean.replace(/segunda temporada/g, ""),
-    clean.replace(/2nd season/g, ""),
     clean.replace(/\d+/g, ""),
     clean.split(":")[0],
-    clean.split("-")[0],
-    clean.replace("season", ""),
-    clean.replace("part", "")
+    clean.split("-")[0]
   ];
 }
 
@@ -124,26 +120,27 @@ export async function getAllServers({
 
   const cacheKey = `${title}-${number}-${lang}`;
 
-  // 🔥 CACHE
   const cached = getCache(cacheKey);
   if (cached) return cached;
 
   let servers: any[] = [];
 
-  // 🔥 variantes base
   const baseVariants = generateVariants(title);
 
-  // 🔥 nombres reales desde internet
-  const resolved = await resolveTitles(title);
+  // 🔥 SOLO LATINO USA JIKAN
+  let resolved: string[] = [];
+  if (lang === "latino") {
+    resolved = await resolveTitles(title);
+  }
 
-  // 🔥 unir y limitar
+  // 🔥 MENOS VARIANTES = MÁS RÁPIDO
   const variants = Array.from(new Set([
     ...baseVariants,
     ...resolved
-  ])).slice(0, 15);
+  ])).slice(0, 6);
 
   // =====================
-  // 🔥 JAPONES
+  // 🔥 SUB (ULTRA RÁPIDO)
   // =====================
   if (lang === "sub") {
     const core = await Promise.all([
@@ -153,7 +150,8 @@ export async function getAllServers({
 
     servers.push(...core.flat());
 
-    if (servers.length < 3) {
+    // 🔥 fallback solo si falla
+    if (servers.length < 2) {
       for (const v of variants) {
         const fallback = await Promise.all([
           getGogoServers(v),
@@ -163,24 +161,25 @@ export async function getAllServers({
 
         servers.push(...fallback.flat());
 
-        if (servers.length > 6) break;
+        // 🔥 corte temprano REAL
+        if (servers.length >= 3) break;
       }
     }
   }
 
   // =====================
-  // 🔥 LATINO (INTELIGENTE)
+  // 🔥 LATINO (ORDEN FIX)
   // =====================
   if (lang === "latino") {
 
     for (const v of variants) {
 
       const results = await Promise.all([
-        getTioAnimeServers(v, number),
-        getAnimeIDServers(v, number),
-        getAnimeFenixServers(v, number),
-        getMonosChinosServers(v, number),
-        getAnimeLHDServers(v, number)
+        getTioAnimeServers(v, number),     // 🥇
+        getAnimeIDServers(v, number),      // 🥈
+        getAnimeFenixServers(v, number),   // 🥉
+        getMonosChinosServers(v, number),  // fallback
+        getAnimeLHDServers(v, number)      // último (problemático)
       ]);
 
       const flat = results.flat().filter(Boolean);
@@ -188,8 +187,8 @@ export async function getAllServers({
       if (flat.length) {
         servers.push(...flat);
 
-        // 🔥 parar si ya hay suficientes
-        if (servers.length >= 4) break;
+        // 🔥 corte temprano
+        if (servers.length >= 3) break;
       }
     }
   }
@@ -207,7 +206,6 @@ export async function getAllServers({
 
   const final = sortServers(unique);
 
-  // 🔥 guardar cache
   setCache(cacheKey, final);
 
   return final;
