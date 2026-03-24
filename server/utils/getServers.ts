@@ -12,7 +12,7 @@ import {
 
 // ======================
 // 🔥 CACHE EN MEMORIA
-// ======================
+// ======================s
 const CACHE = new Map<string, { data: any[], time: number }>();
 const CACHE_TTL = 1000 * 60 * 5; // 5 min
 
