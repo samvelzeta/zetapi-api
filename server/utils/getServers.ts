@@ -1,107 +1,86 @@
-import { $fetch } from "ofetch";
 import {
   getAnimeFLVServers,
   getJKAnimeServers,
-  getAnimeFenixServers,
-  getTioAnimeServers,
-  getAnimeIDServers,
-  getAnimeYTServers
+  getAnimeLHDServers,
+  getMonosChinosServers
 } from "./sources";
 
-// =====================
-const CACHE = new Map<string, { data: any[], time: number }>();
-const TTL = 1000 * 60 * 5;
-
-// =====================
+// 🔥 generar variantes del nombre
 function generateVariants(title: string) {
-  const t = title.toLowerCase();
+  const base = title.toLowerCase();
 
   return [
-    t,
-    t.replace(/ /g, "-"),
-    t.replace(/ /g, "_"),
-    t.replace(/\d+/g, ""),
-    t.split(":")[0]
+    base,
+    base.replace(/ /g, "-"),
+    base.replace(/ /g, "_"),
+    base.replace("season", ""),
+    base.replace(/\d+/g, "")
   ];
 }
 
-// =====================
+// 🔥 prioridad de servidores
 function sortServers(servers: any[]) {
+  const priority = ["streamwish", "filemoon", "streamtape"];
+
   return servers.sort((a, b) => {
-    if (a.embed?.includes("jkanime")) return -1;
-    if (b.embed?.includes("jkanime")) return 1;
-
-    if (a.name === "streamwish") return -1;
-    if (b.name === "streamwish") return 1;
-
-    return 0;
+    return priority.indexOf(a.name) - priority.indexOf(b.name);
   });
 }
 
-// =====================
-export async function getAllServers({ slug, number, title, lang }: any) {
-
-  const key = `${slug}-${number}-${lang}`;
-
-  const cached = CACHE.get(key);
-  if (cached && Date.now() - cached.time < TTL) {
-    return cached.data;
-  }
+export async function getAllServers({
+  slug,
+  number,
+  title,
+  lang
+}: {
+  slug: string;
+  number: number;
+  title: string;
+  lang: "sub" | "latino";
+}) {
 
   let servers: any[] = [];
-  const variants = generateVariants(title).slice(0, 5);
 
-  // =====================
-  // 🔥 SUB
-  // =====================
+  const variants = generateVariants(title);
+
+  // 🔥 FASE 1 (core)
   if (lang === "sub") {
-    const core = await Promise.all([
+    const [flv, jk] = await Promise.all([
       getAnimeFLVServers(slug, number),
       getJKAnimeServers(slug, number)
     ]);
 
-    servers.push(...core.flat());
-
-    if (servers.length < 2) {
-      for (const v of variants) {
-        const res = await getAnimeFenixServers(v, number);
-        servers.push(...res);
-
-        if (servers.length >= 3) break;
-      }
-    }
+    servers = [...flv, ...jk];
   }
 
-  // =====================
-  // 🔥 LATINO
-  // =====================
   if (lang === "latino") {
+    const [lhd, mono] = await Promise.all([
+      getAnimeLHDServers(title),
+      getMonosChinosServers(title)
+    ]);
 
-    for (const v of variants) {
+    servers = [...lhd, ...mono];
+  }
 
-      const res = await Promise.all([
-        getAnimeYTServers(v, number), // 🥇
-        getTioAnimeServers(v, number),
-        getAnimeIDServers(v, number),
-        getAnimeFenixServers(v, number)
-      ]);
-
-      const flat = res.flat().filter(Boolean);
-
-      if (flat.length) {
-        servers.push(...flat);
+  // 🔥 FASE 2 (fallback si vacío)
+  if (!servers.length) {
+    for (const variant of variants) {
+      const fallback = await getAnimeLHDServers(variant);
+      if (fallback.length) {
+        servers.push(...fallback);
         break;
       }
     }
   }
 
+  // 🔥 eliminar duplicados
   const unique = Array.from(
-    new Map(servers.map(s => [s.embed, s])).values()
+    new Map(
+      servers
+        .filter(s => s?.embed)
+        .map(s => [s.embed, s])
+    ).values()
   );
 
-  const final = sortServers(unique);
-
-  CACHE.set(key, { data: final, time: Date.now() });
-
-  return final;
+  return sortServers(unique);
 }
