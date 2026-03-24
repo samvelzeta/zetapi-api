@@ -10,7 +10,7 @@ import {
   getAnimeIDServers
 } from "./sources";
 
-// =====================
+// ======================
 // 🔥 CACHE EN MEMORIA
 // =====================
 const CACHE = new Map<string, { data: any[], time: number }>();
