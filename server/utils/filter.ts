@@ -7,4 +7,4 @@ export async function filterWorkingServers(servers: any[]) {
     !s.embed.includes("banner")
   );
 }
-//s
+//
