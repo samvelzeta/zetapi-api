@@ -1,197 +1,124 @@
-import { $fetch } from "ofetch";
 import { getEpisode } from "animeflv-scraper";
 
-// =====================
+// 🔥 detectar nombre real del server (MEJORADO)
 function detectServer(url: string) {
+  if (!url) return "unknown";
+
   const u = url.toLowerCase();
 
   if (u.includes("streamwish")) return "streamwish";
   if (u.includes("filemoon")) return "filemoon";
   if (u.includes("streamtape")) return "streamtape";
+  if (u.includes("mp4upload")) return "mp4upload";
   if (u.includes("dood")) return "doodstream";
   if (u.includes("ok.ru")) return "okru";
-  if (u.includes("mp4upload")) return "mp4upload";
-  if (u.includes("jkanime")) return "jkanime";
 
-  return "unknown";
+  return "external";
 }
 
-// =====================
-function extractMatches(html: string, regex: RegExp) {
-  return [...html.matchAll(regex)].map(m => m[1]);
+// 🔥 filtro MUCHO más agresivo
+function isBadEmbed(url: string) {
+  if (!url) return true;
+
+  const u = url.toLowerCase();
+
+  return (
+    u.startsWith("data:") ||
+    u.includes(".jpg") ||
+    u.includes(".png") ||
+    u.includes(".gif") ||
+    u.includes("logo") ||
+    u.includes("banner") ||
+    u.includes("ads") ||
+    u.includes("doubleclick") ||
+    u.includes(".css") ||
+    u.includes(".js") ||
+    u.includes("json") ||
+    u.includes("schema") ||
+    u.includes("track")
+  );
 }
 
-// =====================
-function extractIframes(html: string) {
-  return [...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)].map(m => m[1]);
+// 🔥 SOLO aceptar cosas que parezcan video
+function isLikelyVideo(url: string) {
+  const u = url.toLowerCase();
+
+  return (
+    u.includes("embed") ||
+    u.includes("stream") ||
+    u.includes("player") ||
+    u.includes(".m3u8") ||
+    u.includes(".mp4")
+  );
 }
 
-// =====================
-// 🔥 RESOLVER EMBED REAL
-// =====================
-async function resolveEmbed(url: string): Promise<string | null> {
-  try {
-    if (
-      url.includes("stream") ||
-      url.includes("filemoon") ||
-      url.includes("mp4") ||
-      url.includes("embed")
-    ) return url;
-
-    const html = await $fetch(url);
-    const frames = extractIframes(html);
-
-    return frames.find(f =>
-      f.includes("stream") ||
-      f.includes("filemoon") ||
-      f.includes("mp4")
-    ) || null;
-
-  } catch {
-    return null;
-  }
-}
-
-// =======================================================
-// 🔥 LATINO (ORDEN NUEVO)
-// =======================================================
-
-// 🥇 AnimeYT (NUEVO)
-export async function getAnimeYTServers(query: string, number: number) {
-  try {
-    const search = await $fetch(`https://animeyt.tv/?s=${query}`);
-    const matches = extractMatches(search, /href="([^"]+)"/g);
-
-    for (const url of matches.slice(0, 3)) {
-      const html = await $fetch(url);
-
-      const frames = extractIframes(html);
-
-      for (const f of frames) {
-        const real = await resolveEmbed(f);
-        if (real) {
-          return [{ name: detectServer(real), embed: real }];
-        }
-      }
-    }
-
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-// 🥈 TioAnime
-export async function getTioAnimeServers(query: string, number: number) {
-  try {
-    const search = await $fetch(`https://tioanime.com/buscar?q=${query}`);
-    const matches = extractMatches(search, /href="\/anime\/([^"]+)"/g);
-
-    for (const slug of matches.slice(0, 4)) {
-      const html = await $fetch(`https://tioanime.com/ver/${slug}-${number}`);
-
-      const frames = extractIframes(html);
-
-      for (const f of frames) {
-        const real = await resolveEmbed(f);
-        if (real) {
-          return [{ name: detectServer(real), embed: real }];
-        }
-      }
-    }
-
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-// 🥉 AnimeID
-export async function getAnimeIDServers(query: string, number: number) {
-  try {
-    const search = await $fetch(`https://animeid.tv/search?q=${query}`);
-    const matches = extractMatches(search, /href="\/anime\/([^"]+)"/g);
-
-    for (const slug of matches.slice(0, 4)) {
-      const html = await $fetch(`https://animeid.tv/ver/${slug}/${number}`);
-
-      const frames = extractIframes(html);
-
-      for (const f of frames) {
-        const real = await resolveEmbed(f);
-        if (real) {
-          return [{ name: detectServer(real), embed: real }];
-        }
-      }
-    }
-
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-// fallback
-export async function getAnimeFenixServers(query: string, number: number) {
-  try {
-    const search = await $fetch(`https://animefenix.com/search?q=${query}`);
-    const matches = extractMatches(search, /href="\/anime\/([^"]+)"/g);
-
-    for (const slug of matches.slice(0, 3)) {
-      const html = await $fetch(`https://animefenix.com/ver/${slug}/${number}`);
-
-      const frames = extractIframes(html);
-
-      for (const f of frames) {
-        const real = await resolveEmbed(f);
-        if (real) {
-          return [{ name: detectServer(real), embed: real }];
-        }
-      }
-    }
-
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-// 🔴 desactivado (problemas)
-export async function getAnimeLHDServers() {
-  return [];
-}
-
-// =======================================================
-// 🔥 SUB
-// =======================================================
-
+// 🔹 ANIMEFLV (NO TOCADO + filtro)
 export async function getAnimeFLVServers(slug: string, number: number) {
   try {
     const res = await getEpisode(slug, number);
 
-    return (res?.servers || []).map((s: any) => ({
-      name: detectServer(s.url || s.embed),
-      embed: s.url || s.embed
-    }));
+    return (res?.servers || [])
+      .map((s: any) => ({
+        name: detectServer(s.url || s.embed),
+        embed: s.url || s.embed
+      }))
+      .filter(s => !isBadEmbed(s.embed));
   } catch {
     return [];
   }
 }
 
+// 🔹 JKANIME (MEJORADO)
 export async function getJKAnimeServers(slug: string, number: number) {
   try {
-    const html = await $fetch(`https://jkanime.net/${slug}/${number}/`);
+    const url = `https://jkanime.net/${slug}/${number}/`;
+    const html = await $fetch(url);
 
-    const frames = extractIframes(html);
+    const matches = html.match(/https?:\/\/[^"]+/g) || [];
 
-    for (const f of frames) {
-      const real = await resolveEmbed(f);
-      if (real) {
-        return [{ name: "jkanime", embed: real }];
-      }
-    }
-
+    return matches
+      .filter((link: string) => !isBadEmbed(link))
+      .filter((link: string) => isLikelyVideo(link))
+      .map((link: string) => ({
+        name: detectServer(link),
+        embed: link
+      }));
+  } catch {
     return [];
+  }
+}
+
+// 🔹 ANIMELHD
+export async function getAnimeLHDServers(query: string) {
+  try {
+    const html = await $fetch(`https://animelhd.com/?s=${encodeURIComponent(query)}`);
+    const links = html.match(/https?:\/\/[^"]+/g) || [];
+
+    return links
+      .filter(link => !isBadEmbed(link))
+      .filter(link => isLikelyVideo(link))
+      .map(link => ({
+        name: detectServer(link),
+        embed: link
+      }));
+  } catch {
+    return [];
+  }
+}
+
+// 🔹 MONOSCHINOS
+export async function getMonosChinosServers(query: string) {
+  try {
+    const html = await $fetch(`https://monoschinos2.com/search/${query}`);
+    const links = html.match(/https?:\/\/[^"]+/g) || [];
+
+    return links
+      .filter(link => !isBadEmbed(link))
+      .filter(link => isLikelyVideo(link))
+      .map(link => ({
+        name: detectServer(link),
+        embed: link
+      }));
   } catch {
     return [];
   }
