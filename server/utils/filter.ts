@@ -1,11 +1,26 @@
 export async function filterWorkingServers(servers: any[]) {
-  return servers.filter(s =>
-    s?.embed &&
-    !s.embed.includes(".css") &&
-    !s.embed.includes(".js") &&
-    !s.embed.includes("logo") &&
-    !s.embed.includes("banner")
-  );
-}
+  const results = await Promise.all(
+    servers.map(async (s) => {
+      try {
+        const res = await fetch(s.embed, { method: "HEAD" });
 
-//wwwwww
+        const type = res.headers.get("content-type") || "";
+
+        if (
+          type.includes("video") ||
+          type.includes("mpegurl") ||
+          type.includes("mp4") ||
+          s.embed.includes("embed") // fallback
+        ) {
+          return s;
+        }
+
+        return null;
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return results.filter(Boolean);
+}
