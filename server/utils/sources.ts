@@ -1,7 +1,7 @@
 import { $fetch } from "ofetch";
 import { getEpisode } from "animeflv-scraper";
 
-// =======================?
+// =======================
 
 function detectServer(url: string) {
   const u = url.toLowerCase();
