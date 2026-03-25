@@ -8,7 +8,7 @@ import {
 } from "./sources";
  import { filterWorkingServers } from "./filter";
 
-// =====================
+// ======================
 // 🔥 VARIANTES
 // =====================
 function expandTitle(title: string) {
