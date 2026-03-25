@@ -1,7 +1,7 @@
 import { getEpisode } from "animeflv-scraper";
 import { $fetch } from "ofetch";
 
-// =====================
+// ======================
 // 🔥 NORMALIZAR SERVIDOR
 // =====================
 function normalizeServer(name: string) {
