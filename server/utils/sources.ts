@@ -9,13 +9,14 @@ function normalizeServer(name: string) {
 
   const n = name.toLowerCase();
 
-  if (n.includes("streamwish")) return "streamwish";
+  if (n.includes("streamwish") || n.includes("sw")) return "streamwish";
   if (n.includes("filemoon")) return "filemoon";
   if (n.includes("streamtape")) return "streamtape";
   if (n.includes("mp4")) return "mp4upload";
-  if (n.includes("jkanime")) return "jkanime";
+  if (n.includes("ok.ru") || n.includes("okru")) return "okru";
+  if (n.includes("netu")) return "netu";
 
-  return "server"; // 🔥 CAMBIO CLAVE (antes external)
+  return "server"; // 🔥 ya no muestra jkanime ni fuente
 }
 
 // =====================
