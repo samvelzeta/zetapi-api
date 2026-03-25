@@ -6,6 +6,7 @@ import {
   getAnimeYTServers,
   getAnimeFenixServers
 } from "./sources";
+ import { filterWorkingServers } from "./filter";
 
 // =====================
 // 🔥 VARIANTES
@@ -90,7 +91,11 @@ export async function getAllServers({ slug, number, title, lang }) {
     }
   }
 
-  return sortServers(
-    Array.from(new Map(servers.map(s => [s.embed, s])).values())
-  );
-}
+
+const unique = Array.from(
+  new Map(servers.map(s => [s.embed, s])).values()
+);
+
+const filtered = await filterWorkingServers(unique);
+
+return sortServers(filtered);
