@@ -31,13 +31,13 @@ function expandTitle(title: string) {
 function sortServers(servers: any[]) {
   return servers.sort((a, b) => {
 
-    // 🥇 STREAMWISH
-    if (a.name === "streamwish") return -1;
-    if (b.name === "streamwish") return 1;
-
-    // 🥈 JKANIME
+    // 🥇 PRIMERO JKANIME (pero oculto en nombre)
     if (a.embed?.includes("jkanime")) return -1;
     if (b.embed?.includes("jkanime")) return 1;
+
+    // 🥈 STREAMWISH
+    if (a.name === "streamwish") return -1;
+    if (b.name === "streamwish") return 1;
 
     return 0;
   });
