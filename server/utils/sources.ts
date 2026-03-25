@@ -2,18 +2,20 @@ import { getEpisode } from "animeflv-scraper";
 import { $fetch } from "ofetch";
 
 // =====================
-// 🔥 DETECTAR SERVER
+// 🔥 NORMALIZAR SERVIDOR
 // =====================
-function detectServer(url: string) {
-  const u = url.toLowerCase();
+function normalizeServer(name: string) {
+  if (!name) return "server";
 
-  if (u.includes("streamwish")) return "streamwish";
-  if (u.includes("filemoon")) return "filemoon";
-  if (u.includes("streamtape")) return "streamtape";
-  if (u.includes("mp4")) return "mp4upload";
-  if (u.includes("jkanime")) return "jkanime";
+  const n = name.toLowerCase();
 
-  return "unknown";
+  if (n.includes("streamwish")) return "streamwish";
+  if (n.includes("filemoon")) return "filemoon";
+  if (n.includes("streamtape")) return "streamtape";
+  if (n.includes("mp4")) return "mp4upload";
+  if (n.includes("jkanime")) return "jkanime";
+
+  return "server"; // 🔥 CAMBIO CLAVE (antes external)
 }
 
 // =====================
@@ -24,57 +26,60 @@ function extractIframes(html: string) {
 }
 
 // =====================
-// 🔥 DEEP RESOLVE REAL
+// 🔥 DEEP RESOLVE RÁPIDO
 // =====================
-async function deepResolve(url: string, depth = 0): Promise<string | null> {
-  if (depth > 2) return null;
+async function deepResolveFast(urls: string[]) {
+  const checks = await Promise.allSettled(
+    urls.map(async (u) => {
 
-  if (
-    url.includes("stream") ||
-    url.includes("filemoon") ||
-    url.includes("mp4")
-  ) {
-    return url;
-  }
+      if (
+        u.includes("stream") ||
+        u.includes("filemoon") ||
+        u.includes("mp4")
+      ) return u;
 
-  try {
-    const html = await $fetch(url);
-    const frames = extractIframes(html);
+      try {
+        const html = await $fetch(u, { timeout: 4000 });
+        const frames = extractIframes(html);
 
-    for (const f of frames) {
-      const result = await deepResolve(f, depth + 1);
-      if (result) return result;
-    }
+        return frames.find(f =>
+          f.includes("stream") ||
+          f.includes("mp4")
+        ) || null;
 
-    return null;
-  } catch {
-    return null;
-  }
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return checks.find(r => r.status === "fulfilled" && r.value)?.value || null;
 }
 
 // =======================================================
-// 🔥 LATINO (TOP 5)
+// 🔥 LATINO (OPTIMIZADO)
 // =======================================================
 
 // 🥇 TIOANIME
 export async function getTioAnimeServers(query: string, number: number) {
   try {
-    const html = await $fetch(`https://tioanime.com/buscar?q=${query}`);
-    const matches = [...html.matchAll(/href="\/anime\/([^"]+)"/g)];
+    const search = await $fetch(`https://tioanime.com/buscar?q=${query}`);
 
-    for (const m of matches.slice(0, 3)) {
-      const slug = m[1];
-      const ep = await $fetch(`https://tioanime.com/ver/${slug}-${number}`);
+    const match = search.match(/href="\/anime\/([^"]+)"/);
+    if (!match) return [];
 
-      const frames = extractIframes(ep);
+    const slug = match[1];
 
-      for (const f of frames) {
-        const real = await deepResolve(f);
-        if (real) return [{ name: detectServer(real), embed: real }];
-      }
-    }
+    const ep = await $fetch(`https://tioanime.com/ver/${slug}-${number}`);
 
-    return [];
+    const frames = extractIframes(ep);
+
+    const real = await deepResolveFast(frames);
+
+    if (!real) return [];
+
+    return [{ name: normalizeServer(real), embed: real }];
+
   } catch {
     return [];
   }
@@ -83,22 +88,23 @@ export async function getTioAnimeServers(query: string, number: number) {
 // 🥈 ANIMEID
 export async function getAnimeIDServers(query: string, number: number) {
   try {
-    const html = await $fetch(`https://animeid.tv/search?q=${query}`);
-    const matches = [...html.matchAll(/href="\/anime\/([^"]+)"/g)];
+    const search = await $fetch(`https://animeid.tv/search?q=${query}`);
 
-    for (const m of matches.slice(0, 3)) {
-      const slug = m[1];
-      const ep = await $fetch(`https://animeid.tv/ver/${slug}/${number}`);
+    const match = search.match(/href="\/anime\/([^"]+)"/);
+    if (!match) return [];
 
-      const frames = extractIframes(ep);
+    const slug = match[1];
 
-      for (const f of frames) {
-        const real = await deepResolve(f);
-        if (real) return [{ name: detectServer(real), embed: real }];
-      }
-    }
+    const ep = await $fetch(`https://animeid.tv/ver/${slug}/${number}`);
 
-    return [];
+    const frames = extractIframes(ep);
+
+    const real = await deepResolveFast(frames);
+
+    if (!real) return [];
+
+    return [{ name: normalizeServer(real), embed: real }];
+
   } catch {
     return [];
   }
@@ -108,21 +114,20 @@ export async function getAnimeIDServers(query: string, number: number) {
 export async function getAnimeYTServers(query: string, number: number) {
   try {
     const html = await $fetch(`https://animeyt.tv/?s=${query}`);
-    const links = html.match(/href="([^"]+)"/g) || [];
 
-    for (const l of links.slice(0, 3)) {
-      const url = l.replace('href="', "").replace('"', "");
-      const page = await $fetch(url);
+    const match = html.match(/href="([^"]+)"/);
+    if (!match) return [];
 
-      const frames = extractIframes(page);
+    const page = await $fetch(match[1]);
 
-      for (const f of frames) {
-        const real = await deepResolve(f);
-        if (real) return [{ name: detectServer(real), embed: real }];
-      }
-    }
+    const frames = extractIframes(page);
 
-    return [];
+    const real = await deepResolveFast(frames);
+
+    if (!real) return [];
+
+    return [{ name: normalizeServer(real), embed: real }];
+
   } catch {
     return [];
   }
@@ -132,36 +137,22 @@ export async function getAnimeYTServers(query: string, number: number) {
 export async function getAnimeFenixServers(query: string, number: number) {
   try {
     const html = await $fetch(`https://animefenix.com/search?q=${query}`);
-    const matches = [...html.matchAll(/href="\/anime\/([^"]+)"/g)];
 
-    for (const m of matches.slice(0, 3)) {
-      const slug = m[1];
-      const ep = await $fetch(`https://animefenix.com/ver/${slug}/${number}`);
+    const match = html.match(/href="\/anime\/([^"]+)"/);
+    if (!match) return [];
 
-      const frames = extractIframes(ep);
+    const slug = match[1];
 
-      for (const f of frames) {
-        const real = await deepResolve(f);
-        if (real) return [{ name: detectServer(real), embed: real }];
-      }
-    }
+    const ep = await $fetch(`https://animefenix.com/ver/${slug}/${number}`);
 
-    return [];
-  } catch {
-    return [];
-  }
-}
+    const frames = extractIframes(ep);
 
-// 🟡 ANIMEONLINENINJA
-export async function getAnimeOnlineNinjaServers(query: string) {
-  try {
-    const html = await $fetch(`https://ww3.animeonlineninja.com/?s=${query}`);
-    const links = html.match(/href="([^"]+)"/g) || [];
+    const real = await deepResolveFast(frames);
 
-    return links.map(l => ({
-      name: "ninja",
-      embed: l
-    }));
+    if (!real) return [];
+
+    return [{ name: normalizeServer(real), embed: real }];
+
   } catch {
     return [];
   }
@@ -174,7 +165,12 @@ export async function getAnimeOnlineNinjaServers(query: string) {
 export async function getAnimeFLVServers(slug: string, number: number) {
   try {
     const res = await getEpisode(slug, number);
-    return res?.servers || [];
+
+    return (res?.servers || []).map((s: any) => ({
+      name: normalizeServer(s.server || s.name),
+      embed: s.url || s.embed
+    }));
+
   } catch {
     return [];
   }
@@ -183,14 +179,15 @@ export async function getAnimeFLVServers(slug: string, number: number) {
 export async function getJKAnimeServers(slug: string, number: number) {
   try {
     const html = await $fetch(`https://jkanime.net/${slug}/${number}/`);
-    const matches = html.match(/https?:\/\/[^"]+/g) || [];
 
-    return matches.map(link => ({
+    const links = html.match(/https?:\/\/[^"]+/g) || [];
+
+    return links.map(link => ({
       name: "jkanime",
       embed: link
     }));
+
   } catch {
     return [];
   }
 }
-//d
