@@ -4,14 +4,54 @@ import {
   getTioAnimeServers,
   getAnimeIDServers,
   getAnimeYTServers,
-  getAnimeFenixServers,
-  getAnimeOnlineNinjaServers
+  getAnimeFenixServers
 } from "./sources";
 
+// =====================
+// 🔥 VARIANTES
+// =====================
+function expandTitle(title: string) {
+  const t = title.toLowerCase();
+
+  return [
+    t,
+    t.replace(/ /g, "-"),
+    t.replace(/ /g, ""),
+    t.replace(/\d+/g, ""),
+    t.split(":")[0],
+    t.replace("season", ""),
+    t.replace("segunda temporada", "")
+  ];
+}
+
+// =====================
+// 🔥 PRIORIDAD
+// =====================
+function sortServers(servers: any[]) {
+  return servers.sort((a, b) => {
+
+    // 🥇 STREAMWISH
+    if (a.name === "streamwish") return -1;
+    if (b.name === "streamwish") return 1;
+
+    // 🥈 JKANIME
+    if (a.embed?.includes("jkanime")) return -1;
+    if (b.embed?.includes("jkanime")) return 1;
+
+    return 0;
+  });
+}
+
+// =====================
+// 🔥 MAIN
+// =====================
 export async function getAllServers({ slug, number, title, lang }) {
+
   let servers: any[] = [];
 
-  // 🔥 SUB
+  // =====================
+  // 🔥 SUB (RÁPIDO)
+  // =====================
   if (lang === "sub") {
     const [flv, jk] = await Promise.all([
       getAnimeFLVServers(slug, number),
@@ -19,20 +59,38 @@ export async function getAllServers({ slug, number, title, lang }) {
     ]);
 
     servers = [...flv, ...jk];
+
+    return sortServers(
+      Array.from(new Map(servers.map(s => [s.embed, s])).values())
+    );
   }
 
-  // 🔥 LATINO (TOP 5)
+  // =====================
+  // 🔥 LATINO (OPTIMIZADO)
+  // =====================
   if (lang === "latino") {
-    const results = await Promise.all([
-      getTioAnimeServers(title, number),
-      getAnimeIDServers(title, number),
-      getAnimeYTServers(title, number),
-      getAnimeFenixServers(title, number),
-      getAnimeOnlineNinjaServers(title)
-    ]);
 
-    servers = results.flat().filter(Boolean);
+    const variants = expandTitle(title).slice(0, 5);
+
+    for (const v of variants) {
+
+      const results = await Promise.all([
+        getTioAnimeServers(v, number),
+        getAnimeIDServers(v, number),
+        getAnimeYTServers(v, number),
+        getAnimeFenixServers(v, number)
+      ]);
+
+      const flat = results.flat().filter(Boolean);
+
+      if (flat.length) {
+        servers.push(...flat);
+        break; // 🔥 CORTE TEMPRANO
+      }
+    }
   }
 
-  return Array.from(new Map(servers.map(s => [s.embed, s])).values());
+  return sortServers(
+    Array.from(new Map(servers.map(s => [s.embed, s])).values())
+  );
 }
