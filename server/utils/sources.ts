@@ -3,7 +3,7 @@ import { $fetch } from "ofetch";
 
 // ======================
 // 🔥 NORMALIZAR SERVIDOR
-// ==========================
+// =======================
 function normalizeServer(name: string) {
   if (!name) return "server";
 
