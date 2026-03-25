@@ -10,7 +10,7 @@ import {
 
 // ======================
 // 🔥 VARIANTESs
-// =====================
+// ==================================================0
 function expandTitle(title: string) {
   const t = title.toLowerCase();
 
