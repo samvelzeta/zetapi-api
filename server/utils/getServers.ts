@@ -9,7 +9,7 @@ import {
  import { filterWorkingServers } from "./filter";
 
 // ======================
-// 🔥 VARIANTES
+// 🔥 VARIANTESs
 // =====================
 function expandTitle(title: string) {
   const t = title.toLowerCase();
