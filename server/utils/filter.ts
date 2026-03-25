@@ -29,7 +29,7 @@ export async function filterWorkingServers(servers: any[]) {
 
     const url = s.embed.toLowerCase();
 
-    // ❌ basura directas=================================
+    // ❌ basura directas=====================
     if (BAD.some(b => url.includes(b))) return false;
 
     // ✔ buenos directos
