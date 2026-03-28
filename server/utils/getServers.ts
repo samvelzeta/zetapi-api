@@ -1,28 +1,53 @@
 import {
   getAnimeFLVServers,
   getJKAnimeServers,
+  getLatanimeServers,
   getTioAnimeServers,
   getAnimeIDServers,
   getAnimeYTServers,
   getAnimeFenixServers
 } from "./sources";
- import { filterWorkingServers } from "./filter";
+
+import { filterWorkingServers } from "./filter";
 
 // ======================
-// 🔥 VARIANTESs
-// =====================================
-function expandTitle(title: string) {
-  const t = title.toLowerCase();
+// 🧠 SUPER NORMALIZADOR
+// ======================
+function normalizeTitle(title: string) {
+  return title
+    .toLowerCase()
+    .replace(/[:\-]/g, " ")
+    .replace(/\b(season|temporada|part|parte|capitulo|episode)\b/g, "")
+    .replace(/\d+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  return [
-    t,
-    t.replace(/ /g, "-"),
-    t.replace(/ /g, ""),
-    t.replace(/\d+/g, ""),
-    t.split(":")[0],
-    t.replace("season", ""),
-    t.replace("segunda temporada", "")
-  ];
+// ======================
+// 🧠 EXPANSIÓN MASIVA
+// ======================
+function expandTitle(title: string) {
+  const base = normalizeTitle(title);
+
+  const variants = new Set<string>();
+
+  variants.add(base);
+
+  variants.add(base.replace(/ /g, "-"));
+  variants.add(base.replace(/ /g, ""));
+  variants.add(base.replace(/ /g, "_"));
+
+  variants.add(base + " anime");
+  variants.add(base + " online");
+  variants.add(base + " latino");
+  variants.add(base + " sub");
+
+  // quitar palabras comunes
+  variants.add(base.replace("the", ""));
+  variants.add(base.replace("no", ""));
+  variants.add(base.replace("of", ""));
+
+  return Array.from(variants).filter(v => v.length > 2);
 }
 
 // =====================
@@ -31,13 +56,17 @@ function expandTitle(title: string) {
 function sortServers(servers: any[]) {
   return servers.sort((a, b) => {
 
-    // 🥇 PRIMERO JKANIME (pero oculto en nombre)
-    if (a.embed?.includes("jkanime")) return -1;
-    if (b.embed?.includes("jkanime")) return 1;
+    // 🥇 m3u8 primero
+    if (a.embed?.includes(".m3u8")) return -1;
+    if (b.embed?.includes(".m3u8")) return 1;
 
-    // 🥈 STREAMWISH
+    // 🥈 streamwish
     if (a.name === "streamwish") return -1;
     if (b.name === "streamwish") return 1;
+
+    // 🥉 mp4
+    if (a.embed?.includes(".mp4")) return -1;
+    if (b.embed?.includes(".mp4")) return 1;
 
     return 0;
   });
@@ -46,7 +75,12 @@ function sortServers(servers: any[]) {
 // =====================
 // 🔥 MAIN
 // =====================
-export async function getAllServers({ slug, number, title, lang }) {
+export async function getAllServers({
+  slug,
+  number,
+  title,
+  lang
+}: any) {
 
   let servers: any[] = [];
 
@@ -54,6 +88,7 @@ export async function getAllServers({ slug, number, title, lang }) {
   // 🔥 SUB (RÁPIDO)
   // =====================
   if (lang === "sub") {
+
     const [flv, jk] = await Promise.all([
       getAnimeFLVServers(slug, number),
       getJKAnimeServers(slug, number)
@@ -67,19 +102,27 @@ export async function getAllServers({ slug, number, title, lang }) {
   }
 
   // =====================
-  // 🔥 LATINO (OPTIMIZADO)
+  // 🔥 LATINO (ULTRA)
   // =====================
   if (lang === "latino") {
 
-    const variants = expandTitle(title).slice(0, 5);
+    const variants = expandTitle(title).slice(0, 10);
 
     for (const v of variants) {
 
       const results = await Promise.all([
+
+        // 🥇 PRIORIDAD
+        getLatanimeServers(v, number),
+
+        // 🥈 CORE
         getTioAnimeServers(v, number),
-        getAnimeIDServers(v, number),
         getAnimeYTServers(v, number),
-        getAnimeFenixServers(v, number)
+        getAnimeFenixServers(v, number),
+
+        // 🥉 APOYO
+        getAnimeIDServers(v, number)
+
       ]);
 
       const flat = results.flat().filter(Boolean);
@@ -91,11 +134,14 @@ export async function getAllServers({ slug, number, title, lang }) {
     }
   }
 
+  // =====================
+  // 🔥 LIMPIEZA FINAL
+  // =====================
+  const unique = Array.from(
+    new Map(servers.map(s => [s.embed, s])).values()
+  );
 
-const unique = Array.from(
-  new Map(servers.map(s => [s.embed, s])).values()
-);
+  const filtered = await filterWorkingServers(unique);
 
-const filtered = await filterWorkingServers(unique);
-
-return sortServers(filtered);
+  return sortServers(filtered);
+}
