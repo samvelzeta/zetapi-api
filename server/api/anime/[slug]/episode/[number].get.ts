@@ -1,39 +1,5 @@
 import { getAllServers } from "../../../../utils/getServers";
-
-// ======================
-// 🔥 CACHE CONFIG
-// ======================
-const CACHE_TTL = 1000 * 60 * 60 * 6; // 6 horas
-
-// ======================
-// 🔥 CACHE FETCH
-// ======================
-async function getCache(slug: string, number: number, lang: string) {
-
-  try {
-
-    const url = `https://raw.githubusercontent.com/samvelzeta/zetanime-cache/main/data/${slug}/${number}-${lang}.json`;
-
-    const res = await fetch(url);
-
-    if (!res.ok) return null;
-
-    const json = await res.json();
-
-    // 🔥 validar expiración
-    if (Date.now() - json.updated > CACHE_TTL) {
-      return null;
-    }
-
-    // 🔥 validar contenido
-    if (!json?.sources?.length) return null;
-
-    return json;
-
-  } catch {
-    return null;
-  }
-}
+import { getCache } from "../../../../utils/cache";
 
 // ======================
 // 🔥 VALIDAR SERVERS
@@ -48,7 +14,6 @@ function validateServers(servers: any[]) {
 
     const url = s.embed.toLowerCase();
 
-    // 🔥 evitar basura
     if (
       url.includes("error") ||
       url.includes("blank") ||
@@ -74,21 +39,43 @@ export default defineEventHandler(async (event) => {
   const language = lang === "latino" ? "latino" : "sub";
 
   // ======================
-  // 🔥 INTENTAR CACHE
+  // 🔥 1. CACHE (PRIORIDAD TOTAL)
   // ======================
-  const cached = await getCache(slug, number, language);
+  const cached = await getCache(slug, Number(number), language);
 
-  if (cached) {
-    return {
-      success: true,
-      cached: true,
-      total: cached.sources.length,
-      data: cached
-    };
+  if (cached && cached.sources) {
+
+    const servers = [
+      ...(cached.sources.hls || []).map((url: string) => ({
+        name: "cache-hls",
+        embed: url
+      })),
+      ...(cached.sources.mp4 || []).map((url: string) => ({
+        name: "cache-mp4",
+        embed: url
+      })),
+      ...(cached.sources.embed || []).map((url: string) => ({
+        name: "cache-embed",
+        embed: url
+      }))
+    ];
+
+    if (servers.length) {
+      return {
+        success: true,
+        source: "cache",
+        total: servers.length,
+        data: {
+          slug,
+          number: Number(number),
+          servers
+        }
+      };
+    }
   }
 
   // ======================
-  // 🔥 SCRAPING
+  // 🔥 2. SCRAPER NORMAL
   // ======================
   let servers = await getAllServers({
     slug,
@@ -100,7 +87,7 @@ export default defineEventHandler(async (event) => {
   servers = validateServers(servers);
 
   // ======================
-  // 🔥 FALLBACK (IMPORTANTE)
+  // 🔥 3. FALLBACK LATINO → SUB
   // ======================
   if (!servers.length && language === "latino") {
 
@@ -116,7 +103,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     success: true,
-    cached: false,
+    source: "scraper",
     total: servers.length,
     data: {
       slug,
