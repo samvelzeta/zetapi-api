@@ -1,114 +1,149 @@
-import { getAllServers } from "../../../../utils/getServers";
-import { getCache } from "../../../../utils/cache";
+import {
+  getAnimeFLVServers,
+  getJKAnimeServers,
+  getLatanimeServers,
+  getTioAnimeServers,
+  getAnimeIDServers,
+  getAnimeYTServers,
+  getAnimeFenixServers
+} from "./sources";
+
+import { filterWorkingServers } from "./filter";
+import { expandSlugVariants } from "./slugResolver";
 
 // ======================
-// 🔥 VALIDAR SERVERS
+// 🔥 SCORE DE SERVIDORES
 // ======================
-function validateServers(servers: any[]) {
+function scoreServer(server: any) {
 
-  if (!servers?.length) return [];
+  const url = (server.embed || "").toLowerCase();
 
-  return servers.filter(s => {
+  let score = 0;
 
-    if (!s?.embed) return false;
+  // 🥇 DIRECTOS (TOP)
+  if (url.includes(".m3u8")) score += 100;
+  if (url.includes(".mp4")) score += 90;
 
-    const url = s.embed.toLowerCase();
+  // 🥈 SERVERS LIMPIOS
+  if (url.includes("filemoon")) score += 80;
+  if (url.includes("streamtape")) score += 75;
+  if (url.includes("ok.ru")) score += 70;
 
-    if (
-      url.includes("error") ||
-      url.includes("blank") ||
-      url.length < 20
-    ) return false;
+  // 🥉 JKAnime (muy bueno)
+  if (server.name === "jkanime") score += 85;
 
-    return true;
-  });
+  // 🔻 STREAMWISH (ÚLTIMO SIEMPRE)
+  if (url.includes("streamwish")) score -= 50;
+
+  return score;
+}
+
+// ======================
+// 🔥 ORDEN FINAL
+// ======================
+function sortServers(servers: any[]) {
+  return servers.sort((a, b) => scoreServer(b) - scoreServer(a));
+}
+
+// ======================
+// 🔥 PIPELINE GLOBAL
+// ======================
+async function processServers(raw: any[]) {
+
+  if (!raw?.length) return [];
+
+  // 🔥 eliminar duplicados
+  const unique = Array.from(
+    new Map(raw.map(s => [s.embed, s])).values()
+  );
+
+  // 🔥 filtro base
+  const filtered = await filterWorkingServers(unique);
+
+  // 🔥 ordenar por calidad
+  const sorted = sortServers(filtered);
+
+  return sorted;
 }
 
 // ======================
 // 🔥 MAIN
 // ======================
-export default defineEventHandler(async (event) => {
+export async function getAllServers({
+  slug,
+  number,
+  title,
+  lang
+}: any) {
 
-  setHeader(event, "Access-Control-Allow-Origin", "*");
+  let servers: any[] = [];
 
-  if (event.method === "OPTIONS") return "";
+  const safeTitle = title || slug;
 
-  const { slug, number } = getRouterParams(event);
-  const { lang } = getQuery(event);
+  // =====================
+  // 🔥 SUB (RÁPIDO Y DIRECTO)
+  // =====================
+  if (lang === "sub") {
 
-  const language = lang === "latino" ? "latino" : "sub";
+    const [jk, flv] = await Promise.all([
+      getJKAnimeServers(slug, number),
+      getAnimeFLVServers(slug, number)
+    ]);
 
-  // ======================
-  // 🔥 1. CACHE (PRIORIDAD TOTAL)
-  // ======================
-  const cached = await getCache(slug, Number(number), language);
+    servers = [...jk, ...flv];
 
-  if (cached && cached.sources) {
-
-    const servers = [
-      ...(cached.sources.hls || []).map((url: string) => ({
-        name: "cache-hls",
-        embed: url
-      })),
-      ...(cached.sources.mp4 || []).map((url: string) => ({
-        name: "cache-mp4",
-        embed: url
-      })),
-      ...(cached.sources.embed || []).map((url: string) => ({
-        name: "cache-embed",
-        embed: url
-      }))
-    ];
-
-    if (servers.length) {
-      return {
-        success: true,
-        source: "cache",
-        total: servers.length,
-        data: {
-          slug,
-          number: Number(number),
-          servers
-        }
-      };
-    }
+    return await processServers(servers);
   }
 
-  // ======================
-  // 🔥 2. SCRAPER NORMAL
-  // ======================
-  let servers = await getAllServers({
-    slug,
-    number: Number(number),
-    title: slug,
-    lang: language
-  });
+  // =====================
+  // 🔥 LATINO (INTELIGENTE)
+  // =====================
+  if (lang === "latino") {
 
-  servers = validateServers(servers);
+    const variants = expandSlugVariants(safeTitle).slice(0, 15);
 
-  // ======================
-  // 🔥 3. FALLBACK LATINO → SUB
-  // ======================
-  if (!servers.length && language === "latino") {
+    for (const v of variants) {
 
-    servers = await getAllServers({
-      slug,
-      number: Number(number),
-      title: slug,
-      lang: "sub"
-    });
+      const results = await Promise.all([
 
-    servers = validateServers(servers);
+        // 🥇 PRIORIDAD LATINO REAL
+        getLatanimeServers(v, number),
+
+        // 🥈 FUENTES PRINCIPALES
+        getTioAnimeServers(v, number),
+        getAnimeYTServers(v, number),
+        getAnimeFenixServers(v, number),
+
+        // 🥉 APOYO
+        getAnimeIDServers(v, number)
+      ]);
+
+      const flat = results.flat().filter(Boolean);
+
+      if (flat.length) {
+
+        servers.push(...flat);
+
+        // 🔥 corte temprano inteligente
+        if (flat.length >= 3) break;
+      }
+    }
+
+    // =====================
+    // 🔥 FALLBACK LATINO → SUB
+    // =====================
+    if (!servers.length) {
+
+      const [jk, flv] = await Promise.all([
+        getJKAnimeServers(slug, number),
+        getAnimeFLVServers(slug, number)
+      ]);
+
+      servers = [...jk, ...flv];
+    }
+
+    return await processServers(servers);
   }
 
-  return {
-    success: true,
-    source: "scraper",
-    total: servers.length,
-    data: {
-      slug,
-      number: Number(number),
-      servers
-    }
-  };
-});
+  return [];
+}
