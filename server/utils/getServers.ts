@@ -9,46 +9,7 @@ import {
 } from "./sources";
 
 import { filterWorkingServers } from "./filter";
-
-// ======================
-// 🧠 NORMALIZADOR PRO
-// ======================
-function normalizeTitle(title: string) {
-  return title
-    .toLowerCase()
-    .replace(/[:\-]/g, " ")
-    .replace(/\b(season|temporada|part|parte|capitulo|episode)\b/g, "")
-    .replace(/\d+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-// ======================
-// 🧠 EXPANSIÓN INTELIGENTE
-// ======================
-function expandTitle(title: string) {
-
-  const base = normalizeTitle(title);
-  const variants = new Set<string>();
-
-  variants.add(base);
-  variants.add(base.replace(/ /g, "-"));
-  variants.add(base.replace(/ /g, ""));
-  variants.add(base.replace(/ /g, "_"));
-
-  variants.add(base + " anime");
-  variants.add(base + " online");
-  variants.add(base + " latino");
-  variants.add(base + " sub");
-  variants.add(base + " castellano");
-  variants.add(base + " hd");
-
-  variants.add(base.replace("the", ""));
-  variants.add(base.replace("no", ""));
-  variants.add(base.replace("of", ""));
-
-  return Array.from(variants).filter(v => v.length > 2);
-}
+import { expandSlugVariants } from "./slugResolver";
 
 // ======================
 // 🔥 SCORE DE SERVIDORES
@@ -117,8 +78,10 @@ export async function getAllServers({
 
   let servers: any[] = [];
 
+  const safeTitle = title || slug;
+
   // =====================
-  // 🔥 SUB (RÁPIDO)
+  // 🔥 SUB (RÁPIDO Y DIRECTO)
   // =====================
   if (lang === "sub") {
 
@@ -133,20 +96,20 @@ export async function getAllServers({
   }
 
   // =====================
-  // 🔥 LATINO (ULTRA PRO)
+  // 🔥 LATINO (INTELIGENTE)
   // =====================
   if (lang === "latino") {
 
-    const variants = expandTitle(title).slice(0, 10);
+    const variants = expandSlugVariants(safeTitle).slice(0, 15);
 
     for (const v of variants) {
 
       const results = await Promise.all([
 
-        // 🥇 LATINO REAL
+        // 🥇 PRIORIDAD LATINO REAL
         getLatanimeServers(v, number),
 
-        // 🥈 FUENTES
+        // 🥈 FUENTES PRINCIPALES
         getTioAnimeServers(v, number),
         getAnimeYTServers(v, number),
         getAnimeFenixServers(v, number),
@@ -158,9 +121,10 @@ export async function getAllServers({
       const flat = results.flat().filter(Boolean);
 
       if (flat.length) {
+
         servers.push(...flat);
 
-        // 🔥 corte temprano si hay buenos
+        // 🔥 corte temprano inteligente
         if (flat.length >= 3) break;
       }
     }
