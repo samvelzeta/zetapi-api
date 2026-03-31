@@ -26,16 +26,16 @@ export async function filterWorkingServers(servers: any[]) {
 
     const url = s.embed.toLowerCase();
 
-    // ❌ basura
+    // ❌ basura real
     if (BAD.some(b => url.includes(b))) return false;
 
-    // ✔ directos siempre pasan
+    // ✔ directos SIEMPRE
     if (url.includes(".m3u8") || url.includes(".mp4")) return true;
 
-    // ✔ buenos conocidos
+    // ✔ servers conocidos
     if (GOOD.some(g => url.includes(g))) return true;
 
-    // ✔ fallback
+    // ✔ embeds válidos
     if (
       url.includes("embed") ||
       url.includes("player")
@@ -44,7 +44,7 @@ export async function filterWorkingServers(servers: any[]) {
     return false;
   });
 
-  // 🔥 fallback si filtró todo
+  // 🔥 fallback si se filtró todo
   if (!clean.length) {
     return servers.slice(0, 3);
   }
