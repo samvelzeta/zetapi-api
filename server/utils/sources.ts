@@ -2,17 +2,23 @@ import * as cheerio from "cheerio";
 import { resolveServer } from "./resolver";
 
 // ==========================
-// 🔥 PROXY BASE (OBLIGATORIO)
-// ==========================
-const PROXY = "https://zetapi-api.samvelzeta.workers.dev/?url=";
-
-// ==========================
-// 🔥 FETCH HTML CON PROXY
+// 🔥 FETCH HTML REAL (SIN LOOP)
 // ==========================
 async function fetchHtml(url: string): Promise<string | null> {
 
   try {
-    const res = await fetch(PROXY + encodeURIComponent(url));
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept":
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": new URL(url).origin,
+        "Origin": new URL(url).origin
+      }
+    });
+
     const text = await res.text();
 
     return text;
@@ -38,7 +44,7 @@ function extractIframe(html: string): string[] {
 }
 
 // ==========================
-// 🔥 EXTRAER LINKS GENERALES
+// 🔥 EXTRAER LINKS
 // ==========================
 function extractLinks(html: string): string[] {
 
@@ -76,7 +82,7 @@ function cleanUrls(urls: string[]): string[] {
 }
 
 // ==========================
-// 🔥 RESOLVER MASIVO
+// 🔥 RESOLVER
 // ==========================
 async function resolveAll(urls: string[]) {
 
@@ -119,28 +125,16 @@ async function scrapePage(url: string) {
 }
 
 // ==========================
-// 🔥 ANIMEFLV
+// 🔥 SOURCES
 // ==========================
 export async function getAnimeFLVServers(slug: string, number: number) {
-
-  const url = `https://www3.animeflv.net/ver/${slug}-${number}`;
-
-  return await scrapePage(url);
+  return await scrapePage(`https://www3.animeflv.net/ver/${slug}-${number}`);
 }
 
-// ==========================
-// 🔥 JKANIME
-// ==========================
 export async function getJKAnimeServers(slug: string, number: number) {
-
-  const url = `https://jkanime.net/${slug}/${number}/`;
-
-  return await scrapePage(url);
+  return await scrapePage(`https://jkanime.net/${slug}/${number}/`);
 }
 
-// ==========================
-// 🔥 LATANIME (IMPORTANTE)
-// ==========================
 export async function getLatanimeServers(title: string, number: number) {
 
   const searchUrl = `https://latanime.org/buscar?q=${encodeURIComponent(title)}`;
@@ -171,42 +165,18 @@ export async function getLatanimeServers(title: string, number: number) {
   return [];
 }
 
-// ==========================
-// 🔥 TIOANIME
-// ==========================
 export async function getTioAnimeServers(title: string, number: number) {
-
-  const url = `https://tioanime.com/ver/${title}-${number}`;
-
-  return await scrapePage(url);
+  return await scrapePage(`https://tioanime.com/ver/${title}-${number}`);
 }
 
-// ==========================
-// 🔥 ANIMEYT
-// ==========================
 export async function getAnimeYTServers(title: string, number: number) {
-
-  const url = `https://animeyt.tv/ver/${title}-${number}`;
-
-  return await scrapePage(url);
+  return await scrapePage(`https://animeyt.tv/ver/${title}-${number}`);
 }
 
-// ==========================
-// 🔥 ANIMEFENIX
-// ==========================
 export async function getAnimeFenixServers(title: string, number: number) {
-
-  const url = `https://animefenix.com/ver/${title}-${number}`;
-
-  return await scrapePage(url);
+  return await scrapePage(`https://animefenix.com/ver/${title}-${number}`);
 }
 
-// ==========================
-// 🔥 ANIMEID
-// ==========================
 export async function getAnimeIDServers(title: string, number: number) {
-
-  const url = `https://animeid.tv/${title}-${number}`;
-
-  return await scrapePage(url);
+  return await scrapePage(`https://animeid.tv/${title}-${number}`);
 }
