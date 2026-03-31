@@ -11,7 +11,7 @@ import {
 import { filterWorkingServers } from "./filter";
 
 // ======================
-// 🧠 SUPER NORMALIZADOR
+// 🧠 NORMALIZADOR PRO
 // ======================
 function normalizeTitle(title: string) {
   return title
@@ -24,15 +24,14 @@ function normalizeTitle(title: string) {
 }
 
 // ======================
-// 🧠 EXPANSIÓN MASIVA
+// 🧠 EXPANSIÓN INTELIGENTE
 // ======================
 function expandTitle(title: string) {
-  const base = normalizeTitle(title);
 
+  const base = normalizeTitle(title);
   const variants = new Set<string>();
 
   variants.add(base);
-
   variants.add(base.replace(/ /g, "-"));
   variants.add(base.replace(/ /g, ""));
   variants.add(base.replace(/ /g, "_"));
@@ -41,13 +40,9 @@ function expandTitle(title: string) {
   variants.add(base + " online");
   variants.add(base + " latino");
   variants.add(base + " sub");
-
-  // 🔥 variantes inteligentes
   variants.add(base + " castellano");
   variants.add(base + " hd");
-  variants.add(base + " capitulo");
 
-  // quitar palabras comunes
   variants.add(base.replace("the", ""));
   variants.add(base.replace("no", ""));
   variants.add(base.replace("of", ""));
@@ -55,38 +50,58 @@ function expandTitle(title: string) {
   return Array.from(variants).filter(v => v.length > 2);
 }
 
-// =====================
-// 🔥 PRIORIDAD
-// =====================
-function sortServers(servers: any[]) {
-  return servers.sort((a, b) => {
+// ======================
+// 🔥 SCORE DE SERVIDORES
+// ======================
+function scoreServer(server: any) {
 
-    const A = (a.embed || "").toLowerCase();
-    const B = (b.embed || "").toLowerCase();
+  const url = (server.embed || "").toLowerCase();
 
-    // 🥇 m3u8
-    if (A.includes(".m3u8")) return -1;
-    if (B.includes(".m3u8")) return 1;
+  let score = 0;
 
-    // 🥈 streamwish / directo
-    if (A.includes("streamwish")) return -1;
-    if (B.includes("streamwish")) return 1;
+  if (url.includes(".m3u8")) score += 100;
+  if (url.includes(".mp4")) score += 80;
 
-    // 🥉 mp4
-    if (A.includes(".mp4")) return -1;
-    if (B.includes(".mp4")) return 1;
+  if (url.includes("streamwish")) score += 70;
+  if (url.includes("filemoon")) score += 60;
+  if (url.includes("streamtape")) score += 50;
 
-    // 🧠 JKAnime arriba (pero no primero si hay m3u8)
-    if (a.name === "jkanime") return -1;
-    if (b.name === "jkanime") return 1;
+  if (server.name === "jkanime") score += 90;
 
-    return 0;
-  });
+  return score;
 }
 
-// =====================
+// ======================
+// 🔥 ORDEN FINAL
+// ======================
+function sortServers(servers: any[]) {
+  return servers.sort((a, b) => scoreServer(b) - scoreServer(a));
+}
+
+// ======================
+// 🔥 PIPELINE GLOBAL
+// ======================
+async function processServers(raw: any[]) {
+
+  if (!raw?.length) return [];
+
+  // 🔥 eliminar duplicados
+  const unique = Array.from(
+    new Map(raw.map(s => [s.embed, s])).values()
+  );
+
+  // 🔥 filtro base
+  const filtered = await filterWorkingServers(unique);
+
+  // 🔥 ordenar por calidad
+  const sorted = sortServers(filtered);
+
+  return sorted;
+}
+
+// ======================
 // 🔥 MAIN
-// =====================
+// ======================
 export async function getAllServers({
   slug,
   number,
@@ -97,25 +112,18 @@ export async function getAllServers({
   let servers: any[] = [];
 
   // =====================
-  // 🔥 SUB (ULTRA RÁPIDO)
+  // 🔥 SUB (RÁPIDO)
   // =====================
   if (lang === "sub") {
 
-    const [flv, jk] = await Promise.all([
-      getAnimeFLVServers(slug, number),
-      getJKAnimeServers(slug, number)
+    const [jk, flv] = await Promise.all([
+      getJKAnimeServers(slug, number),
+      getAnimeFLVServers(slug, number)
     ]);
 
-    // 🔥 prioridad JKAnime primero
     servers = [...jk, ...flv];
 
-    const unique = Array.from(
-      new Map(servers.map(s => [s.embed, s])).values()
-    );
-
-    const filtered = await filterWorkingServers(unique);
-
-    return sortServers(filtered);
+    return await processServers(servers);
   }
 
   // =====================
@@ -123,16 +131,16 @@ export async function getAllServers({
   // =====================
   if (lang === "latino") {
 
-    const variants = expandTitle(title).slice(0, 12);
+    const variants = expandTitle(title).slice(0, 10);
 
     for (const v of variants) {
 
       const results = await Promise.all([
 
-        // 🥇 PRIORIDAD ABSOLUTA
+        // 🥇 LATINO REAL
         getLatanimeServers(v, number),
 
-        // 🥈 CORE
+        // 🥈 FUENTES
         getTioAnimeServers(v, number),
         getAnimeYTServers(v, number),
         getAnimeFenixServers(v, number),
@@ -146,30 +154,26 @@ export async function getAllServers({
       if (flat.length) {
         servers.push(...flat);
 
-        // 🔥 si ya hay suficientes buenos, parar
+        // 🔥 corte temprano si hay buenos
         if (flat.length >= 3) break;
       }
     }
 
-    // 🔥 fallback: usar SUB si latino falla
+    // =====================
+    // 🔥 FALLBACK LATINO → SUB
+    // =====================
     if (!servers.length) {
-      const [flv, jk] = await Promise.all([
-        getAnimeFLVServers(slug, number),
-        getJKAnimeServers(slug, number)
+
+      const [jk, flv] = await Promise.all([
+        getJKAnimeServers(slug, number),
+        getAnimeFLVServers(slug, number)
       ]);
 
       servers = [...jk, ...flv];
     }
+
+    return await processServers(servers);
   }
 
-  // =====================
-  // 🔥 LIMPIEZA FINAL
-  // =====================
-  const unique = Array.from(
-    new Map(servers.map(s => [s.embed, s])).values()
-  );
-
-  const filtered = await filterWorkingServers(unique);
-
-  return sortServers(filtered);
+  return [];
 }
