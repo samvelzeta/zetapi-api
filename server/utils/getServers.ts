@@ -59,14 +59,20 @@ function scoreServer(server: any) {
 
   let score = 0;
 
+  // 🥇 DIRECTOS (TOP)
   if (url.includes(".m3u8")) score += 100;
-  if (url.includes(".mp4")) score += 80;
+  if (url.includes(".mp4")) score += 90;
 
-  if (url.includes("streamwish")) score += 70;
-  if (url.includes("filemoon")) score += 60;
-  if (url.includes("streamtape")) score += 50;
+  // 🥈 SERVERS LIMPIOS
+  if (url.includes("filemoon")) score += 80;
+  if (url.includes("streamtape")) score += 75;
+  if (url.includes("ok.ru")) score += 70;
 
-  if (server.name === "jkanime") score += 90;
+  // 🥉 JKAnime (muy bueno)
+  if (server.name === "jkanime") score += 85;
+
+  // 🔻 STREAMWISH (ÚLTIMO SIEMPRE)
+  if (url.includes("streamwish")) score -= 50;
 
   return score;
 }
