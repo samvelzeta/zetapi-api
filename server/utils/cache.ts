@@ -1,87 +1,33 @@
-name: anime-bot
+// ======================
+// 🔥 CACHE FETCH REAL
+// ======================
+export async function getCache(slug: string, number: number, lang: string) {
 
-# 🔥 PERMISOS PARA HACER PUSH
-permissions:
-  contents: write
+  try {
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 */3 * * *'
+    const url = `https://raw.githubusercontent.com/samvelzeta/zetanime-cache/main/data/${slug}/${number}-${lang}.json`;
 
-jobs:
-  run-bot:
-    runs-on: ubuntu-latest
+    const res = await fetch(url);
 
-    steps:
-      # ======================
-      # 🟢 CLONAR REPO
-      # ======================
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: main
+    if (!res.ok) return null;
 
-      # ======================
-      # 🟢 DEBUG (MUY ÚTIL)
-      # ======================
-      - name: Debug repo
-        run: |
-          echo "===== ROOT ====="
-          pwd
-          ls -la
-          echo "===== TREE ====="
-          ls -R
+    const json = await res.json();
 
-      # ======================
-      # 🟢 NODE
-      # ======================
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+    // ======================
+    // 🔥 VALIDACIÓN FUERTE
+    // ======================
+    if (!json?.sources) return null;
 
-      # ======================
-      # 🟢 CREAR ENTORNO
-      # ======================
-      - name: Init project
-        run: |
-          npm init -y
-          npm pkg set type=module
+    const hasData =
+      (json.sources.hls && json.sources.hls.length) ||
+      (json.sources.mp4 && json.sources.mp4.length) ||
+      (json.sources.embed && json.sources.embed.length);
 
-      # ======================
-      # 🟢 DEPENDENCIAS
-      # ======================
-      - name: Install dependencies
-        run: npm install node-fetch@3
+    if (!hasData) return null;
 
-      # ======================
-      # 🟢 VERIFICAR BOT
-      # ======================
-      - name: Check bot exists
-        run: |
-          if [ ! -f "bot.js" ]; then
-            echo "❌ bot.js NO EXISTE EN ROOT"
-            exit 1
-          else
-            echo "✅ bot.js encontrado"
-          fi
+    return json;
 
-      # ======================
-      # 🟢 EJECUTAR BOT (CON API KEY)
-      # ======================
-      - name: Run bot
-        run: node ./bot.js
-        env:
-          API_KEY: ${{ secrets.API_KEY }}
-
-      # ======================
-      # 🟢 GUARDAR CACHE
-      # ======================
-      - name: Commit changes
-        run: |
-          git config --global user.name "anime-bot"
-          git config --global user.email "bot@anime.com"
-          git add .
-          git commit -m "update cache" || echo "no changes"
-          git push
+  } catch {
+    return null;
+  }
+}
