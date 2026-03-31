@@ -12,7 +12,7 @@ async function getCache(slug: string, number: number, lang: string) {
 
   try {
 
-    const url = `https://raw.githubusercontent.com/samvelzeta/zetapi-api/main/data/${slug}/${number}-${lang}.json`;
+    const url = `https://raw.githubusercontent.com/samvelzeta/zetanime-cache/main/data/${slug}/${number}-${lang}.json`;
 
     const res = await fetch(url);
 
