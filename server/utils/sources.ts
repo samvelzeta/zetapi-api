@@ -1,285 +1,212 @@
-import { getEpisode } from "animeflv-scraper";
-import { $fetch } from "ofetch";
+import * as cheerio from "cheerio";
+import { resolveServer } from "./resolver";
 
-// ======================
-// 🔥 NORMALIZAR SERVIDOR
-// ======================
-function normalizeServer(name: string) {
-  if (!name) return "server";
+// ==========================
+// 🔥 PROXY BASE (OBLIGATORIO)
+// ==========================
+const PROXY = "https://zetapi-api.samvelzeta.workers.dev/?url=";
 
-  const n = name.toLowerCase();
-
-  if (n.includes("streamwish") || n.includes("sw")) return "streamwish";
-  if (n.includes("filemoon")) return "filemoon";
-  if (n.includes("streamtape")) return "streamtape";
-  if (n.includes("mp4")) return "mp4upload";
-  if (n.includes("okru") || n.includes("ok.ru")) return "okru";
-  if (n.includes("netu")) return "netu";
-  if (n.includes("dood")) return "dood";
-
-  return "server";
-}
-
-// =====================
-// 🔥 EXTRAER IFRAMES
-// =====================
-function extractIframes(html: string) {
-  return [...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)].map(m => m[1]);
-}
-
-// =====================
-// 🔥 EXTRACTOR PRO
-// =====================
-function extractVideoAdvanced(html: string) {
-
-  // 🥇 m3u8
-  const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
-  if (m3u8) return m3u8[0];
-
-  // 🥈 mp4
-  const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4[^"' ]*/g);
-  if (mp4) return mp4[0];
-
-  // 🥉 sources tipo JWPlayer
-  const source = html.match(/file\s*:\s*"([^"]+)"/);
-  if (source) return source[1];
-
-  // 🟡 src m3u8 oculto
-  const src = html.match(/src\s*=\s*"([^"]+\.m3u8[^"]*)"/);
-  if (src) return src[1];
-
-  // 🟠 data-file
-  const dataFile = html.match(/data-file="([^"]+)"/);
-  if (dataFile) return dataFile[1];
-
-  return null;
-}
-
-// =====================
-// 🔥 RESOLVER PROFUNDO PRO
-// =====================
-async function deepResolve(url: string, depth = 0): Promise<string | null> {
-
-  if (depth > 4) return null;
+// ==========================
+// 🔥 FETCH HTML CON PROXY
+// ==========================
+async function fetchHtml(url: string): Promise<string | null> {
 
   try {
+    const res = await fetch(PROXY + encodeURIComponent(url));
+    const text = await res.text();
 
-    const html = await $fetch(url, { timeout: 7000 });
-
-    // 🔥 buscar video real
-    const video = extractVideoAdvanced(html);
-    if (video) return video;
-
-    // 🔥 buscar iframes
-    const frames = extractIframes(html);
-
-    for (const f of frames) {
-      const res = await deepResolve(f, depth + 1);
-      if (res) return res;
-    }
-
-    return null;
-
+    return text;
   } catch {
     return null;
   }
 }
 
-// =======================================================
-// 🔥 LATINO PRO
-// =======================================================
+// ==========================
+// 🔥 EXTRAER IFRAME
+// ==========================
+function extractIframe(html: string): string[] {
 
-// 🥇 LATANIME
-export async function getLatanimeServers(query: string, number: number) {
-  try {
-    const html = await $fetch(`https://latanime.org/?s=${query}`);
+  const $ = cheerio.load(html);
+  const iframes: string[] = [];
 
-    const match = html.match(/href="([^"]+)"/);
-    if (!match) return [];
+  $("iframe").each((_, el) => {
+    const src = $(el).attr("src");
+    if (src) iframes.push(src);
+  });
 
-    const page = await $fetch(match[1]);
-
-    const frames = extractIframes(page);
-
-    const servers = [];
-
-    for (const f of frames) {
-
-      const real = await deepResolve(f);
-
-      if (real) {
-        servers.push({
-          name: normalizeServer(real),
-          embed: real
-        });
-      }
-    }
-
-    return servers;
-
-  } catch {
-    return [];
-  }
+  return iframes;
 }
 
-// 🥈 TIOANIME
-export async function getTioAnimeServers(query: string, number: number) {
-  try {
-    const search = await $fetch(`https://tioanime.com/buscar?q=${query}`);
-    const match = search.match(/href="\/anime\/([^"]+)"/);
-    if (!match) return [];
+// ==========================
+// 🔥 EXTRAER LINKS GENERALES
+// ==========================
+function extractLinks(html: string): string[] {
 
-    const ep = await $fetch(`https://tioanime.com/ver/${match[1]}-${number}`);
+  const urls: string[] = [];
 
-    const frames = extractIframes(ep);
+  const regex = html.match(/https?:\/\/[^"' ]+/g);
 
-    const servers = [];
-
-    for (const f of frames) {
-
-      const real = await deepResolve(f);
-
-      if (real) {
-        servers.push({
-          name: normalizeServer(real),
-          embed: real
-        });
-      }
+  if (regex) {
+    for (const u of regex) {
+      if (u.length > 30) urls.push(u);
     }
-
-    return servers;
-
-  } catch {
-    return [];
   }
+
+  return urls;
 }
 
-// 🥉 ANIMEYT
-export async function getAnimeYTServers(query: string, number: number) {
-  try {
-    const html = await $fetch(`https://animeyt.tv/?s=${query}`);
-    const match = html.match(/href="([^"]+)"/);
-    if (!match) return [];
+// ==========================
+// 🔥 LIMPIAR LINKS
+// ==========================
+function cleanUrls(urls: string[]): string[] {
 
-    const page = await $fetch(match[1]);
+  return Array.from(new Set(urls)).filter(u => {
 
-    const frames = extractIframes(page);
+    const bad = [
+      ".css",
+      ".js",
+      "facebook",
+      "twitter",
+      "ads",
+      "doubleclick"
+    ];
 
-    const servers = [];
-
-    for (const f of frames) {
-
-      const real = await deepResolve(f);
-
-      if (real) {
-        servers.push({
-          name: normalizeServer(real),
-          embed: real
-        });
-      }
-    }
-
-    return servers;
-
-  } catch {
-    return [];
-  }
+    return !bad.some(b => u.toLowerCase().includes(b));
+  });
 }
 
-// 🟡 ANIMEFENIX
-export async function getAnimeFenixServers(query: string, number: number) {
-  try {
-    const html = await $fetch(`https://animefenix.com/search?q=${query}`);
-    const match = html.match(/href="\/anime\/([^"]+)"/);
-    if (!match) return [];
+// ==========================
+// 🔥 RESOLVER MASIVO
+// ==========================
+async function resolveAll(urls: string[]) {
 
-    const ep = await $fetch(`https://animefenix.com/ver/${match[1]}/${number}`);
+  const results = await Promise.allSettled(
+    urls.map(u => resolveServer(u))
+  );
 
-    const frames = extractIframes(ep);
-
-    const servers = [];
-
-    for (const f of frames) {
-
-      const real = await deepResolve(f);
-
-      if (real) {
-        servers.push({
-          name: normalizeServer(real),
-          embed: real
-        });
-      }
-    }
-
-    return servers;
-
-  } catch {
-    return [];
-  }
+  return results
+    .filter((r: any) => r.status === "fulfilled" && r.value)
+    .map((r: any) => r.value);
 }
 
-// 🟤 FALLBACK
-export async function getAnimeIDServers(query: string, number: number) {
-  try {
-    const search = await $fetch(`https://animeid.tv/search?q=${query}`);
-    const match = search.match(/href="\/anime\/([^"]+)"/);
-    if (!match) return [];
+// ==========================
+// 🔥 CREAR SERVERS
+// ==========================
+function buildServers(urls: string[]) {
 
-    const ep = await $fetch(`https://animeid.tv/ver/${match[1]}/${number}`);
-
-    const frames = extractIframes(ep);
-
-    const servers = [];
-
-    for (const f of frames) {
-
-      const real = await deepResolve(f);
-
-      if (real) {
-        servers.push({
-          name: normalizeServer(real),
-          embed: real
-        });
-      }
-    }
-
-    return servers;
-
-  } catch {
-    return [];
-  }
+  return urls.map((u, i) => ({
+    name: `server_${i + 1}`,
+    embed: u
+  }));
 }
 
-// =======================================================
-// 🔥 SUB (MEJORADO)
-// =======================================================
+// ==========================
+// 🔥 SCRAPER BASE
+// ==========================
+async function scrapePage(url: string) {
 
+  const html = await fetchHtml(url);
+  if (!html) return [];
+
+  const iframes = extractIframe(html);
+  const links = extractLinks(html);
+
+  const all = cleanUrls([...iframes, ...links]);
+
+  const resolved = await resolveAll(all);
+
+  return buildServers(resolved);
+}
+
+// ==========================
+// 🔥 ANIMEFLV
+// ==========================
 export async function getAnimeFLVServers(slug: string, number: number) {
-  try {
-    const res = await getEpisode(slug, number);
 
-    return (res?.servers || []).map((s: any) => ({
-      name: normalizeServer(s.server || s.name),
-      embed: s.url || s.embed
-    }));
+  const url = `https://www3.animeflv.net/ver/${slug}-${number}`;
 
-  } catch {
-    return [];
-  }
+  return await scrapePage(url);
 }
 
+// ==========================
+// 🔥 JKANIME
+// ==========================
 export async function getJKAnimeServers(slug: string, number: number) {
-  try {
-    const html = await $fetch(`https://jkanime.net/${slug}/${number}/`);
 
-    const links = html.match(/https?:\/\/[^"]+/g) || [];
+  const url = `https://jkanime.net/${slug}/${number}/`;
 
-    return links.map(link => ({
-      name: "jkanime",
-      embed: link
-    }));
+  return await scrapePage(url);
+}
 
-  } catch {
-    return [];
+// ==========================
+// 🔥 LATANIME (IMPORTANTE)
+// ==========================
+export async function getLatanimeServers(title: string, number: number) {
+
+  const searchUrl = `https://latanime.org/buscar?q=${encodeURIComponent(title)}`;
+
+  const html = await fetchHtml(searchUrl);
+  if (!html) return [];
+
+  const $ = cheerio.load(html);
+
+  const links: string[] = [];
+
+  $("a").each((_, el) => {
+    const href = $(el).attr("href");
+    if (href && href.includes("/anime/")) {
+      links.push(href);
+    }
+  });
+
+  for (const link of links.slice(0, 3)) {
+
+    const epUrl = `${link}/episodio-${number}`;
+
+    const result = await scrapePage(epUrl);
+
+    if (result.length) return result;
   }
+
+  return [];
+}
+
+// ==========================
+// 🔥 TIOANIME
+// ==========================
+export async function getTioAnimeServers(title: string, number: number) {
+
+  const url = `https://tioanime.com/ver/${title}-${number}`;
+
+  return await scrapePage(url);
+}
+
+// ==========================
+// 🔥 ANIMEYT
+// ==========================
+export async function getAnimeYTServers(title: string, number: number) {
+
+  const url = `https://animeyt.tv/ver/${title}-${number}`;
+
+  return await scrapePage(url);
+}
+
+// ==========================
+// 🔥 ANIMEFENIX
+// ==========================
+export async function getAnimeFenixServers(title: string, number: number) {
+
+  const url = `https://animefenix.com/ver/${title}-${number}`;
+
+  return await scrapePage(url);
+}
+
+// ==========================
+// 🔥 ANIMEID
+// ==========================
+export async function getAnimeIDServers(title: string, number: number) {
+
+  const url = `https://animeid.tv/${title}-${number}`;
+
+  return await scrapePage(url);
 }
