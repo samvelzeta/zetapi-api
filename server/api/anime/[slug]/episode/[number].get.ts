@@ -1,20 +1,62 @@
 import { getAllServers } from "../../../../utils/getServers";
-import { filterWorkingServers } from "../../../../utils/filter";
 
 // ======================
-// 🔥 VARIANTES BÁSICAS
+// 🔥 CACHE CONFIG
 // ======================
-function generateVariants(slug: string) {
-  const base = slug.replace(/-/g, " ");
+const CACHE_TTL = 1000 * 60 * 60 * 6; // 6 horas
 
-  return [
-    base,
-    slug,
-    base + " tv",
-    base + " online",
-    base.replace("season", ""),
-    base.replace(/\d+/g, "")
-  ];
+// ======================
+// 🔥 CACHE FETCH
+// ======================
+async function getCache(slug: string, number: number, lang: string) {
+
+  try {
+
+    const url = `https://raw.githubusercontent.com/samvelzeta/zetapi-api/main/data/${slug}/${number}-${lang}.json`;
+
+    const res = await fetch(url);
+
+    if (!res.ok) return null;
+
+    const json = await res.json();
+
+    // 🔥 validar expiración
+    if (Date.now() - json.updated > CACHE_TTL) {
+      return null;
+    }
+
+    // 🔥 validar contenido
+    if (!json?.sources?.length) return null;
+
+    return json;
+
+  } catch {
+    return null;
+  }
+}
+
+// ======================
+// 🔥 VALIDAR SERVERS
+// ======================
+function validateServers(servers: any[]) {
+
+  if (!servers?.length) return [];
+
+  return servers.filter(s => {
+
+    if (!s?.embed) return false;
+
+    const url = s.embed.toLowerCase();
+
+    // 🔥 evitar basura
+    if (
+      url.includes("error") ||
+      url.includes("blank") ||
+      url.length < 20
+    ) return false;
+
+    return true;
+  });
 }
 
 // ======================
@@ -32,64 +74,54 @@ export default defineEventHandler(async (event) => {
   const language = lang === "latino" ? "latino" : "sub";
 
   // ======================
-  // 🔥 CACHE GITHUB (PRIMERO)
+  // 🔥 INTENTAR CACHE
   // ======================
-  const cacheUrl = `https://raw.githubusercontent.com/samvelzeta/zetanime-cache/main/data/${slug}/${number}.json`;
+  const cached = await getCache(slug, number, language);
 
-  try {
-    const cached = await fetch(cacheUrl).then(r => r.json());
-
-    if (cached?.sources?.length) {
-      return {
-        success: true,
-        total: cached.sources.length,
-        data: {
-          slug,
-          number: Number(number),
-          servers: cached.sources
-        }
-      };
-    }
-  } catch (err) {
-    // si falla cache → sigue normal
+  if (cached) {
+    return {
+      success: true,
+      cached: true,
+      total: cached.sources.length,
+      data: cached
+    };
   }
 
   // ======================
-  // 🔥 SCRAPING NORMAL
+  // 🔥 SCRAPING
   // ======================
-  const variants = generateVariants(slug);
+  let servers = await getAllServers({
+    slug,
+    number: Number(number),
+    title: slug,
+    lang: language
+  });
 
-  let servers: any[] = [];
+  servers = validateServers(servers);
 
-  for (const title of variants) {
-    const result = await getAllServers({
+  // ======================
+  // 🔥 FALLBACK (IMPORTANTE)
+  // ======================
+  if (!servers.length && language === "latino") {
+
+    servers = await getAllServers({
       slug,
       number: Number(number),
-      title,
-      lang: language
+      title: slug,
+      lang: "sub"
     });
 
-    if (result.length) {
-      servers = result;
-      break;
-    }
+    servers = validateServers(servers);
   }
 
-  // ======================
-  // 🔥 FILTRO FINAL
-  // ======================
-  const working = await filterWorkingServers(servers);
-
-  // ======================
-  // 🔥 RESPUESTA
-  // ======================
   return {
     success: true,
-    total: working.length,
+    cached: false,
+    total: servers.length,
     data: {
       slug,
       number: Number(number),
-      servers: working
+      servers
     }
   };
 });
