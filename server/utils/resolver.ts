@@ -2,7 +2,7 @@ import { $fetch } from "ofetch";
 import { detectServerType, isValidVideo } from "./serverTypes";
 
 // ==============================
-// 🔥 HEADERS REALISTAS
+// 🔥 HEADERS REALISTASd
 // ==============================
 function getHeaders(url: string) {
   return {
