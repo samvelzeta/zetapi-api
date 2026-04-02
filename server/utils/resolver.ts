@@ -2,7 +2,7 @@ import { $fetch } from "ofetch";
 import { detectServerType, isValidVideo } from "./serverTypes";
 
 // ==============================
-// 🔥 HEADERS REALISTASd
+// 🔥 HEADERS
 // ==============================
 function getHeaders(url: string) {
   return {
@@ -16,58 +16,55 @@ function getHeaders(url: string) {
 }
 
 // ==============================
-// 🔥 EXTRAER VIDEO DEL HTML
+// 🔥 VALIDAR HLS REAL (🔥 CLAVE)
+// ==============================
+async function isValidHLS(url: string): Promise<boolean> {
+  try {
+    const res = await $fetch(url);
+    const text = typeof res === "string" ? res : JSON.stringify(res);
+
+    const segments = text.match(/\.ts/g);
+
+    // mínimo segmentos reales (~3+ min)
+    if (!segments || segments.length < 20) return false;
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ==============================
+// 🔥 EXTRAER VIDEO
 // ==============================
 function extractVideo(html: string): string | null {
 
   if (!html) return null;
 
+  const multi = html.match(/file:\s*"([^"]+\.m3u8[^"]*)"/);
+  if (multi?.[1]) return multi[1];
 
-// 🔥 sources múltiples
-const multi = html.match(/file:\s*"([^"]+\.m3u8[^"]*)"/);
-if (multi?.[1]) return multi[1];
+  const alt = html.match(/src:\s*"([^"]+\.m3u8[^"]*)"/);
+  if (alt?.[1]) return alt[1];
 
-// 🔥 playlist alternativa
-const alt = html.match(/src:\s*"([^"]+\.m3u8[^"]*)"/);
-if (alt?.[1]) return alt[1];
-
-  // 🔥 m3u8 directo
   const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
   if (m3u8?.length) return m3u8[0];
 
-  // 🔥 mp4 directo
   const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4[^"' ]*/g);
   if (mp4?.length) return mp4[0];
 
-  // 🔥 jwplayer file:
   const file = html.match(/file\s*:\s*"([^"]+)"/);
   if (file?.[1]) return file[1];
-
-  // 🔥 sources array
-  const sources = html.match(/sources\s*:\s*\[\{file:\s*"([^"]+)"/);
-  if (sources?.[1]) return sources[1];
-
-  // 🔥 eval packed (simple)
-  const packed = html.match(/eval\(function\(p,a,c,k,e,d\).*?\)\)/s);
-  if (packed) {
-    try {
-      const unpacked = eval(packed[0]);
-      return extractVideo(unpacked);
-    } catch {}
-  }
 
   return null;
 }
 
 // ==============================
-// 🔥 FETCH HTML SEGURO
+// 🔥 FETCH
 // ==============================
 async function fetchHtml(url: string): Promise<string | null> {
   try {
-    const res = await $fetch(url, {
-      headers: getHeaders(url)
-    });
-
+    const res = await $fetch(url, { headers: getHeaders(url) });
     return typeof res === "string" ? res : JSON.stringify(res);
   } catch {
     return null;
@@ -90,35 +87,7 @@ async function resolveGeneric(url: string): Promise<string | null> {
 }
 
 // ==============================
-// 🔥 STREAMWISH
-// ==============================
-async function resolveStreamwish(url: string) {
-  return await resolveGeneric(url);
-}
-
-// ==============================
-// 🔥 DOOD
-// ==============================
-async function resolveDood(url: string) {
-  return await resolveGeneric(url);
-}
-
-// ==============================
-// 🔥 FILEMOON
-// ==============================
-async function resolveFilemoon(url: string) {
-  return await resolveGeneric(url);
-}
-
-// ==============================
-// 🔥 STREAMTAPE
-// ==============================
-async function resolveStreamtape(url: string) {
-  return await resolveGeneric(url);
-}
-
-// ==============================
-// 🔥 MAIN RESOLVER
+// 🔥 MAIN
 // ==============================
 export async function resolveServer(url: string): Promise<string | null> {
 
@@ -126,57 +95,17 @@ export async function resolveServer(url: string): Promise<string | null> {
 
   const type = detectServerType(url);
 
-  // ==========================
-  // 🔥 DIRECTOS
-  // ==========================
-  if (type === "hls" || type === "mp4") {
-    return url;
+  // 🔥 HLS VALIDADO
+  if (type === "hls") {
+    const valid = await isValidHLS(url);
+    return valid ? url : null;
   }
 
+  if (type === "mp4") return url;
+
   try {
-
-    switch (type) {
-
-      case "streamwish":
-        return await resolveStreamwish(url);
-
-      case "dood":
-        return await resolveDood(url);
-
-      case "filemoon":
-        return await resolveFilemoon(url);
-
-      case "streamtape":
-        return await resolveStreamtape(url);
-
-      default:
-        return await resolveGeneric(url);
-    }
-
+    return await resolveGeneric(url);
   } catch {
     return null;
-  }
-}
-
-// ==============================
-// 🔥 VALIDAR HLS REAL
-// ==============================
-async function isValidHLS(url: string): Promise<boolean> {
-  try {
-    const res = await fetch(url);
-    const text = await res.text();
-
-    // 🔥 contar segmentos
-    const segments = text.match(/\.ts/g);
-
-    // mínimo ~20 segmentos (~3-4 min)
-    if (!segments || segments.length < 20) {
-      return false;
-    }
-
-    return true;
-
-  } catch {
-    return false;
   }
 }
