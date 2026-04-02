@@ -26,6 +26,26 @@ function validateServers(servers: any[]) {
   });
 }
 
+
+
+// 🔥 después de validateServers
+servers = validateServers(servers);
+
+// 🔥 asegurar mínimo 3
+if (servers.length > 0 && servers.length < 3) {
+  const extra = await getAllServers({
+    slug,
+    number: Number(number),
+    title: slug,
+    lang: "sub"
+  });
+
+  servers.push(...extra);
+}
+
+
+
+
 // ======================
 // 🔥 NORMALIZAR OUTPUT
 // ======================
