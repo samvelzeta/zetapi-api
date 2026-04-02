@@ -2,7 +2,7 @@ import { $fetch } from "ofetch";
 import { detectServerType, isValidVideo } from "./serverTypes";
 
 // ==============================
-// 🔥 HEADERS
+// 🔥 HEADERS REALISTAS (NO TOCAR)
 // ==============================
 function getHeaders(url: string) {
   return {
@@ -18,17 +18,24 @@ function getHeaders(url: string) {
 // ==============================
 // 🔥 VALIDAR HLS REAL (🔥 CLAVE)
 // ==============================
-async function isValidHLS(url: string): Promise<boolean> {
+async function validateHLS(url: string): Promise<boolean> {
   try {
-    const res = await $fetch(url);
+    const res = await $fetch(url, {
+      headers: getHeaders(url)
+    });
+
     const text = typeof res === "string" ? res : JSON.stringify(res);
 
+    // 🔥 contar segmentos reales
     const segments = text.match(/\.ts/g);
 
-    // mínimo segmentos reales (~3+ min)
-    if (!segments || segments.length < 20) return false;
+    // mínimo ~3 minutos aprox
+    if (!segments || segments.length < 25) {
+      return false;
+    }
 
     return true;
+
   } catch {
     return false;
   }
@@ -40,12 +47,6 @@ async function isValidHLS(url: string): Promise<boolean> {
 function extractVideo(html: string): string | null {
 
   if (!html) return null;
-
-  const multi = html.match(/file:\s*"([^"]+\.m3u8[^"]*)"/);
-  if (multi?.[1]) return multi[1];
-
-  const alt = html.match(/src:\s*"([^"]+\.m3u8[^"]*)"/);
-  if (alt?.[1]) return alt[1];
 
   const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
   if (m3u8?.length) return m3u8[0];
@@ -60,11 +61,14 @@ function extractVideo(html: string): string | null {
 }
 
 // ==============================
-// 🔥 FETCH
+// 🔥 FETCH HTML
 // ==============================
 async function fetchHtml(url: string): Promise<string | null> {
   try {
-    const res = await $fetch(url, { headers: getHeaders(url) });
+    const res = await $fetch(url, {
+      headers: getHeaders(url)
+    });
+
     return typeof res === "string" ? res : JSON.stringify(res);
   } catch {
     return null;
@@ -81,13 +85,21 @@ async function resolveGeneric(url: string): Promise<string | null> {
 
   const video = extractVideo(html);
 
+  if (!video) return null;
+
+  // 🔥 VALIDAR HLS
+  if (video.includes(".m3u8")) {
+    const valid = await validateHLS(video);
+    if (!valid) return null;
+  }
+
   if (isValidVideo(video)) return video;
 
   return null;
 }
 
 // ==============================
-// 🔥 MAIN
+// 🔥 MAIN RESOLVER
 // ==============================
 export async function resolveServer(url: string): Promise<string | null> {
 
@@ -95,16 +107,28 @@ export async function resolveServer(url: string): Promise<string | null> {
 
   const type = detectServerType(url);
 
-  // 🔥 HLS VALIDADO
+  // 🔥 DIRECTOS
   if (type === "hls") {
-    const valid = await isValidHLS(url);
+    const valid = await validateHLS(url);
     return valid ? url : null;
   }
 
   if (type === "mp4") return url;
 
   try {
-    return await resolveGeneric(url);
+
+    switch (type) {
+
+      case "streamwish":
+      case "dood":
+      case "filemoon":
+      case "streamtape":
+        return await resolveGeneric(url);
+
+      default:
+        return await resolveGeneric(url);
+    }
+
   } catch {
     return null;
   }
