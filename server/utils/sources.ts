@@ -39,6 +39,10 @@ async function fetchHtml(url: string): Promise<string | null> {
   }
 }
 
+function delay(ms: number) {
+  return new Promise(res => setTimeout(res, ms));
+}
+
 function extractEverything(html: string): string[] {
 
   const urls = new Set<string>();
