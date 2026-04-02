@@ -3,7 +3,7 @@ import { resolveServer } from "./resolver";
 
 // ==========================
 // 🔥 FETCH ROBUSTO
-// ==========================
+// ==========================x
 async function fetchHtml(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, {
