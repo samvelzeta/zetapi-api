@@ -2,47 +2,29 @@ export async function filterWorkingServers(servers: any[]) {
 
   if (!servers?.length) return [];
 
-  const GOOD = [
-    "streamwish",
-    "filemoon",
-    "streamtape",
-    "mp4upload",
-    "ok.ru",
-    "dood",
-    "netu"
-  ];
-
-  const BAD = [
-    "facebook",
-    "twitter",
-    "ads",
-    ".css",
-    ".js"
-  ];
-
   const clean = servers.filter(s => {
 
     if (!s?.embed) return false;
 
     const url = s.embed.toLowerCase();
 
-    // 🔥 HLS SIEMPRE PASA
+    // ❌ basura
+    if (
+      url.includes("preview") ||
+      url.includes("sample") ||
+      url.includes("ads") ||
+      url.includes(".css") ||
+      url.includes(".js")
+    ) return false;
+
+    // ✔ HLS siempre válido
     if (url.includes(".m3u8")) return true;
 
-    if (BAD.some(b => url.includes(b))) return false;
-
+    // ✔ MP4
     if (url.includes(".mp4")) return true;
 
-    if (GOOD.some(g => url.includes(g))) return true;
-
-    if (url.includes("embed") || url.includes("player")) return true;
-
-    return false;
+    return true;
   });
 
-  if (!clean.length) {
-    return servers.slice(0, 5);
-  }
-
-  return clean;
+  return clean.length ? clean : servers.slice(0, 3);
 }
