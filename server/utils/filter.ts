@@ -8,16 +8,16 @@ export async function filterWorkingServers(servers: any[]) {
 
     const url = s.embed.toLowerCase();
 
-    // ❌ basura
+    // ❌ basura real
     if (
+      url.includes("ads") ||
       url.includes("preview") ||
       url.includes("sample") ||
-      url.includes("ads") ||
       url.includes(".css") ||
       url.includes(".js")
     ) return false;
 
-    // ✔ HLS siempre válido
+    // ✔ HLS
     if (url.includes(".m3u8")) return true;
 
     // ✔ MP4
