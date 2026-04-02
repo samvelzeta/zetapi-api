@@ -1,8 +1,6 @@
 import { getAllServers } from "../../../../utils/getServers";
 import { filterWorkingServers } from "../../../../utils/filter";
 import { getCache } from "../../../../utils/cache";
-
-// 🔥 IMPORT NUEVO (SMART R2)
 import { getLatinoSource } from "../../../../utils/r2";
 
 // ======================
@@ -35,7 +33,8 @@ function normalizeServers(servers: any[]) {
 
   return servers.map((s, i) => ({
     name: `server_${i + 1}`,
-    embed: s.embed
+    embed: s.embed,
+    type: s.embed.includes(".m3u8") ? "hls" : "embed"
   }));
 }
 
@@ -54,11 +53,19 @@ export default defineEventHandler(async (event) => {
   const language = lang === "latino" ? "latino" : "sub";
 
   // ======================
-  // 🔥 0. R2 SOURCE (SMART)
+  // 🔥 0. R2 (NO BLOQUEANTE)
   // ======================
+  let r2Url: string | null = null;
+
   try {
 
-    const r2Url = await getLatinoSource(slug, Number(number));
+    const r2Promise = getLatinoSource(slug, Number(number));
+
+    const timeout = new Promise(resolve =>
+      setTimeout(() => resolve(null), 1500)
+    );
+
+    r2Url = await Promise.race([r2Promise, timeout]) as string | null;
 
     if (r2Url) {
       return {
@@ -79,9 +86,7 @@ export default defineEventHandler(async (event) => {
       };
     }
 
-  } catch (e) {
-    // silencioso
-  }
+  } catch {}
 
   // ======================
   // 🔥 1. CACHE
