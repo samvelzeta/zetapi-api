@@ -41,41 +41,45 @@ export function generateSlugVariants(slug: string) {
 // 🔥 MATCH POR SIMILITUD REAL
 // ==============================
 
+// ==============================
+// 🔥 MATCH ADN (SECUENCIAL)
+// ==============================
 export function findBestSlugMatch(input: string, candidates: string[]): string | null {
 
-  const normalize = (s: string) =>
-    s.toLowerCase()
-     .replace(/[^a-z0-9-]/g, "")
-     .split("-")
-     .filter(Boolean);
+  const clean = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-  const inputWords = normalize(input);
+  const a = clean(input);
 
-  let bestMatch: string | null = null;
+  let best: string | null = null;
   let bestScore = 0;
 
   for (const candidate of candidates) {
 
-    const targetWords = normalize(candidate);
+    const b = clean(candidate);
 
     let score = 0;
+    let j = 0;
 
-    for (const word of inputWords) {
-      if (targetWords.includes(word)) {
+    // 🔥 matching secuencial tipo ADN
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] === b[j]) {
         score++;
+        j++;
       }
+      if (j >= b.length) break;
     }
 
-    const similarity = score / inputWords.length;
+    const similarity = score / a.length;
 
     if (similarity > bestScore) {
       bestScore = similarity;
-      bestMatch = candidate;
+      best = candidate;
     }
   }
 
-  if (bestScore >= 0.5) {
-    return bestMatch;
+  if (bestScore >= 0.4) {
+    return best;
   }
 
   return null;
