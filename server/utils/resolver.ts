@@ -157,3 +157,26 @@ export async function resolveServer(url: string): Promise<string | null> {
     return null;
   }
 }
+
+// ==============================
+// 🔥 VALIDAR HLS REAL
+// ==============================
+async function isValidHLS(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url);
+    const text = await res.text();
+
+    // 🔥 contar segmentos
+    const segments = text.match(/\.ts/g);
+
+    // mínimo ~20 segmentos (~3-4 min)
+    if (!segments || segments.length < 20) {
+      return false;
+    }
+
+    return true;
+
+  } catch {
+    return false;
+  }
+}
