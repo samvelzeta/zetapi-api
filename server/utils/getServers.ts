@@ -1,54 +1,87 @@
-import { getServersFromAllSources } from "./sources";
-import { filterWorkingServers } from "./filter";
-import { expandSlugVariants } from "./slugResolver";
+import {
+  getAnimeFLVServers,
+  getJKAnimeServers,
+  getLatanimeServers,
+  getTioAnimeServers,
+  getAnimeIDServers,
+  getAnimeYTServers,
+  getAnimeFenixServers
+} from "./sources";
 
+import { filterWorkingServers } from "./filter";
+
+// ======================
+function uniqueServers(list: any[]) {
+  const seen = new Set();
+  const result = [];
+
+  for (const s of list) {
+    const clean = s.embed.split("?")[0];
+
+    if (!seen.has(clean)) {
+      seen.add(clean);
+      result.push(s);
+    }
+  }
+
+  return result;
+}
+
+// ======================
 function scoreServer(server: any) {
   const url = (server.embed || "").toLowerCase();
 
   if (url.includes(".m3u8")) return 1000;
   if (url.includes(".mp4")) return 900;
+
   if (url.includes("filemoon")) return 800;
   if (url.includes("streamtape")) return 700;
 
   return 100;
 }
 
-export async function getAllServers({ slug, number, title }: any) {
-
-  const variants = expandSlugVariants(title).slice(0, 20);
+// ======================
+export async function getAllServers({
+  slug,
+  number,
+  title,
+  lang
+}: any) {
 
   let collected: any[] = [];
 
-  for (const v of variants) {
-    const res = await getServersFromAllSources(v, number);
-    if (res.length) collected.push(...res);
+  // 🔥 SUB
+  const subSources = await Promise.all([
+    getJKAnimeServers(slug, number),
+    getAnimeFLVServers(slug, number)
+  ]);
 
-    if (collected.length >= 25) break;
-  }
+  collected.push(...subSources.flat());
+
+  // 🔥 LATINO
+  const latSources = await Promise.all([
+    getLatanimeServers(title, number),
+    getTioAnimeServers(title, number),
+    getAnimeYTServers(title, number),
+    getAnimeFenixServers(title, number),
+    getAnimeIDServers(title, number)
+  ]);
+
+  collected.push(...latSources.flat());
 
   if (!collected.length) return [];
 
+  // 🔥 FILTRAR
   const filtered = await filterWorkingServers(collected);
 
-  // 🔥 eliminar duplicados reales
-  const unique: any[] = [];
-  const seen = new Set();
+  // 🔥 UNICOS
+  const unique = uniqueServers(filtered);
 
-  for (const s of filtered) {
-    const clean = s.embed.split("?")[0];
-    if (!seen.has(clean)) {
-      seen.add(clean);
-      unique.push(s);
-    }
-  }
-
+  // 🔥 ORDEN
   const sorted = unique.sort((a, b) => scoreServer(b) - scoreServer(a));
 
-  const final = sorted.slice(0, 6);
+  // 🔥 GARANTIZAR MINIMO 3
+  if (sorted.length < 3) return sorted;
 
-  if (final.length < 3) {
-    return sorted.slice(0, 10);
-  }
-
-  return final;
+  return sorted.slice(0, 6);
 }
