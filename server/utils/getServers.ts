@@ -10,7 +10,7 @@ import {
 
 import { filterWorkingServers } from "./filter";
 
-// ======================
+// ======================w
 // 🧠 NORMALIZADOR
 // ======================
 function normalizeTitle(title: string) {
