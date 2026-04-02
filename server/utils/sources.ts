@@ -1,6 +1,9 @@
 import * as cheerio from "cheerio";
 import { resolveServer } from "./resolver";
 
+// ==========================
+// 🔥 FETCH ROBUSTO
+// ==========================
 async function fetchHtml(url: string): Promise<string | null> {
 
   try {
@@ -20,9 +23,6 @@ async function fetchHtml(url: string): Promise<string | null> {
         "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
         "Referer": new URL(url).origin,
         "Origin": new URL(url).origin
       }
@@ -30,7 +30,7 @@ async function fetchHtml(url: string): Promise<string | null> {
 
     const text = await res.text();
 
-    if (!text || text.length < 1000) return null;
+    if (!text || text.length < 800) return null;
 
     return text;
 
@@ -39,19 +39,36 @@ async function fetchHtml(url: string): Promise<string | null> {
   }
 }
 
+// ==========================
+// 🔥 DELAY HUMANO
+// ==========================
 function delay(ms: number) {
   return new Promise(res => setTimeout(res, ms));
 }
 
+// ==========================
+// 🔥 EXTRAER LINKS ÚTILES
+// ==========================
 function extractEverything(html: string): string[] {
 
   const urls = new Set<string>();
 
-  const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
-  m3u8?.forEach(u => urls.add(u));
+  const matches = html.match(/https?:\/\/[^"' ]+/g);
+  if (!matches) return [];
 
-  const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4[^"' ]*/g);
-  mp4?.forEach(u => urls.add(u));
+  for (const u of matches) {
+
+    const clean = u.toLowerCase();
+
+    if (
+      clean.includes(".m3u8") ||
+      clean.includes(".mp4") ||
+      clean.includes("embed") ||
+      clean.includes("player")
+    ) {
+      urls.add(u);
+    }
+  }
 
   const $ = cheerio.load(html);
 
@@ -63,7 +80,12 @@ function extractEverything(html: string): string[] {
   return Array.from(urls);
 }
 
+// ==========================
+// 🔥 SCRAPER
+// ==========================
 async function scrapeSmart(url: string) {
+
+  await delay(200 + Math.random() * 500);
 
   const html = await fetchHtml(url);
   if (!html) return [];
@@ -76,21 +98,19 @@ async function scrapeSmart(url: string) {
   );
 
   const results: any[] = [];
-  const fallback: any[] = [];
 
-  for (let i = 0; i < resolved.length; i++) {
-    const r = resolved[i];
-
+  for (const r of resolved) {
     if (r.status === "fulfilled" && r.value) {
       results.push({ embed: r.value });
-    } else {
-      fallback.push({ embed: unique[i] });
     }
   }
 
-  return [...results, ...fallback];
+  return results;
 }
 
+// ==========================
+// 🔥 MULTI SOURCES (PARALELO)
+// ==========================
 export async function getServersFromAllSources(slug: string, number: number) {
 
   const urls = [
@@ -101,12 +121,11 @@ export async function getServersFromAllSources(slug: string, number: number) {
     `https://tioanime.com/ver/${slug}-${number}`
   ];
 
-  let collected: any[] = [];
+  const results = await Promise.allSettled(
+    urls.map(u => scrapeSmart(u))
+  );
 
-  for (const url of urls) {
-    const res = await scrapeSmart(url);
-    if (res.length) collected.push(...res);
-  }
-
-  return collected;
+  return results
+    .filter((r: any) => r.status === "fulfilled")
+    .flatMap((r: any) => r.value);
 }
