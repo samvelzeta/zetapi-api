@@ -1,96 +1,24 @@
-import {
-  getAnimeFLVServers,
-  getJKAnimeServers,
-  getLatanimeServers,
-  getTioAnimeServers,
-  getAnimeIDServers,
-  getAnimeYTServers,
-  getAnimeFenixServers
-} from "./sources";
-
+import { getServersFromAllSources } from "./sources";
 import { filterWorkingServers } from "./filter";
-
-// ======================w
-// 🧠 NORMALIZADOR
-// ======================
-function normalizeTitle(title: string) {
-  return title
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[:\-]/g, " ")
-    .replace(/\b(season|temporada|part|parte|capitulo|episode)\b/g, "")
-    .replace(/\d+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-// ======================
-// 🧠 EXPANSIÓN AVANZADA
-// ======================
-function expandTitle(title: string) {
-  const base = normalizeTitle(title);
-  const variants = new Set<string>();
-
-  variants.add(base);
-  variants.add(base.replace(/ /g, "-"));
-  variants.add(base.replace(/ /g, ""));
-  variants.add(base.replace(/ /g, "_"));
-
-  // 🔥 multi idioma básico
-  variants.add(base.replace("shingeki no kyojin", "attack on titan"));
-  variants.add(base.replace("attack on titan", "shingeki no kyojin"));
-
-  variants.add(base + " anime");
-  variants.add(base + " online");
-  variants.add(base + " latino");
-  variants.add(base + " sub");
-
-  return Array.from(variants).filter(v => v.length > 2);
-}
+import { expandSlugVariants } from "./slugResolver";
 
 // ======================
 // 🔥 SCORE
 // ======================
 function scoreServer(server: any) {
   const url = (server.embed || "").toLowerCase();
+
   let score = 0;
 
-  if (url.includes(".m3u8")) score += 100;
-  if (url.includes(".mp4")) score += 90;
+  if (url.includes(".m3u8")) score += 1000;
+  else if (url.includes(".mp4")) score += 900;
 
-  if (url.includes("filemoon")) score += 80;
-  if (url.includes("streamtape")) score += 75;
-  if (url.includes("ok.ru")) score += 70;
+  else if (url.includes("filemoon")) score += 800;
+  else if (url.includes("streamtape")) score += 700;
 
-  if (server.name === "jkanime") score += 85;
-
-  if (url.includes("streamwish")) score -= 50;
+  else score += 100;
 
   return score;
-}
-
-// ======================
-// 🔥 SORT
-// ======================
-function sortServers(servers: any[]) {
-  return servers.sort((a, b) => scoreServer(b) - scoreServer(a));
-}
-
-// ======================
-// 🔥 PIPELINE
-// ======================
-async function processServers(raw: any[]) {
-  if (!raw?.length) return [];
-
-  const unique = Array.from(
-    new Map(raw.map(s => [s.embed, s])).values()
-  );
-
-  const filtered = await filterWorkingServers(unique);
-  const sorted = sortServers(filtered);
-
-  return sorted.slice(0, 5);
 }
 
 // ======================
@@ -103,71 +31,30 @@ export async function getAllServers({
   lang
 }: any) {
 
-  let servers: any[] = [];
+  const variants = expandSlugVariants(title).slice(0, 25);
 
-  // =====================
-  // 🔹 SUB (más robusto)
-  // =====================
-  if (lang === "sub") {
+  let collected: any[] = [];
 
-    const variants = expandTitle(title).slice(0, 6);
+  for (const v of variants) {
 
-    for (const v of variants) {
-      const [jk, flv] = await Promise.all([
-        getJKAnimeServers(v, number),
-        getAnimeFLVServers(v, number)
-      ]);
+    const servers = await getServersFromAllSources(v, number);
 
-      const found = [...jk, ...flv];
-
-      if (found.length) {
-        servers.push(...found);
-        if (servers.length >= 4) break;
-      }
+    if (servers.length) {
+      collected.push(...servers);
     }
 
-    return await processServers(servers);
+    if (collected.length >= 30) break;
   }
 
-  // =====================
-  // 🔹 LATINO (ULTRA)
-  // =====================
-  if (lang === "latino") {
+  if (!collected.length) return [];
 
-    const variants = expandTitle(title).slice(0, 12);
+  const filtered = await filterWorkingServers(collected);
 
-    for (const v of variants) {
+  const unique = Array.from(
+    new Map(filtered.map(s => [s.embed, s])).values()
+  );
 
-      const results = await Promise.all([
-        getLatanimeServers(v, number),
-        getTioAnimeServers(v, number),
-        getAnimeYTServers(v, number),
-        getAnimeFenixServers(v, number),
-        getAnimeIDServers(v, number)
-      ]);
+  const sorted = unique.sort((a, b) => scoreServer(b) - scoreServer(a));
 
-      const flat = results.flat().filter(Boolean);
-
-      if (flat.length) {
-        servers.push(...flat);
-
-        if (servers.length >= 5) break;
-      }
-    }
-
-    // 🔥 fallback
-    if (!servers.length) {
-
-      const [jk, flv] = await Promise.all([
-        getJKAnimeServers(slug, number),
-        getAnimeFLVServers(slug, number)
-      ]);
-
-      servers = [...jk, ...flv];
-    }
-
-    return await processServers(servers);
-  }
-
-  return [];
+  return sorted.slice(0, 6);
 }
