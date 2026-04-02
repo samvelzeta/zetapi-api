@@ -36,9 +36,26 @@ function extractEverything(html: string): string[] {
   const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4[^"' ]*/g);
   mp4?.forEach(u => urls.add(u));
 
+  // 🔥 NUEVO: sources file:
+  const sources = html.match(/file\s*:\s*"([^"]+)"/g);
+  sources?.forEach(s => {
+    const u = s.match(/"(.*?)"/)?.[1];
+    if (u) urls.add(u);
+  });
+
+  // 🔥 NUEVO: jwplayer sources
+  const jw = html.match(/sources\s*:\s*\[\{file:\s*"([^"]+)"/);
+  if (jw?.[1]) urls.add(jw[1]);
+
   // iframes
   const $ = cheerio.load(html);
   $("iframe").each((_, el) => {
+    const src = $(el).attr("src");
+    if (src) urls.add(src);
+  });
+
+  // 🔥 NUEVO: video tags
+  $("video source").each((_, el) => {
     const src = $(el).attr("src");
     if (src) urls.add(src);
   });
@@ -87,19 +104,29 @@ async function scrapeSmart(url: string) {
 
   const all = [...extracted, ...clicked];
 
+  // 🔥 NUEVO: eliminar duplicados antes de resolver
+  const unique = Array.from(new Set(all));
+
   const resolved = await Promise.allSettled(
-    all.map(u => resolveServer(u))
+    unique.map(u => resolveServer(u))
   );
 
-  return resolved
+  const results = resolved
     .filter((r: any) => r.status === "fulfilled" && r.value)
     .map((r: any) => ({
       embed: r.value
     }));
+
+  // 🔥 NUEVO: fallback si no resolvió nada → devolver links crudos
+  if (!results.length) {
+    return unique.slice(0, 3).map(u => ({ embed: u }));
+  }
+
+  return results;
 }
 
 // ==========================
-// 🔥 MULTI SOURCES
+// 🔥 MULTI SOURCES (MEJORADO)
 // ==========================
 export async function getServersFromAllSources(slug: string, number: number) {
 
@@ -111,11 +138,31 @@ export async function getServersFromAllSources(slug: string, number: number) {
     `https://tioanime.com/ver/${slug}-${number}`
   ];
 
-  const results = await Promise.allSettled(
-    urls.map(u => scrapeSmart(u))
-  );
+  let collected: any[] = [];
 
-  return results
-    .filter((r: any) => r.status === "fulfilled")
-    .flatMap((r: any) => r.value);
+  // 🔥 PROCESO SECUENCIAL INTELIGENTE
+  for (const url of urls) {
+
+    const res = await scrapeSmart(url);
+
+    if (res.length) {
+      collected.push(...res);
+
+      // 🔥 si ya tenemos suficientes resultados → parar
+      if (collected.length >= 5) break;
+    }
+  }
+
+  // 🔥 fallback final (por si todo falla)
+  if (!collected.length) {
+    const results = await Promise.allSettled(
+      urls.map(u => scrapeSmart(u))
+    );
+
+    return results
+      .filter((r: any) => r.status === "fulfilled")
+      .flatMap((r: any) => r.value);
+  }
+
+  return collected;
 }
