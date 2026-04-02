@@ -1,7 +1,9 @@
-import { getLatinoSource } from "../../../utils/r2";
-import { getR2Index } from "../../../utils/r2Index"; // 🔥 NUEVO
 import { getAllServers } from "../../../../utils/getServers";
+import { filterWorkingServers } from "../../../../utils/filter";
 import { getCache } from "../../../../utils/cache";
+
+// 🔥 NUEVO IMPORT R2 (NO ROMPE NADA)
+import { buildHlsUrl } from "../../../../utils/r2";
 
 // ======================
 // 🔥 VALIDAR SERVERS
@@ -32,9 +34,8 @@ function validateServers(servers: any[]) {
 function normalizeServers(servers: any[]) {
 
   return servers.map((s, i) => ({
-    name: s.name || `server_${i + 1}`,
-    embed: s.embed,
-    type: s.type || "embed"
+    name: `server_${i + 1}`,
+    embed: s.embed
   }));
 }
 
@@ -50,62 +51,55 @@ export default defineEventHandler(async (event) => {
   const { slug, number } = getRouterParams(event);
   const { lang } = getQuery(event);
 
-  const episode = Number(number);
   const language = lang === "latino" ? "latino" : "sub";
 
   // ======================
-  // 🔥 0. R2 INDEX (OPTIMIZACIÓN)
+  // 🔥 0. R2 SOURCE (PRIORIDAD MAXIMA)
   // ======================
-  let r2HasEpisode = false;
-
   try {
-    const index = await getR2Index(slug);
 
-    if (index?.episodes?.includes(episode)) {
-      r2HasEpisode = true;
+    const r2Url = buildHlsUrl(slug, Number(number));
+
+    const res = await fetch(r2Url, {
+      method: "HEAD"
+    });
+
+    if (res.ok) {
+      return {
+        success: true,
+        source: "r2",
+        total: 1,
+        data: {
+          slug,
+          number: Number(number),
+          servers: [
+            {
+              name: "r2_hls",
+              embed: r2Url
+            }
+          ]
+        }
+      };
     }
-  } catch {}
+
+  } catch (e) {
+    // 🔇 silencioso → sigue flujo normal
+  }
 
   // ======================
-  // 🔥 1. CACHE
+  // 🔥 1. CACHE REAL (ARREGLADO)
   // ======================
-  const cached = await getCache(slug, episode, language);
+  const cached = await getCache(slug, Number(number), language);
 
   if (cached && cached.sources) {
 
     let servers = [
-      ...(cached.sources.hls || []).map((url: string) => ({
-        name: "Latino",
-        embed: url,
-        type: "hls"
-      })),
-      ...(cached.sources.mp4 || []).map((url: string) => ({
-        embed: url
-      })),
-      ...(cached.sources.embed || []).map((url: string) => ({
-        embed: url
-      }))
+      ...(cached.sources.hls || []).map((url: string) => ({ embed: url })),
+      ...(cached.sources.mp4 || []).map((url: string) => ({ embed: url })),
+      ...(cached.sources.embed || []).map((url: string) => ({ embed: url }))
     ];
 
     servers = validateServers(servers);
-
-    // ======================
-    // 🔥 R2 LATINO (SI EXISTE)
-    // ======================
-    if (r2HasEpisode) {
-
-      try {
-        const latino = await getLatinoSource(slug, episode);
-
-        if (latino) {
-          servers.unshift({
-            name: "Latino R2",
-            embed: latino,
-            type: "hls"
-          });
-        }
-      } catch {}
-    }
 
     if (servers.length) {
       return {
@@ -114,7 +108,7 @@ export default defineEventHandler(async (event) => {
         total: servers.length,
         data: {
           slug,
-          number: episode,
+          number: Number(number),
           servers: normalizeServers(servers)
         }
       };
@@ -126,7 +120,7 @@ export default defineEventHandler(async (event) => {
   // ======================
   let servers = await getAllServers({
     slug,
-    number: episode,
+    number: Number(number),
     title: slug,
     lang: language
   });
@@ -140,30 +134,12 @@ export default defineEventHandler(async (event) => {
 
     servers = await getAllServers({
       slug,
-      number: episode,
+      number: Number(number),
       title: slug,
       lang: "sub"
     });
 
     servers = validateServers(servers);
-  }
-
-  // ======================
-  // 🔥 R2 LATINO (GLOBAL)
-  // ======================
-  if (r2HasEpisode) {
-
-    try {
-      const latino = await getLatinoSource(slug, episode);
-
-      if (latino) {
-        servers.unshift({
-          name: "Latino R2",
-          embed: latino,
-          type: "hls"
-        });
-      }
-    } catch {}
   }
 
   // ======================
@@ -175,7 +151,7 @@ export default defineEventHandler(async (event) => {
     total: servers.length,
     data: {
       slug,
-      number: episode,
+      number: Number(number),
       servers: normalizeServers(servers)
     }
   };
