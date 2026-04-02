@@ -1,6 +1,6 @@
 import { getLatinoSource } from "../../../utils/r2";
+import { getR2Index } from "../../../utils/r2Index"; // 🔥 NUEVO
 import { getAllServers } from "../../../../utils/getServers";
-import { filterWorkingServers } from "../../../../utils/filter";
 import { getCache } from "../../../../utils/cache";
 
 // ======================
@@ -54,7 +54,20 @@ export default defineEventHandler(async (event) => {
   const language = lang === "latino" ? "latino" : "sub";
 
   // ======================
-  // 🔥 1. CACHE REAL
+  // 🔥 0. R2 INDEX (OPTIMIZACIÓN)
+  // ======================
+  let r2HasEpisode = false;
+
+  try {
+    const index = await getR2Index(slug);
+
+    if (index?.episodes?.includes(episode)) {
+      r2HasEpisode = true;
+    }
+  } catch {}
+
+  // ======================
+  // 🔥 1. CACHE
   // ======================
   const cached = await getCache(slug, episode, language);
 
@@ -77,20 +90,21 @@ export default defineEventHandler(async (event) => {
     servers = validateServers(servers);
 
     // ======================
-    // 🔥 R2 LATINO (PRIORIDAD)
+    // 🔥 R2 LATINO (SI EXISTE)
     // ======================
-    let latino = null;
+    if (r2HasEpisode) {
 
-    try {
-      latino = await getLatinoSource(slug, episode);
-    } catch {}
+      try {
+        const latino = await getLatinoSource(slug, episode);
 
-    if (latino) {
-      servers.unshift({
-        name: "Latino R2",
-        embed: latino,
-        type: "hls"
-      });
+        if (latino) {
+          servers.unshift({
+            name: "Latino R2",
+            embed: latino,
+            type: "hls"
+          });
+        }
+      } catch {}
     }
 
     if (servers.length) {
@@ -135,20 +149,21 @@ export default defineEventHandler(async (event) => {
   }
 
   // ======================
-  // 🔥 R2 LATINO (PRIORIDAD GLOBAL)
+  // 🔥 R2 LATINO (GLOBAL)
   // ======================
-  let latino = null;
+  if (r2HasEpisode) {
 
-  try {
-    latino = await getLatinoSource(slug, episode);
-  } catch {}
+    try {
+      const latino = await getLatinoSource(slug, episode);
 
-  if (latino) {
-    servers.unshift({
-      name: "Latino R2",
-      embed: latino,
-      type: "hls"
-    });
+      if (latino) {
+        servers.unshift({
+          name: "Latino R2",
+          embed: latino,
+          type: "hls"
+        });
+      }
+    } catch {}
   }
 
   // ======================
