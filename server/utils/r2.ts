@@ -125,22 +125,29 @@ export async function getLatinoSource(
   slug: string,
   episode: number
 ) {
-
-  // 1. intentar slug directo + variantes
   const variants = generateSlugVariants(slug);
 
-  for (const s of variants) {
-    const url = buildR2Url(s, episode);
+  // ⚡ SOLO 3 variantes (evita lentitud)
+  const limited = variants.slice(0, 3);
 
-    try {
-      const res = await fetch(url, {
-        method: "HEAD",
-        cache: "no-store"
-      });
+  const checks = await Promise.allSettled(
+    limited.map(s => {
+      const url = buildR2Url(s, episode);
+      return fetch(url, { method: "GET" }).then(res => ({
+        ok: res.ok,
+        url
+      }));
+    })
+  );
 
-      if (res.ok) return url;
-    } catch {}
+  for (const r of checks) {
+    if (r.status === "fulfilled" && r.value.ok) {
+      return r.value.url;
+    }
   }
+
+  return null;
+}
 
   // 2. intentar con slugs reales del R2
   const r2Slugs = await getR2Slugs();
