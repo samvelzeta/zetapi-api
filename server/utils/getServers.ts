@@ -2,59 +2,53 @@ import { getServersFromAllSources } from "./sources";
 import { filterWorkingServers } from "./filter";
 import { expandSlugVariants } from "./slugResolver";
 
-// ======================
-// 🔥 SCORE
-// ======================
 function scoreServer(server: any) {
   const url = (server.embed || "").toLowerCase();
 
-  let score = 0;
+  if (url.includes(".m3u8")) return 1000;
+  if (url.includes(".mp4")) return 900;
+  if (url.includes("filemoon")) return 800;
+  if (url.includes("streamtape")) return 700;
 
-  if (url.includes(".m3u8")) score += 1000;
-  else if (url.includes(".mp4")) score += 900;
-
-  else if (url.includes("filemoon")) score += 800;
-  else if (url.includes("streamtape")) score += 700;
-
-  else score += 100;
-
-  return score;
+  return 100;
 }
 
-// ======================
-// 🔥 MAIN
-// ======================
-export async function getAllServers({
-  slug,
-  number,
-  title,
-  lang
-}: any) {
+export async function getAllServers({ slug, number, title }: any) {
 
-  const variants = expandSlugVariants(title).slice(0, 25);
+  const variants = expandSlugVariants(title).slice(0, 20);
 
   let collected: any[] = [];
 
   for (const v of variants) {
+    const res = await getServersFromAllSources(v, number);
+    if (res.length) collected.push(...res);
 
-    const servers = await getServersFromAllSources(v, number);
-
-    if (servers.length) {
-      collected.push(...servers);
-    }
-
-    if (collected.length >= 30) break;
+    if (collected.length >= 25) break;
   }
 
   if (!collected.length) return [];
 
   const filtered = await filterWorkingServers(collected);
 
-  const unique = Array.from(
-    new Map(filtered.map(s => [s.embed, s])).values()
-  );
+  // 🔥 eliminar duplicados reales
+  const unique: any[] = [];
+  const seen = new Set();
+
+  for (const s of filtered) {
+    const clean = s.embed.split("?")[0];
+    if (!seen.has(clean)) {
+      seen.add(clean);
+      unique.push(s);
+    }
+  }
 
   const sorted = unique.sort((a, b) => scoreServer(b) - scoreServer(a));
 
-  return sorted.slice(0, 6);
+  const final = sorted.slice(0, 6);
+
+  if (final.length < 3) {
+    return sorted.slice(0, 10);
+  }
+
+  return final;
 }
