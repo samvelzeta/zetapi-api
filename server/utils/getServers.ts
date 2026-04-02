@@ -16,6 +16,8 @@ import { filterWorkingServers } from "./filter";
 function normalizeTitle(title: string) {
   return title
     .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[:\-]/g, " ")
     .replace(/\b(season|temporada|part|parte|capitulo|episode)\b/g, "")
     .replace(/\d+/g, "")
@@ -24,7 +26,7 @@ function normalizeTitle(title: string) {
 }
 
 // ======================
-// 🧠 EXPANSIÓN
+// 🧠 EXPANSIÓN AVANZADA
 // ======================
 function expandTitle(title: string) {
   const base = normalizeTitle(title);
@@ -35,11 +37,14 @@ function expandTitle(title: string) {
   variants.add(base.replace(/ /g, ""));
   variants.add(base.replace(/ /g, "_"));
 
+  // 🔥 multi idioma básico
+  variants.add(base.replace("shingeki no kyojin", "attack on titan"));
+  variants.add(base.replace("attack on titan", "shingeki no kyojin"));
+
   variants.add(base + " anime");
   variants.add(base + " online");
   variants.add(base + " latino");
   variants.add(base + " sub");
-  variants.add(base + " hd");
 
   return Array.from(variants).filter(v => v.length > 2);
 }
@@ -85,7 +90,7 @@ async function processServers(raw: any[]) {
   const filtered = await filterWorkingServers(unique);
   const sorted = sortServers(filtered);
 
-  return sorted;
+  return sorted.slice(0, 5);
 }
 
 // ======================
@@ -101,26 +106,35 @@ export async function getAllServers({
   let servers: any[] = [];
 
   // =====================
-  // 🔹 SUB
+  // 🔹 SUB (más robusto)
   // =====================
   if (lang === "sub") {
 
-    const [jk, flv] = await Promise.all([
-      getJKAnimeServers(slug, number),
-      getAnimeFLVServers(slug, number)
-    ]);
+    const variants = expandTitle(title).slice(0, 6);
 
-    servers = [...jk, ...flv];
+    for (const v of variants) {
+      const [jk, flv] = await Promise.all([
+        getJKAnimeServers(v, number),
+        getAnimeFLVServers(v, number)
+      ]);
+
+      const found = [...jk, ...flv];
+
+      if (found.length) {
+        servers.push(...found);
+        if (servers.length >= 4) break;
+      }
+    }
 
     return await processServers(servers);
   }
 
   // =====================
-  // 🔹 LATINO
+  // 🔹 LATINO (ULTRA)
   // =====================
   if (lang === "latino") {
 
-    const variants = expandTitle(title).slice(0, 10);
+    const variants = expandTitle(title).slice(0, 12);
 
     for (const v of variants) {
 
@@ -137,11 +151,11 @@ export async function getAllServers({
       if (flat.length) {
         servers.push(...flat);
 
-        if (flat.length >= 3) break;
+        if (servers.length >= 5) break;
       }
     }
 
-    // 🔥 FALLBACK LATINO → SUB
+    // 🔥 fallback
     if (!servers.length) {
 
       const [jk, flv] = await Promise.all([
