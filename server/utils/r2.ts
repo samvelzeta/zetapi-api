@@ -18,7 +18,7 @@ export function normalizeSlug(slug: string) {
 }
 
 // ==============================
-// 🔥 GENERAR POSIBLES SLUGS
+// 🔥 GENERAR VARIANTES
 // ==============================
 
 export function generateSlugVariants(slug: string) {
@@ -38,55 +38,7 @@ export function generateSlugVariants(slug: string) {
 }
 
 // ==============================
-// 🔥 MATCH POR SIMILITUD REAL
-// ==============================
-
-// ==============================
-// 🔥 MATCH ADN (SECUENCIAL)
-// ==============================
-export function findBestSlugMatch(input: string, candidates: string[]): string | null {
-
-  const clean = (s: string) =>
-    s.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-  const a = clean(input);
-
-  let best: string | null = null;
-  let bestScore = 0;
-
-  for (const candidate of candidates) {
-
-    const b = clean(candidate);
-
-    let score = 0;
-    let j = 0;
-
-    // 🔥 matching secuencial tipo ADN
-    for (let i = 0; i < a.length; i++) {
-      if (a[i] === b[j]) {
-        score++;
-        j++;
-      }
-      if (j >= b.length) break;
-    }
-
-    const similarity = score / a.length;
-
-    if (similarity > bestScore) {
-      bestScore = similarity;
-      best = candidate;
-    }
-  }
-
-  if (bestScore >= 0.4) {
-    return best;
-  }
-
-  return null;
-}
-
-// ==============================
-// 🔥 CONSTRUIR URL R2
+// 🔥 CONSTRUIR URL
 // ==============================
 
 export function buildR2Url(slug: string, episode: number) {
@@ -94,31 +46,7 @@ export function buildR2Url(slug: string, episode: number) {
 }
 
 // ==============================
-// 🔥 OBTENER SLUGS DESDE R2
-// ==============================
-
-export async function getR2Slugs(): Promise<string[]> {
-  try {
-    const res = await fetch(`${R2_BASE}/_index.json`, {
-      cache: "no-store"
-    });
-
-    if (!res.ok) return [];
-
-    const data = await res.json();
-
-    // esperado: { slugs: [] }
-    if (Array.isArray(data)) return data;
-    if (Array.isArray(data?.slugs)) return data.slugs;
-
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-// ==============================
-// 🔥 BUSCAR VIDEO EN R2 (SMART)
+// 🔥 BUSCAR EN R2 (OPTIMIZADO)
 // ==============================
 
 export async function getLatinoSource(
@@ -127,13 +55,17 @@ export async function getLatinoSource(
 ) {
   const variants = generateSlugVariants(slug);
 
-  // ⚡ SOLO 3 variantes (evita lentitud)
+  // 🔥 LIMITAMOS PARA EVITAR LENTITUD
   const limited = variants.slice(0, 3);
 
   const checks = await Promise.allSettled(
     limited.map(s => {
       const url = buildR2Url(s, episode);
-      return fetch(url, { method: "GET" }).then(res => ({
+
+      return fetch(url, {
+        method: "GET",
+        cache: "no-store"
+      }).then(res => ({
         ok: res.ok,
         url
       }));
@@ -143,29 +75,6 @@ export async function getLatinoSource(
   for (const r of checks) {
     if (r.status === "fulfilled" && r.value.ok) {
       return r.value.url;
-    }
-  }
-
-  return null;
-}
-
-  // 2. intentar con slugs reales del R2
-  const r2Slugs = await getR2Slugs();
-
-  if (r2Slugs.length) {
-    const match = findBestSlugMatch(slug, r2Slugs);
-
-    if (match) {
-      const url = buildR2Url(match, episode);
-
-      try {
-        const res = await fetch(url, {
-          method: "HEAD",
-          cache: "no-store"
-        });
-
-        if (res.ok) return url;
-      } catch {}
     }
   }
 
