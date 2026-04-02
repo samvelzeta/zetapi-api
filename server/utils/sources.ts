@@ -2,181 +2,120 @@ import * as cheerio from "cheerio";
 import { resolveServer } from "./resolver";
 
 // ==========================
-// 🔥 FETCH HTML REAL (SIN LOOP)
+// 🔥 FETCH ROBUSTO
 // ==========================
 async function fetchHtml(url: string): Promise<string | null> {
-
   try {
     const res = await fetch(url, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-        "Accept":
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": new URL(url).origin,
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "*/*",
+        "Referer": url,
         "Origin": new URL(url).origin
       }
     });
 
-    const text = await res.text();
-
-    return text;
+    return await res.text();
   } catch {
     return null;
   }
 }
 
 // ==========================
-// 🔥 EXTRAER IFRAME
+// 🔥 EXTRAER TODO POSIBLE
 // ==========================
-function extractIframe(html: string): string[] {
+function extractEverything(html: string): string[] {
 
+  const urls = new Set<string>();
+
+  // m3u8 directo
+  const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
+  m3u8?.forEach(u => urls.add(u));
+
+  // mp4 directo
+  const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4[^"' ]*/g);
+  mp4?.forEach(u => urls.add(u));
+
+  // iframes
   const $ = cheerio.load(html);
-  const iframes: string[] = [];
-
   $("iframe").each((_, el) => {
     const src = $(el).attr("src");
-    if (src) iframes.push(src);
+    if (src) urls.add(src);
   });
 
-  return iframes;
+  // links generales
+  const links = html.match(/https?:\/\/[^"' ]+/g);
+  links?.forEach(u => urls.add(u));
+
+  return Array.from(urls);
 }
 
 // ==========================
-// 🔥 EXTRAER LINKS
+// 🔥 SIMULACIÓN DE CLICK
 // ==========================
-function extractLinks(html: string): string[] {
+async function simulateClick(url: string): Promise<string[]> {
+
+  const html = await fetchHtml(url);
+  if (!html) return [];
+
+  const matches = html.match(/data-player="([^"]+)"/g);
+
+  if (!matches) return [];
 
   const urls: string[] = [];
 
-  const regex = html.match(/https?:\/\/[^"' ]+/g);
-
-  if (regex) {
-    for (const u of regex) {
-      if (u.length > 30) urls.push(u);
-    }
+  for (const m of matches) {
+    const u = m.match(/"(.*?)"/)?.[1];
+    if (u) urls.push(u);
   }
 
   return urls;
 }
 
 // ==========================
-// 🔥 LIMPIAR LINKS
+// 🔥 SCRAPER INTELIGENTE
 // ==========================
-function cleanUrls(urls: string[]): string[] {
-
-  return Array.from(new Set(urls)).filter(u => {
-
-    const bad = [
-      ".css",
-      ".js",
-      "facebook",
-      "twitter",
-      "ads",
-      "doubleclick"
-    ];
-
-    return !bad.some(b => u.toLowerCase().includes(b));
-  });
-}
-
-// ==========================
-// 🔥 RESOLVER
-// ==========================
-async function resolveAll(urls: string[]) {
-
-  const results = await Promise.allSettled(
-    urls.map(u => resolveServer(u))
-  );
-
-  return results
-    .filter((r: any) => r.status === "fulfilled" && r.value)
-    .map((r: any) => r.value);
-}
-
-// ==========================
-// 🔥 CREAR SERVERS
-// ==========================
-function buildServers(urls: string[]) {
-
-  return urls.map((u, i) => ({
-    name: `server_${i + 1}`,
-    embed: u
-  }));
-}
-
-// ==========================
-// 🔥 SCRAPER BASE
-// ==========================
-async function scrapePage(url: string) {
+async function scrapeSmart(url: string) {
 
   const html = await fetchHtml(url);
   if (!html) return [];
 
-  const iframes = extractIframe(html);
-  const links = extractLinks(html);
+  const extracted = extractEverything(html);
 
-  const all = cleanUrls([...iframes, ...links]);
+  // 🔥 intentar click virtual
+  const clicked = await simulateClick(url);
 
-  const resolved = await resolveAll(all);
+  const all = [...extracted, ...clicked];
 
-  return buildServers(resolved);
+  const resolved = await Promise.allSettled(
+    all.map(u => resolveServer(u))
+  );
+
+  return resolved
+    .filter((r: any) => r.status === "fulfilled" && r.value)
+    .map((r: any) => ({
+      embed: r.value
+    }));
 }
 
 // ==========================
-// 🔥 SOURCES
+// 🔥 MULTI SOURCES
 // ==========================
-export async function getAnimeFLVServers(slug: string, number: number) {
-  return await scrapePage(`https://www3.animeflv.net/ver/${slug}-${number}`);
-}
+export async function getServersFromAllSources(slug: string, number: number) {
 
-export async function getJKAnimeServers(slug: string, number: number) {
-  return await scrapePage(`https://jkanime.net/${slug}/${number}/`);
-}
+  const urls = [
+    `https://www3.animeflv.net/ver/${slug}-${number}`,
+    `https://animeflv.ar/ver/${slug}-${number}`,
+    `https://animeflv.cyou/ver/${slug}-${number}`,
+    `https://jkanime.net/${slug}/${number}/`,
+    `https://tioanime.com/ver/${slug}-${number}`
+  ];
 
-export async function getLatanimeServers(title: string, number: number) {
+  const results = await Promise.allSettled(
+    urls.map(u => scrapeSmart(u))
+  );
 
-  const searchUrl = `https://latanime.org/buscar?q=${encodeURIComponent(title)}`;
-
-  const html = await fetchHtml(searchUrl);
-  if (!html) return [];
-
-  const $ = cheerio.load(html);
-
-  const links: string[] = [];
-
-  $("a").each((_, el) => {
-    const href = $(el).attr("href");
-    if (href && href.includes("/anime/")) {
-      links.push(href);
-    }
-  });
-
-  for (const link of links.slice(0, 3)) {
-
-    const epUrl = `${link}/episodio-${number}`;
-
-    const result = await scrapePage(epUrl);
-
-    if (result.length) return result;
-  }
-
-  return [];
-}
-
-export async function getTioAnimeServers(title: string, number: number) {
-  return await scrapePage(`https://tioanime.com/ver/${title}-${number}`);
-}
-
-export async function getAnimeYTServers(title: string, number: number) {
-  return await scrapePage(`https://animeyt.tv/ver/${title}-${number}`);
-}
-
-export async function getAnimeFenixServers(title: string, number: number) {
-  return await scrapePage(`https://animefenix.com/ver/${title}-${number}`);
-}
-
-export async function getAnimeIDServers(title: string, number: number) {
-  return await scrapePage(`https://animeid.tv/${title}-${number}`);
+  return results
+    .filter((r: any) => r.status === "fulfilled")
+    .flatMap((r: any) => r.value);
 }
