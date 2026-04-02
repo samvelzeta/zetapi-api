@@ -22,6 +22,15 @@ function extractVideo(html: string): string | null {
 
   if (!html) return null;
 
+
+// 🔥 sources múltiples
+const multi = html.match(/file:\s*"([^"]+\.m3u8[^"]*)"/);
+if (multi?.[1]) return multi[1];
+
+// 🔥 playlist alternativa
+const alt = html.match(/src:\s*"([^"]+\.m3u8[^"]*)"/);
+if (alt?.[1]) return alt[1];
+
   // 🔥 m3u8 directo
   const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
   if (m3u8?.length) return m3u8[0];
