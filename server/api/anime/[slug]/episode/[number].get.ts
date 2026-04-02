@@ -2,8 +2,8 @@ import { getAllServers } from "../../../../utils/getServers";
 import { filterWorkingServers } from "../../../../utils/filter";
 import { getCache } from "../../../../utils/cache";
 
-// 🔥 NUEVO IMPORT R2 (NO ROMPE NADA)
-import { buildHlsUrl } from "../../../../utils/r2";
+// 🔥 IMPORT NUEVO (SMART R2)
+import { getLatinoSource } from "../../../../utils/r2";
 
 // ======================
 // 🔥 VALIDAR SERVERS
@@ -54,17 +54,13 @@ export default defineEventHandler(async (event) => {
   const language = lang === "latino" ? "latino" : "sub";
 
   // ======================
-  // 🔥 0. R2 SOURCE (PRIORIDAD MAXIMA)
+  // 🔥 0. R2 SOURCE (SMART)
   // ======================
   try {
 
-    const r2Url = buildHlsUrl(slug, Number(number));
+    const r2Url = await getLatinoSource(slug, Number(number));
 
-    const res = await fetch(r2Url, {
-      method: "HEAD"
-    });
-
-    if (res.ok) {
+    if (r2Url) {
       return {
         success: true,
         source: "r2",
@@ -75,7 +71,8 @@ export default defineEventHandler(async (event) => {
           servers: [
             {
               name: "r2_hls",
-              embed: r2Url
+              embed: r2Url,
+              type: "hls"
             }
           ]
         }
@@ -83,11 +80,11 @@ export default defineEventHandler(async (event) => {
     }
 
   } catch (e) {
-    // 🔇 silencioso → sigue flujo normal
+    // silencioso
   }
 
   // ======================
-  // 🔥 1. CACHE REAL (ARREGLADO)
+  // 🔥 1. CACHE
   // ======================
   const cached = await getCache(slug, Number(number), language);
 
