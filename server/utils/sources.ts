@@ -1,29 +1,15 @@
 import * as cheerio from "cheerio";
 import { resolveServer } from "./resolver";
 
-// ==========================
-// 🔥 FETCH ROBUSTO
-// ==========================
 async function fetchHtml(url: string): Promise<string | null> {
   try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "*/*",
-        "Referer": url,
-        "Origin": new URL(url).origin
-      }
-    });
-
+    const res = await fetch(url);
     return await res.text();
   } catch {
     return null;
   }
 }
 
-// ==========================
-// 🔥 EXTRAER TODO POSIBLE
-// ==========================
 function extractEverything(html: string): string[] {
 
   const urls = new Set<string>();
@@ -34,15 +20,6 @@ function extractEverything(html: string): string[] {
   const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4[^"' ]*/g);
   mp4?.forEach(u => urls.add(u));
 
-  const sources = html.match(/file\s*:\s*"([^"]+)"/g);
-  sources?.forEach(s => {
-    const u = s.match(/"(.*?)"/)?.[1];
-    if (u) urls.add(u);
-  });
-
-  const jw = html.match(/sources\s*:\s*\[\{file:\s*"([^"]+)"/);
-  if (jw?.[1]) urls.add(jw[1]);
-
   const $ = cheerio.load(html);
 
   $("iframe").each((_, el) => {
@@ -50,20 +27,9 @@ function extractEverything(html: string): string[] {
     if (src) urls.add(src);
   });
 
-  $("video source").each((_, el) => {
-    const src = $(el).attr("src");
-    if (src) urls.add(src);
-  });
-
-  const links = html.match(/https?:\/\/[^"' ]+/g);
-  links?.forEach(u => urls.add(u));
-
   return Array.from(urls);
 }
 
-// ==========================
-// 🔥 SCRAPER INTELIGENTE
-// ==========================
 async function scrapeSmart(url: string) {
 
   const html = await fetchHtml(url);
@@ -89,13 +55,9 @@ async function scrapeSmart(url: string) {
     }
   }
 
-  // 🔥 CLAVE: NO PERDER NADA
   return [...results, ...fallback];
 }
 
-// ==========================
-// 🔥 MULTI SOURCES REAL
-// ==========================
 export async function getServersFromAllSources(slug: string, number: number) {
 
   const urls = [
@@ -110,10 +72,7 @@ export async function getServersFromAllSources(slug: string, number: number) {
 
   for (const url of urls) {
     const res = await scrapeSmart(url);
-
-    if (res.length) {
-      collected.push(...res);
-    }
+    if (res.length) collected.push(...res);
   }
 
   return collected;
