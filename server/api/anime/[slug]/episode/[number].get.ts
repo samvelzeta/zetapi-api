@@ -1,6 +1,5 @@
 import { getAllServers } from "../../../../utils/getServers";
-import { filterWorkingServers } from "../../../../utils/filter";
-import { getCache } from "../../../../utils/cache";
+import { getCache, saveCache } from "../../../../utils/cache";
 import { getLatinoSource } from "../../../../utils/r2";
 
 // ======================
@@ -26,25 +25,25 @@ function validateServers(servers: any[]) {
   });
 }
 
+// ======================
+// 🔥 ELIMINAR DUPLICADOS
+// ======================
+function uniqueServers(servers: any[]) {
 
+  const seen = new Set();
+  const clean = [];
 
-// 🔥 después de validateServers
-servers = validateServers(servers);
+  for (const s of servers) {
+    const url = s.embed?.split("?")[0];
 
-// 🔥 asegurar mínimo 3
-if (servers.length > 0 && servers.length < 3) {
-  const extra = await getAllServers({
-    slug,
-    number: Number(number),
-    title: slug,
-    lang: "sub"
-  });
+    if (!seen.has(url)) {
+      seen.add(url);
+      clean.push(s);
+    }
+  }
 
-  servers.push(...extra);
+  return clean;
 }
-
-
-
 
 // ======================
 // 🔥 NORMALIZAR OUTPUT
@@ -75,8 +74,6 @@ export default defineEventHandler(async (event) => {
   // ======================
   // 🔥 0. R2 (NO BLOQUEANTE)
   // ======================
-  let r2Url: string | null = null;
-
   try {
 
     const r2Promise = getLatinoSource(slug, Number(number));
@@ -85,7 +82,7 @@ export default defineEventHandler(async (event) => {
       setTimeout(() => resolve(null), 1500)
     );
 
-    r2Url = await Promise.race([r2Promise, timeout]) as string | null;
+    const r2Url = await Promise.race([r2Promise, timeout]) as string | null;
 
     if (r2Url) {
       return {
@@ -122,6 +119,7 @@ export default defineEventHandler(async (event) => {
     ];
 
     servers = validateServers(servers);
+    servers = uniqueServers(servers);
 
     if (servers.length) {
       return {
@@ -148,28 +146,50 @@ export default defineEventHandler(async (event) => {
   });
 
   servers = validateServers(servers);
-  // 🔥 GUARDAR EN CACHE AUTOMÁTICO
-if (servers.length) {
-  saveCache(slug, Number(number), language, servers);
-}
+  servers = uniqueServers(servers);
 
   // ======================
-  // 🔥 3. FALLBACK LATINO → SUB
+  // 🔥 ASEGURAR MÍNIMO 3 SERVERS
   // ======================
-  if (!servers.length && language === "latino") {
+  if (servers.length > 0 && servers.length < 3) {
 
-    servers = await getAllServers({
+    const extra = await getAllServers({
       slug,
       number: Number(number),
       title: slug,
       lang: "sub"
     });
 
-    servers = validateServers(servers);
+    const merged = [...servers, ...extra];
+
+    servers = uniqueServers(validateServers(merged));
   }
 
   // ======================
-  // 🔥 4. RESPUESTA FINAL
+  // 🔥 GUARDAR CACHE
+  // ======================
+  if (servers.length) {
+    saveCache(slug, Number(number), language, servers);
+  }
+
+  // ======================
+  // 🔥 FALLBACK FINAL
+  // ======================
+  if (!servers.length) {
+    return {
+      success: true,
+      source: "empty",
+      total: 0,
+      data: {
+        slug,
+        number: Number(number),
+        servers: []
+      }
+    };
+  }
+
+  // ======================
+  // 🔥 RESPUESTA FINAL
   // ======================
   return {
     success: true,
