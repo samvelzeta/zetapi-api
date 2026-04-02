@@ -128,6 +128,10 @@ export default defineEventHandler(async (event) => {
   });
 
   servers = validateServers(servers);
+  // 🔥 GUARDAR EN CACHE AUTOMÁTICO
+if (servers.length) {
+  saveCache(slug, Number(number), language, servers);
+}
 
   // ======================
   // 🔥 3. FALLBACK LATINO → SUB
