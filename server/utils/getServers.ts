@@ -1,6 +1,9 @@
 import { getServersFromAllSources } from "./sources";
 import { filterWorkingServers } from "./filter";
 
+import { getJKAnimeServers } from "./scrapers/jkanime";
+import { getAnimeFLVServers } from "./scrapers/animeflv";
+
 // ======================
 function uniqueServers(list: any[]) {
   const seen = new Set();
@@ -33,18 +36,37 @@ function scoreServer(server: any) {
 // ======================
 export async function getAllServers({ slug, number, title }: any) {
 
-  const collected = await getServersFromAllSources(slug, number);
+  let collected: any[] = [];
+
+  // 🔥 1. JKANIME (PRIORIDAD)
+  const jk = await getJKAnimeServers(slug, number);
+  collected.push(...jk);
+
+  // 🔥 2. ANIMEFLV SI NO HAY HLS
+  if (!collected.some(s => s.embed.includes(".m3u8"))) {
+    const flv = await getAnimeFLVServers(slug, number);
+    collected.push(...flv);
+  }
+
+  // 🔥 3. FALLBACK GENERAL
+  if (!collected.length) {
+    const fallback = await getServersFromAllSources(slug, number);
+    collected.push(...fallback);
+  }
 
   if (!collected.length) return [];
 
+  // 🔥 FILTRAR
   const filtered = await filterWorkingServers(collected);
+
+  // 🔥 UNICOS
   const unique = uniqueServers(filtered);
 
+  // 🔥 ORDEN
   const sorted = unique.sort((a, b) => scoreServer(b) - scoreServer(a));
 
   // 🔥 GARANTIZAR MÍNIMO 3
   if (sorted.length >= 3) return sorted.slice(0, 6);
 
-  // 🔥 fallback (NO dejar vacío)
   return unique.slice(0, 5);
 }
