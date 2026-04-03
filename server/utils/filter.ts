@@ -27,6 +27,7 @@ export async function filterWorkingServers(servers: any[]) {
     "disqus"
   ];
 
+
   const clean = servers.filter(s => {
 
     if (!s?.embed) return false;
@@ -46,3 +47,12 @@ export async function filterWorkingServers(servers: any[]) {
 
   return clean;
 }
+
+  if (
+  url.includes("captcha") ||
+  url.includes("preview") ||
+  url.includes("sample") ||
+  url.includes("ads") ||
+  url.includes("banner")
+) return false;
+
