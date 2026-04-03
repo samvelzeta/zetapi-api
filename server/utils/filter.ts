@@ -1,20 +1,6 @@
-// 📁 server/utils/filter.ts
-
 export async function filterWorkingServers(servers: any[]) {
 
   if (!servers?.length) return [];
-
-  const GOOD = [
-    "streamwish",
-    "filemoon",
-    "streamtape",
-    "mp4upload",
-    "ok.ru",
-    "dood",
-    "netu",
-    "yourupload",
-    "maru"
-  ];
 
   const BAD = [
     "/ver/",
@@ -22,7 +8,6 @@ export async function filterWorkingServers(servers: any[]) {
     "/search",
     "facebook",
     "twitter",
-    "ads",
     ".css",
     ".js",
     "logo",
@@ -34,25 +19,23 @@ export async function filterWorkingServers(servers: any[]) {
     "sample"
   ];
 
-  const clean = servers.filter(s => {
+  const clean: any[] = [];
 
-    if (!s?.embed) return false;
+  for (const s of servers) {
+
+    if (!s?.embed) continue;
 
     const url = s.embed.toLowerCase();
 
-    // ❌ basuraxxxxxxxxx
-    if (BAD.some(b => url.includes(b))) return false;
+    // ❌ basura REAL
+    if (BAD.some(b => url.includes(b))) continue;
 
-    // 🥇 HLS / MP4 directos
-    if (url.includes(".m3u8") || url.includes(".mp4")) return true;
+    // 🔥 TODO lo demás pasa (NO bloquear)
+    clean.push(s);
+  }
 
-    // 🥈 servidores conocidos
-    if (GOOD.some(g => url.includes(g))) return true;
-
-    return false;
-  });
-
-  if (!clean.length) return servers.slice(0, 2);
+  // 🔥 CLAVE: nunca devolver vacío
+  if (!clean.length) return servers;
 
   return clean;
 }
