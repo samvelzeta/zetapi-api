@@ -7,7 +7,20 @@ import { getLatinoSource } from "../../../../utils/r2";
 // ======================
 function validateServers(servers: any[]) {
 
-  if (!servers?.length) return [];
+  if (servers.length < 3) {
+
+  const extra = await getAllServers({
+    slug,
+    number: Number(number),
+    title: slug,
+    lang: "sub"
+  });
+
+  servers = uniqueServers([
+    ...servers,
+    ...extra
+  ]).slice(0, 6);
+}
 
   return servers.filter(s => {
 
