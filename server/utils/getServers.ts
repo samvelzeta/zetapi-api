@@ -49,7 +49,10 @@ function scoreServer(server: any) {
 // ======================
 export async function getAllServers({ slug, number, title, lang }: any) {
 
-  const variants = await resolveSlugVariants(slug);
+  const variants = [
+  ...(await resolveSlugVariants(slug)),
+  ...(await resolveSlugVariants(title))
+];
 
   let collected: any[] = [];
 
