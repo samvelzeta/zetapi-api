@@ -40,7 +40,7 @@ export async function filterWorkingServers(servers: any[]) {
 
     const url = s.embed.toLowerCase();
 
-    // ❌ basura
+    // ❌ basuraxxxxxxxxx
     if (BAD.some(b => url.includes(b))) return false;
 
     // 🥇 HLS / MP4 directos
