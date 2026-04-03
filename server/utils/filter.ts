@@ -1,3 +1,5 @@
+// 📁 server/utils/filter.ts
+
 export async function filterWorkingServers(servers: any[]) {
 
   if (!servers?.length) return [];
@@ -9,7 +11,9 @@ export async function filterWorkingServers(servers: any[]) {
     "mp4upload",
     "ok.ru",
     "dood",
-    "netu"
+    "netu",
+    "yourupload",
+    "maru"
   ];
 
   const BAD = [
@@ -24,9 +28,11 @@ export async function filterWorkingServers(servers: any[]) {
     "logo",
     "banner",
     "comment",
-    "disqus"
+    "disqus",
+    "captcha",
+    "preview",
+    "sample"
   ];
-
 
   const clean = servers.filter(s => {
 
@@ -34,10 +40,13 @@ export async function filterWorkingServers(servers: any[]) {
 
     const url = s.embed.toLowerCase();
 
+    // ❌ basura
     if (BAD.some(b => url.includes(b))) return false;
 
+    // 🥇 HLS / MP4 directos
     if (url.includes(".m3u8") || url.includes(".mp4")) return true;
 
+    // 🥈 servidores conocidos
     if (GOOD.some(g => url.includes(g))) return true;
 
     return false;
@@ -47,12 +56,3 @@ export async function filterWorkingServers(servers: any[]) {
 
   return clean;
 }
-
-  if (
-  url.includes("captcha") ||
-  url.includes("preview") ||
-  url.includes("sample") ||
-  url.includes("ads") ||
-  url.includes("banner")
-) return false;
-
