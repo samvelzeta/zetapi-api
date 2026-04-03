@@ -1,7 +1,7 @@
 import { $fetch } from "ofetch";
 import { detectServerType, isValidVideo } from "./serverTypes";
 
-// ==============================
+// ==============================ssssssssssssssssssss
 function getHeaders(url: string) {
   return {
     "User-Agent":
