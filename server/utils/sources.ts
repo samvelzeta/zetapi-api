@@ -23,13 +23,15 @@ function normalizeServer(name: string) {
 // ======================
 function extractVideo(html: string) {
 
+  const urls = new Set<string>();
+
   const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
-  if (m3u8) return m3u8;
+  m3u8?.forEach(u => urls.add(u));
 
   const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4[^"' ]*/g);
-  if (mp4) return mp4;
+  mp4?.forEach(u => urls.add(u));
 
-  return [];
+  return Array.from(urls);
 }
 
 // ======================
@@ -37,63 +39,88 @@ function extractVideo(html: string) {
 // ======================
 async function resolveIframe(url: string): Promise<string | null> {
 
-  const html = await fetchHtml(url);
-  if (!html) return null;
+  try {
+    const html = await fetchHtml(url);
+    if (!html) return null;
 
-  const vids = extractVideo(html);
+    const vids = extractVideo(html);
 
-  if (vids.length) return vids[0];
+    return vids.length ? vids[0] : null;
 
-  return null;
+  } catch {
+    return null;
+  }
 }
 
 // ======================
-// 🔥 JKANIME (ULTRA FIX)
+// 🔥 DELAY
+// ======================
+function delay(ms: number) {
+  return new Promise(res => setTimeout(res, ms));
+}
+
+// ======================
+// 🔥 JKANIME (FIX PRO)
 // ======================
 export async function getJKAnimeServers(slug: string, number: number) {
 
-  try {
+  const servers: any[] = [];
 
-    const url = `https://jkanime.net/${slug}/${number}/`;
+  for (let attempt = 0; attempt < 3; attempt++) {
 
-    const html = await fetchHtml(url);
+    try {
 
-    if (!html) return [];
+      const url = `https://jkanime.net/${slug}/${number}/`;
 
-    const servers: any[] = [];
+      const html = await fetchHtml(url);
 
-    // 🔥 1. HLS DIRECTO
-    const direct = extractVideo(html);
+      if (!html) {
+        await delay(500);
+        continue;
+      }
 
-    for (const d of direct) {
-      servers.push({
-        name: "jkanime_hls",
-        embed: d
-      });
-    }
+      // 🔥 1. HLS DIRECTO
+      const direct = extractVideo(html);
 
-    // 🔥 2. IFRAMES
-    const frames = [
-      ...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)
-    ].map(m => m[1]);
-
-    for (const f of frames) {
-
-      const real = await resolveIframe(f);
-
-      if (real) {
+      for (const d of direct) {
         servers.push({
-          name: "jkanime_embed",
-          embed: real
+          name: "jkanime_hls",
+          embed: d
         });
       }
-    }
 
-    return servers;
+      // 🔥 2. IFRAMES REALES
+      const frames = [
+        ...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)
+      ].map(m => m[1]);
 
-  } catch {
-    return [];
+      for (const f of frames) {
+
+        // ❌ FILTRAR BASURA
+        if (
+          f.includes("facebook") ||
+          f.includes("twitter") ||
+          f.includes("disqus")
+        ) continue;
+
+        const real = await resolveIframe(f);
+
+        if (real) {
+          servers.push({
+            name: "jkanime_embed",
+            embed: real
+          });
+        }
+      }
+
+      if (servers.length) break;
+
+    } catch {}
+
+    await delay(800);
   }
+
+  return servers;
 }
 
 // ======================
@@ -139,6 +166,11 @@ export async function getTioAnimeServers(query: string, number: number) {
     const servers = [];
 
     for (const f of frames) {
+
+      if (
+        f.includes("comment") ||
+        f.includes("disqus")
+      ) continue;
 
       const real = await resolveIframe(f);
 
