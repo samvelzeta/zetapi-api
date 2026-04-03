@@ -1,131 +1,146 @@
-import * as cheerio from "cheerio";
-import { resolveServer } from "./resolver";
+import { getEpisode } from "animeflv-scraper";
+import { $fetch } from "ofetch";
 
-// ==========================
-// 🔥 FETCH ROBUSTO
-// ==========================
-async function fetchHtml(url: string): Promise<string | null> {
+// ======================
+// 🔥 NORMALIZAR SERVIDOR
+// ======================
+function normalizeServer(name: string) {
+  if (!name) return "server";
+
+  const n = name.toLowerCase();
+
+  if (n.includes("streamwish") || n.includes("sw")) return "streamwish";
+  if (n.includes("filemoon")) return "filemoon";
+  if (n.includes("streamtape")) return "streamtape";
+  if (n.includes("mp4")) return "mp4upload";
+  if (n.includes("okru") || n.includes("ok.ru")) return "okru";
+  if (n.includes("netu")) return "netu";
+  if (n.includes("dood")) return "dood";
+
+  return "server";
+}
+
+// =====================
+// 🔥 EXTRAER VIDEO REAL
+// =====================
+function extractVideoAdvanced(html: string) {
+
+  const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
+  if (m3u8) return m3u8[0];
+
+  const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4[^"' ]*/g);
+  if (mp4) return mp4[0];
+
+  const source = html.match(/file\s*:\s*"([^"]+)"/);
+  if (source) return source[1];
+
+  return null;
+}
+
+// =====================
+// 🔥 RESOLVER PROFUNDO
+// =====================
+async function deepResolve(url: string, depth = 0): Promise<string | null> {
+
+  if (depth > 3) return null;
 
   try {
 
-    const userAgents = [
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/119 Safari/537.36",
-      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/118 Safari/537.36"
-    ];
+    const html = await $fetch(url, { timeout: 6000 });
 
-    const ua = userAgents[Math.floor(Math.random() * userAgents.length)];
+    const video = extractVideoAdvanced(html);
+    if (video) return video;
 
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": ua,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Referer": new URL(url).origin,
-        "Origin": new URL(url).origin
-      }
-    });
+    const frames = [...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)].map(m => m[1]);
 
-    const text = await res.text();
+    for (const f of frames) {
+      const res = await deepResolve(f, depth + 1);
+      if (res) return res;
+    }
 
-    if (!text || text.length < 800) return null;
-
-    return text;
+    return null;
 
   } catch {
     return null;
   }
 }
 
-// ==========================
-// 🔥 DELAY HUMANO
-// ==========================
-function delay(ms: number) {
-  return new Promise(res => setTimeout(res, ms));
-}
+// =====================
+// 🔥 LATINO
+// =====================
+export async function getTioAnimeServers(query: string, number: number) {
+  try {
+    const search = await $fetch(`https://tioanime.com/buscar?q=${query}`);
+    const match = search.match(/href="\/anime\/([^"]+)"/);
+    if (!match) return [];
 
-// ==========================
-// 🔥 EXTRAER LINKS ÚTILES
-// ==========================
-function extractEverything(html: string): string[] {
+    const ep = await $fetch(`https://tioanime.com/ver/${match[1]}-${number}`);
 
-  const urls = new Set<string>();
+    const frames = [...ep.matchAll(/<iframe[^>]+src="([^"]+)"/g)].map(m => m[1]);
 
-  const matches = html.match(/https?:\/\/[^"' ]+/g);
-  if (!matches) return [];
+    const servers = [];
 
-  for (const u of matches) {
-
-    const clean = u.toLowerCase();
-
-    if (
-      clean.includes(".m3u8") ||
-      clean.includes(".mp4") ||
-      clean.includes("embed") ||
-      clean.includes("player")
-    ) {
-      urls.add(u);
+    for (const f of frames) {
+      const real = await deepResolve(f);
+      if (real) {
+        servers.push({
+          name: normalizeServer(real),
+          embed: real
+        });
+      }
     }
+
+    return servers;
+
+  } catch {
+    return [];
   }
-
-  const $ = cheerio.load(html);
-
-  $("iframe").each((_, el) => {
-    const src = $(el).attr("src");
-    if (src) urls.add(src);
-  });
-
-  return Array.from(urls);
 }
 
-// ==========================
-// 🔥 SCRAPER
-// ==========================
-async function scrapeSmart(url: string) {
+// =====================
+// 🔥 SUB (LIMPIO)
+// =====================
+export async function getAnimeFLVServers(slug: string, number: number) {
+  try {
+    const res = await getEpisode(slug, number);
 
-  await delay(200 + Math.random() * 500);
+    return (res?.servers || []).map((s: any) => ({
+      name: normalizeServer(s.server || s.name),
+      embed: s.url || s.embed
+    }));
 
-  const html = await fetchHtml(url);
-  if (!html) return [];
+  } catch {
+    return [];
+  }
+}
 
-  const extracted = extractEverything(html);
-  const unique = Array.from(new Set(extracted));
+// =====================
+// 🔥 JKANIME (ARREGLADO)
+// =====================
+export async function getJKAnimeServers(slug: string, number: number) {
+  try {
 
-  const resolved = await Promise.allSettled(
-    unique.map(u => resolveServer(u))
-  );
+    const html = await $fetch(`https://jkanime.net/${slug}/${number}/`);
 
-  const results: any[] = [];
+    if (!html) return [];
 
-  for (const r of resolved) {
-    if (r.status === "fulfilled" && r.value) {
-      results.push({ embed: r.value });
+    const servers: any[] = [];
+
+    // 🔥 SOLO VIDEOS REALES
+    const matches = html.match(/https?:\/\/[^"' ]+\.(m3u8|mp4)[^"' ]*/g);
+
+    if (matches) {
+      for (const m of matches) {
+        servers.push({
+          name: "jkanime",
+          embed: m
+        });
+      }
     }
+
+    return servers;
+
+  } catch {
+    return [];
   }
-
-  return results;
-}
-
-// ==========================
-// 🔥 MULTI SOURCES (PARALELO)
-// ==========================
-export async function getServersFromAllSources(slug: string, number: number) {
-
-  const urls = [
-    `https://www3.animeflv.net/ver/${slug}-${number}`,
-    `https://animeflv.ar/ver/${slug}-${number}`,
-    `https://animeflv.cyou/ver/${slug}-${number}`,
-    `https://jkanime.net/${slug}/${number}/`,
-    `https://tioanime.com/ver/${slug}-${number}`
-  ];
-
-  const results = await Promise.allSettled(
-    urls.map(u => scrapeSmart(u))
-  );
-
-  return results
-    .filter((r: any) => r.status === "fulfilled")
-    .flatMap((r: any) => r.value);
 }
