@@ -1,7 +1,6 @@
 import { $fetch } from "ofetch";
 import { detectServerType, isValidVideo } from "./serverTypes";
 
-// ==============================ssssssssssssssssssss
 function getHeaders(url: string) {
   return {
     "User-Agent":
@@ -11,17 +10,17 @@ function getHeaders(url: string) {
   };
 }
 
-// ==============================
 async function validateHLS(url: string): Promise<boolean> {
   try {
+
     const res = await $fetch(url, { headers: getHeaders(url) });
 
     const text = typeof res === "string" ? res : JSON.stringify(res);
 
     const segments = text.match(/\.ts/g);
 
-    // 🔥 evitar clips
-    if (!segments || segments.length < 30) return false;
+    // 🔥 mínimo real (~3 min)
+    if (!segments || segments.length < 40) return false;
 
     return true;
 
@@ -30,7 +29,6 @@ async function validateHLS(url: string): Promise<boolean> {
   }
 }
 
-// ==============================
 async function fetchHtml(url: string): Promise<string | null> {
   try {
     const res = await $fetch(url, { headers: getHeaders(url) });
@@ -40,7 +38,6 @@ async function fetchHtml(url: string): Promise<string | null> {
   }
 }
 
-// ==============================
 function extractVideo(html: string): string | null {
 
   const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
@@ -52,7 +49,6 @@ function extractVideo(html: string): string | null {
   return null;
 }
 
-// ==============================
 async function resolveGeneric(url: string): Promise<string | null> {
 
   const html = await fetchHtml(url);
@@ -71,7 +67,6 @@ async function resolveGeneric(url: string): Promise<string | null> {
   return null;
 }
 
-// ==============================
 export async function resolveServer(url: string): Promise<string | null> {
 
   if (!url) return null;
