@@ -49,7 +49,12 @@ function scoreServer(server: any) {
 // ======================
 export async function getAllServers({ slug, number, title, lang }: any) {
 
-  const variants = [
+ // 🔥 limpiar slug mal formado (NO rompe nada)
+const cleanSlug = slug.replace(/-\d+$/, "");
+
+// 🔥 usar slug limpio + original
+const variants = [
+  ...(await resolveSlugVariants(cleanSlug)),
   ...(await resolveSlugVariants(slug)),
   ...(await resolveSlugVariants(title))
 ];
