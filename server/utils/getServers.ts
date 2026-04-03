@@ -6,8 +6,7 @@ import {
 
 import { filterWorkingServers } from "./filter";
 import { expandSlugVariants } from "./slugResolver";
-const trimmed = smartTrimSlug(slug);
-const variants = expandSlugVariants(trimmed);
+
 
 // ======================
 function uniqueServers(list: any[]) {
@@ -42,7 +41,8 @@ function scoreServer(server: any) {
 // ======================
 export async function getAllServers({ slug, number, title, lang }: any) {
 
-  const variants = expandSlugVariants(slug).slice(0, 8);
+  const trimmed = smartTrimSlug(slug);
+  const variants = expandSlugVariants(trimmed);
 
   let collected: any[] = [];
 
