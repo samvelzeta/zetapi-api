@@ -13,6 +13,24 @@ export function normalizeTitle(title: string): string {
     .trim();
 }
 
+
+//otro resolvedor
+export function smartTrimSlug(slug: string) {
+
+  let clean = slug
+    .toLowerCase()
+    .replace(/-/g, " ")
+    .replace(/\b(season|temporada|part|parte)\b.*$/, "") // 🔥 corta todo después
+    .replace(/\b(tv|ova|ona)\b/g, "")
+    .trim();
+
+  // volver a slug
+  return clean
+    .replace(/\s+/g, "-")
+    .replace(/[^\w-]/g, "");
+}
+
+
 // ==============================
 // 🔥 EXPANSIÓN AVANZADA
 // ==============================
