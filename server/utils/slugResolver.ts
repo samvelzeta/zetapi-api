@@ -14,12 +14,13 @@ export function normalizeTitle(title: string): string {
 }
 
 // ==============================
-// 🔥 RECORTE INTELIGENTE
+// 🔥 RECORTE INTELIGENTE (FIX REAL)
 // ==============================
 export function smartTrimSlug(slug: string) {
 
   let clean = slug
     .toLowerCase()
+    .replace(/-\d+$/, "") // 🔥 FIX CLAVE (quita -1, -2...)
     .replace(/-/g, " ")
     .replace(/\b(season|temporada|part|parte)\b.*$/, "")
     .replace(/\b(tv|ova|ona)\b/g, "")
@@ -45,26 +46,19 @@ function toSlug(text: string) {
 }
 
 // ==============================
-// 🔥 ANILIST FETCH
+// 🔥 ANILIST
 // ==============================
 async function fetchAniList(title: string) {
 
   try {
-
     const res = await fetch("https://graphql.anilist.co", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         query: `
           query ($search: String) {
             Media(search: $search, type: ANIME) {
-              title {
-                romaji
-                english
-                native
-              }
+              title { romaji english native }
               synonyms
             }
           }
@@ -74,7 +68,6 @@ async function fetchAniList(title: string) {
     });
 
     const json = await res.json();
-
     return json?.data?.Media || null;
 
   } catch {
@@ -83,7 +76,7 @@ async function fetchAniList(title: string) {
 }
 
 // ==============================
-// 🔥 EXPANSIÓN BASE
+// 🔥 EXPANSIÓN
 // ==============================
 export function expandSlugVariants(input: string): string[] {
 
@@ -97,14 +90,13 @@ export function expandSlugVariants(input: string): string[] {
 
   variants.add(base + " anime");
   variants.add(base + " online");
-  variants.add(base + " latino");
   variants.add(base + " sub");
 
-  return Array.from(variants).filter(v => v.length > 2);
+  return Array.from(variants);
 }
 
 // ==============================
-// 🔥 🔥 RESOLVER FINAL (CON ANILIST)
+// 🔥 RESOLVER FINAL
 // ==============================
 export async function resolveSlugVariants(input: string): Promise<string[]> {
 
@@ -112,10 +104,8 @@ export async function resolveSlugVariants(input: string): Promise<string[]> {
 
   const variants = new Set<string>();
 
-  // base
   variants.add(trimmed);
 
-  // locales
   expandSlugVariants(trimmed).forEach(v => variants.add(v));
 
   // 🔥 ANILIST
@@ -138,11 +128,10 @@ export async function resolveSlugVariants(input: string): Promise<string[]> {
 
       variants.add(slug);
       variants.add(slug.replace(/-/g, ""));
-      variants.add(slug.replace(/-/g, "_"));
     }
   }
 
   return Array.from(variants)
     .filter(v => v.length > 2)
-    .slice(0, 15);
+    .slice(0, 20);
 }
