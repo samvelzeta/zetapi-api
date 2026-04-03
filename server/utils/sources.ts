@@ -1,90 +1,89 @@
 import { getEpisode } from "animeflv-scraper";
-import { $fetch } from "ofetch";
+import { fetchHtml } from "./fetcher";
 
 // ======================
-// 🔥 NORMALIZAR SERVIDOR
-// ======================s
+// 🔥 NORMALIZAR NOMBRE
+// ======================
 function normalizeServer(name: string) {
+
   if (!name) return "server";
 
   const n = name.toLowerCase();
 
-  if (n.includes("streamwish") || n.includes("sw")) return "streamwish";
-  if (n.includes("filemoon")) return "filemoon";
-  if (n.includes("streamtape")) return "streamtape";
-  if (n.includes("mp4")) return "mp4upload";
-  if (n.includes("okru") || n.includes("ok.ru")) return "okru";
-  if (n.includes("netu")) return "netu";
-  if (n.includes("dood")) return "dood";
+  if (n.includes("yourupload")) return "yourupload";
+  if (n.includes("ok")) return "okru";
+  if (n.includes("maru")) return "maru";
+  if (n.includes("streamwish")) return "streamwish";
 
   return "server";
 }
 
-// =====================
+// ======================
 // 🔥 EXTRAER VIDEO REAL
-// =====================
-function extractVideoAdvanced(html: string) {
+// ======================
+function extractVideo(html: string) {
 
   const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
-  if (m3u8) return m3u8[0];
+  if (m3u8) return m3u8;
 
   const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4[^"' ]*/g);
-  if (mp4) return mp4[0];
+  if (mp4) return mp4;
 
-  const source = html.match(/file\s*:\s*"([^"]+)"/);
-  if (source) return source[1];
+  return [];
+}
+
+// ======================
+// 🔥 RESOLVER IFRAME
+// ======================
+async function resolveIframe(url: string): Promise<string | null> {
+
+  const html = await fetchHtml(url);
+  if (!html) return null;
+
+  const vids = extractVideo(html);
+
+  if (vids.length) return vids[0];
 
   return null;
 }
 
-// =====================
-// 🔥 RESOLVER PROFUNDO
-// =====================
-async function deepResolve(url: string, depth = 0): Promise<string | null> {
-
-  if (depth > 3) return null;
+// ======================
+// 🔥 JKANIME (ULTRA FIX)
+// ======================
+export async function getJKAnimeServers(slug: string, number: number) {
 
   try {
 
-    const html = await $fetch(url, { timeout: 6000 });
+    const url = `https://jkanime.net/${slug}/${number}/`;
 
-    const video = extractVideoAdvanced(html);
-    if (video) return video;
+    const html = await fetchHtml(url);
 
-    const frames = [...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)].map(m => m[1]);
+    if (!html) return [];
 
-    for (const f of frames) {
-      const res = await deepResolve(f, depth + 1);
-      if (res) return res;
+    const servers: any[] = [];
+
+    // 🔥 1. HLS DIRECTO
+    const direct = extractVideo(html);
+
+    for (const d of direct) {
+      servers.push({
+        name: "jkanime_hls",
+        embed: d
+      });
     }
 
-    return null;
-
-  } catch {
-    return null;
-  }
-}
-
-// =====================
-// 🔥 LATINO
-// =====================
-export async function getTioAnimeServers(query: string, number: number) {
-  try {
-    const search = await $fetch(`https://tioanime.com/buscar?q=${query}`);
-    const match = search.match(/href="\/anime\/([^"]+)"/);
-    if (!match) return [];
-
-    const ep = await $fetch(`https://tioanime.com/ver/${match[1]}-${number}`);
-
-    const frames = [...ep.matchAll(/<iframe[^>]+src="([^"]+)"/g)].map(m => m[1]);
-
-    const servers = [];
+    // 🔥 2. IFRAMES
+    const frames = [
+      ...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)
+    ].map(m => m[1]);
 
     for (const f of frames) {
-      const real = await deepResolve(f);
+
+      const real = await resolveIframe(f);
+
       if (real) {
         servers.push({
-          name: normalizeServer(real),
+          name: "jkanime_embed",
           embed: real
         });
       }
@@ -97,11 +96,13 @@ export async function getTioAnimeServers(query: string, number: number) {
   }
 }
 
-// =====================
-// 🔥 SUB (LIMPIO)
-// =====================
+// ======================
+// 🔥 ANIMEFLV
+// ======================
 export async function getAnimeFLVServers(slug: string, number: number) {
+
   try {
+
     const res = await getEpisode(slug, number);
 
     return (res?.servers || []).map((s: any) => ({
@@ -114,26 +115,37 @@ export async function getAnimeFLVServers(slug: string, number: number) {
   }
 }
 
-// =====================
-// 🔥 JKANIME (ARREGLADO)
-// =====================
-export async function getJKAnimeServers(slug: string, number: number) {
+// ======================
+// 🔥 TIOANIME (SOLO FALLBACK)
+// ======================
+export async function getTioAnimeServers(query: string, number: number) {
+
   try {
 
-    const html = await $fetch(`https://jkanime.net/${slug}/${number}/`);
+    const html = await fetchHtml(`https://tioanime.com/buscar?q=${query}`);
 
-    if (!html) return [];
+    const match = html?.match(/href="\/anime\/([^"]+)"/);
 
-    const servers: any[] = [];
+    if (!match) return [];
 
-    // 🔥 SOLO VIDEOS REALES
-    const matches = html.match(/https?:\/\/[^"' ]+\.(m3u8|mp4)[^"' ]*/g);
+    const ep = await fetchHtml(`https://tioanime.com/ver/${match[1]}-${number}`);
 
-    if (matches) {
-      for (const m of matches) {
+    if (!ep) return [];
+
+    const frames = [
+      ...ep.matchAll(/<iframe[^>]+src="([^"]+)"/g)
+    ].map(m => m[1]);
+
+    const servers = [];
+
+    for (const f of frames) {
+
+      const real = await resolveIframe(f);
+
+      if (real) {
         servers.push({
-          name: "jkanime",
-          embed: m
+          name: "tioanime",
+          embed: real
         });
       }
     }
