@@ -89,36 +89,69 @@ function extractJKPlayers(html: string) {
 // ======================
 export async function getJKAnimeServers(slug: string, number: number) {
 
-  const servers: any[] = [];
-
   try {
 
-    const url = `https://jkanime.net/${slug}/${number}/`;
-    const html = await fetchHtml(url);
+    const html = await $fetch(`https://jkanime.net/${slug}/${number}/`);
 
     if (!html) return [];
 
-    const players = extractJKPlayers(html);
+    const servers: any[] = [];
 
-    for (const p of players) {
+    // ==========================
+    // 🔥 1. EXTRAER data-player (DESU / MAGI)
+    // ==========================
+    const players = [
+      ...html.matchAll(/data-player="([^"]+)"/g)
+    ];
 
-      const lower = p.toLowerCase();
+    for (const match of players) {
 
-      // 🔥 SOLO DESU / MAGI (PRIORIDAD REAL)
-      if (
-        !lower.includes("desu") &&
-        !lower.includes("magi")
-      ) continue;
+      try {
 
-      const real = await resolveIframe(p);
+        const decoded = decodeURIComponent(match[1]);
+        const clean = decoded.replace(/\\/g, "");
+        const lower = clean.toLowerCase();
 
-      if (real && real.includes(".m3u8")) {
-        servers.push({
-          name: "jkanime_hls",
-          embed: real
-        });
-      }
+        // 🔥 SOLO DESU / MAGI
+        if (
+          !lower.includes("desu") &&
+          !lower.includes("magi")
+        ) continue;
+
+        const res = await $fetch(clean).catch(() => null);
+        if (!res) continue;
+
+        const m3u8 = res.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/);
+
+        if (m3u8) {
+          servers.push({
+            name: "jkanime_hls",
+            embed: m3u8[0]
+          });
+        }
+
+      } catch {}
     }
+
+    // ==========================
+    // 🔥 2. SI NO HAY HLS → fallback viejo (NO romper)
+    // ==========================
+    if (!servers.length) {
+
+      const links = html.match(/https?:\/\/[^"]+/g) || [];
+
+      return links.map(link => ({
+        name: "jkanime",
+        embed: link
+      }));
+    }
+
+    return servers;
+
+  } catch {
+    return [];
+  }
+}
 
     // ======================
     // 🔥 SI NO HAY DESU/MAGI → fallback
