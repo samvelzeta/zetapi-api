@@ -5,6 +5,7 @@ import {
 } from "./sources";
 
 import { filterWorkingServers } from "./filter";
+import { expandSlugVariants } from "./slugResolver";
 
 // ======================
 function uniqueServers(list: any[]) {
@@ -31,6 +32,7 @@ function scoreServer(server: any) {
   if (url.includes(".mp4")) return 900;
   if (url.includes("filemoon")) return 800;
   if (url.includes("streamtape")) return 700;
+  if (url.includes("streamwish")) return 600;
 
   return 100;
 }
@@ -38,21 +40,33 @@ function scoreServer(server: any) {
 // ======================
 export async function getAllServers({ slug, number, title, lang }: any) {
 
-  let servers: any[] = [];
+  const variants = expandSlugVariants(slug).slice(0, 8);
+
+  let collected: any[] = [];
 
   // =====================
-  // 🔥 SUB
+  // 🔥 BUSQUEDA INTELIGENTE
   // =====================
-  const [flv, jk] = await Promise.all([
-    getAnimeFLVServers(slug, number),
-    getJKAnimeServers(slug, number)
-  ]);
+  for (const v of variants) {
 
-  // 🔥 prioridad real
-  if (jk.some(s => s.embed.includes(".m3u8"))) {
-    servers = jk;
-  } else {
-    servers = [...jk, ...flv];
+    // 🔥 1. JKANIME PRIMERO
+    const jk = await getJKAnimeServers(v, number);
+
+    if (jk.length) {
+      collected.push(...jk);
+
+      // 🔥 si ya hay HLS → parar
+      if (jk.some(s => s.embed.includes(".m3u8"))) break;
+    }
+
+    // 🔥 2. ANIMEFLV
+    const flv = await getAnimeFLVServers(v, number);
+    if (flv.length) {
+      collected.push(...flv);
+    }
+
+    // 🔥 si ya tenemos suficiente → parar
+    if (collected.length >= 3) break;
   }
 
   // =====================
@@ -60,13 +74,13 @@ export async function getAllServers({ slug, number, title, lang }: any) {
   // =====================
   if (lang === "latino") {
     const tio = await getTioAnimeServers(title, number);
-    servers.push(...tio);
+    collected.push(...tio);
   }
 
-  if (!servers.length) return [];
+  if (!collected.length) return [];
 
-  // 🔥 FILTRO
-  const filtered = await filterWorkingServers(servers);
+  // 🔥 FILTRAR
+  const filtered = await filterWorkingServers(collected);
 
   // 🔥 UNICOS
   const unique = uniqueServers(filtered);
@@ -74,5 +88,5 @@ export async function getAllServers({ slug, number, title, lang }: any) {
   // 🔥 ORDEN
   const sorted = unique.sort((a, b) => scoreServer(b) - scoreServer(a));
 
-  return sorted;
+  return sorted.slice(0, 6);
 }
