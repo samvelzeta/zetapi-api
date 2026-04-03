@@ -1,9 +1,9 @@
 import * as cheerio from "cheerio";
 import { resolveServer } from "./resolver";
 
-// ==========================
-// 🔥 FETCH ROBUSTO (NO TOCAR)
-// ==========================
+// ======================
+// 🔥 FETCH REALISTA
+// ======================
 async function fetchHtml(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, {
@@ -17,15 +17,19 @@ async function fetchHtml(url: string): Promise<string | null> {
       }
     });
 
-    return await res.text();
+    const text = await res.text();
+    if (!text || text.length < 800) return null;
+
+    return text;
+
   } catch {
     return null;
   }
 }
 
-// ==========================
+// ======================
 // 🔥 EXTRAER TODO (MODO VIEJO)
-// ==========================
+// ======================
 function extractAll(html: string): string[] {
 
   const urls = new Set<string>();
@@ -49,9 +53,45 @@ function extractAll(html: string): string[] {
   return Array.from(urls);
 }
 
-// ==========================
-// 🔥 JKANIME PRO (DESU + MAGI + FALLBACK)
-// ==========================
+// ======================
+// 🔥 EXTRAER DESU / MAGI
+// ======================
+async function extractDesuMagi(html: string) {
+
+  const results: string[] = [];
+
+  const players = [
+    ...html.matchAll(/data-player="([^"]+)"/g)
+  ];
+
+  for (const match of players) {
+
+    try {
+
+      const decoded = decodeURIComponent(match[1]);
+      const clean = decoded.replace(/\\/g, "").toLowerCase();
+
+      // 🔥 SOLO DESU / MAGI
+      if (!clean.includes("desu") && !clean.includes("magi")) continue;
+
+      const iframeHtml = await fetchHtml(clean);
+      if (!iframeHtml) continue;
+
+      const m3u8 = iframeHtml.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/);
+
+      if (m3u8) {
+        results.push(m3u8[0]);
+      }
+
+    } catch {}
+  }
+
+  return results;
+}
+
+// ======================
+// 🔥 JKANIME FINAL (COMBINADO)
+// ======================
 export async function getJKAnimeServers(slug: string, number: number) {
 
   try {
@@ -61,29 +101,52 @@ export async function getJKAnimeServers(slug: string, number: number) {
 
     if (!html) return [];
 
-    const urls = extractAll(html);
+    let servers: any[] = [];
+
+    // ==========================
+    // 🥇 INTENTO DESU / MAGI
+    // ==========================
+    const hlsList = await extractDesuMagi(html);
+
+    if (hlsList.length) {
+      servers.push(
+        ...hlsList.map(u => ({
+          name: "jkanime_hls",
+          embed: u
+        }))
+      );
+    }
+
+    // ==========================
+    // 🥈 FALLBACK MODO VIEJO
+    // ==========================
+    const allUrls = extractAll(html);
 
     const resolved = await Promise.allSettled(
-      urls.map(u => resolveServer(u))
+      allUrls.map(u => resolveServer(u))
     );
 
-    const results = resolved
+    const fallback = resolved
       .filter((r: any) => r.status === "fulfilled" && r.value)
       .map((r: any) => r.value);
 
-    return results.map(u => ({
-      name: u.includes(".m3u8") ? "jkanime_hls" : "jkanime",
-      embed: u
-    }));
+    servers.push(
+      ...fallback.map(u => ({
+        name: "jkanime",
+        embed: u
+      }))
+    );
+
+    return servers;
 
   } catch {
     return [];
   }
 }
 
-// ==========================
-// 🔥 ANIMEFLV (backup)
-// ==========================
+// ======================
+// 🔥 ANIMEFLV (BACKUP)
+// ======================
 export async function getAnimeFLVServers(slug: string, number: number) {
 
   try {
