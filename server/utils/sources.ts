@@ -45,60 +45,19 @@ async function resolveIframe(url: string) {
 }
 
 // ======================
-// 🔥 EXTRAER PLAYERS DESU / MAGI
-// ======================
-function extractJKPlayers(html: string) {
-
-  const players: string[] = [];
-
-  // 🔥 data-player (nuevo)
-  const dataPlayers = [
-    ...html.matchAll(/data-player="([^"]+)"/g)
-  ];
-
-  for (const match of dataPlayers) {
-    try {
-      const decoded = decodeURIComponent(match[1]);
-      const clean = decoded.replace(/\\/g, "");
-      players.push(clean);
-    } catch {}
-  }
-
-  // 🔥 iframe directo
-  const iframes = [
-    ...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)
-  ].map(m => m[1]);
-
-  for (const f of iframes) {
-
-    if (
-      f.includes("facebook") ||
-      f.includes("twitter") ||
-      f.includes("disqus") ||
-      f.includes("ads")
-    ) continue;
-
-    players.push(f);
-  }
-
-  return players;
-}
-
-// ======================
-// 🔥 JKANIME (DESU + MAGI REAL FIX)
+// 🔥 JKANIME (DESU + MAGI FIX)
 // ======================
 export async function getJKAnimeServers(slug: string, number: number) {
 
   try {
 
-    const html = await $fetch(`https://jkanime.net/${slug}/${number}/`);
-
+    const html = await fetchHtml(`https://jkanime.net/${slug}/${number}/`);
     if (!html) return [];
 
     const servers: any[] = [];
 
     // ==========================
-    // 🔥 1. EXTRAER data-player (DESU / MAGI)
+    // 🔥 1. EXTRAER data-player
     // ==========================
     const players = [
       ...html.matchAll(/data-player="([^"]+)"/g)
@@ -118,15 +77,17 @@ export async function getJKAnimeServers(slug: string, number: number) {
           !lower.includes("magi")
         ) continue;
 
-        const res = await $fetch(clean).catch(() => null);
-        if (!res) continue;
+        const iframeHtml = await fetchHtml(clean);
+        if (!iframeHtml) continue;
 
-        const m3u8 = res.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/);
+        const vids = extractVideo(iframeHtml);
 
-        if (m3u8) {
+        const hls = vids.find(v => v.includes(".m3u8"));
+
+        if (hls) {
           servers.push({
             name: "jkanime_hls",
-            embed: m3u8[0]
+            embed: hls
           });
         }
 
@@ -134,16 +95,28 @@ export async function getJKAnimeServers(slug: string, number: number) {
     }
 
     // ==========================
-    // 🔥 2. SI NO HAY HLS → fallback viejo (NO romper)
+    // 🔥 2. FALLBACK SI NO HAY HLS
     // ==========================
     if (!servers.length) {
 
-      const links = html.match(/https?:\/\/[^"]+/g) || [];
+      for (const match of players) {
 
-      return links.map(link => ({
-        name: "jkanime",
-        embed: link
-      }));
+        try {
+
+          const decoded = decodeURIComponent(match[1]);
+          const clean = decoded.replace(/\\/g, "");
+
+          const real = await resolveIframe(clean);
+
+          if (real) {
+            servers.push({
+              name: "jkanime_fallback",
+              embed: real
+            });
+          }
+
+        } catch {}
+      }
     }
 
     return servers;
@@ -151,29 +124,6 @@ export async function getJKAnimeServers(slug: string, number: number) {
   } catch {
     return [];
   }
-}
-
-    // ======================
-    // 🔥 SI NO HAY DESU/MAGI → fallback
-    // ======================
-    if (!servers.length) {
-
-      for (const p of players) {
-
-        const real = await resolveIframe(p);
-
-        if (real) {
-          servers.push({
-            name: "jkanime_fallback",
-            embed: real
-          });
-        }
-      }
-    }
-
-  } catch {}
-
-  return servers;
 }
 
 // ======================
@@ -190,7 +140,6 @@ export async function getAnimeFLVServers(slug: string, number: number) {
       embed: s.url || s.embed
     }));
 
-    // 🔥 limpiar basura
     return servers.filter(s =>
       s.embed &&
       !s.embed.includes("facebook") &&
