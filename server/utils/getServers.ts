@@ -1,8 +1,10 @@
-import { getServersFromAllSources } from "./sources";
-import { filterWorkingServers } from "./filter";
+import {
+  getAnimeFLVServers,
+  getJKAnimeServers,
+  getTioAnimeServers
+} from "./sources";
 
-import { getJKAnimeServers } from "./scrapers/jkanime";
-import { getAnimeFLVServers } from "./scrapers/animeflv";
+import { filterWorkingServers } from "./filter";
 
 // ======================
 function uniqueServers(list: any[]) {
@@ -34,30 +36,37 @@ function scoreServer(server: any) {
 }
 
 // ======================
-export async function getAllServers({ slug, number, title }: any) {
+export async function getAllServers({ slug, number, title, lang }: any) {
 
-  let collected: any[] = [];
+  let servers: any[] = [];
 
-  // 🔥 1. JKANIME (PRIORIDAD)
-  const jk = await getJKAnimeServers(slug, number);
-  collected.push(...jk);
+  // =====================
+  // 🔥 SUB
+  // =====================
+  const [flv, jk] = await Promise.all([
+    getAnimeFLVServers(slug, number),
+    getJKAnimeServers(slug, number)
+  ]);
 
-  // 🔥 2. ANIMEFLV SI NO HAY HLS
-  if (!collected.some(s => s.embed.includes(".m3u8"))) {
-    const flv = await getAnimeFLVServers(slug, number);
-    collected.push(...flv);
+  // 🔥 prioridad real
+  if (jk.some(s => s.embed.includes(".m3u8"))) {
+    servers = jk;
+  } else {
+    servers = [...jk, ...flv];
   }
 
-  // 🔥 3. FALLBACK GENERAL
-  if (!collected.length) {
-    const fallback = await getServersFromAllSources(slug, number);
-    collected.push(...fallback);
+  // =====================
+  // 🔥 LATINO EXTRA
+  // =====================
+  if (lang === "latino") {
+    const tio = await getTioAnimeServers(title, number);
+    servers.push(...tio);
   }
 
-  if (!collected.length) return [];
+  if (!servers.length) return [];
 
-  // 🔥 FILTRAR
-  const filtered = await filterWorkingServers(collected);
+  // 🔥 FILTRO
+  const filtered = await filterWorkingServers(servers);
 
   // 🔥 UNICOS
   const unique = uniqueServers(filtered);
@@ -65,8 +74,5 @@ export async function getAllServers({ slug, number, title }: any) {
   // 🔥 ORDEN
   const sorted = unique.sort((a, b) => scoreServer(b) - scoreServer(a));
 
-  // 🔥 GARANTIZAR MÍNIMO 3
-  if (sorted.length >= 3) return sorted.slice(0, 6);
-
-  return unique.slice(0, 5);
+  return sorted;
 }
