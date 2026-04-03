@@ -6,6 +6,8 @@ import {
 
 import { filterWorkingServers } from "./filter";
 import { expandSlugVariants } from "./slugResolver";
+const trimmed = smartTrimSlug(slug);
+const variants = expandSlugVariants(trimmed);
 
 // ======================
 function uniqueServers(list: any[]) {
