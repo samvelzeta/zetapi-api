@@ -3,26 +3,13 @@ import { getCache, saveCache } from "../../../../utils/cache";
 import { getLatinoSource } from "../../../../utils/r2";
 
 // ======================
-// 🔥 VALIDAR SERVERS
-// ======================
-function validateServers(servers: any[]) {
+async function validateServers(
+  servers: any[],
+  slug: string,
+  number: number
+) {
 
-  if (servers.length < 3) {
-
-  const extra = await getAllServers({
-    slug,
-    number: Number(number),
-    title: slug,
-    lang: "sub"
-  });
-
-  servers = uniqueServers([
-    ...servers,
-    ...extra
-  ]).slice(0, 6);
-}
-
-  return servers.filter(s => {
+  let clean = servers.filter(s => {
 
     if (!s?.embed) return false;
 
@@ -36,10 +23,23 @@ function validateServers(servers: any[]) {
 
     return true;
   });
+
+  // 🔥 asegurar mínimo 3
+  if (clean.length < 3) {
+
+    const extra = await getAllServers({
+      slug,
+      number,
+      title: slug,
+      lang: "sub"
+    });
+
+    clean = uniqueServers([...clean, ...extra]).slice(0, 6);
+  }
+
+  return clean;
 }
 
-// ======================
-// 🔥 ELIMINAR DUPLICADOS
 // ======================
 function uniqueServers(servers: any[]) {
 
@@ -47,6 +47,7 @@ function uniqueServers(servers: any[]) {
   const clean = [];
 
   for (const s of servers) {
+
     const url = s.embed?.split("?")[0];
 
     if (!seen.has(url)) {
@@ -59,8 +60,6 @@ function uniqueServers(servers: any[]) {
 }
 
 // ======================
-// 🔥 NORMALIZAR OUTPUT
-// ======================
 function normalizeServers(servers: any[]) {
 
   return servers.map((s, i) => ({
@@ -70,8 +69,6 @@ function normalizeServers(servers: any[]) {
   }));
 }
 
-// ======================
-// 🔥 MAIN
 // ======================
 export default defineEventHandler(async (event) => {
 
@@ -85,7 +82,7 @@ export default defineEventHandler(async (event) => {
   const language = lang === "latino" ? "latino" : "sub";
 
   // ======================
-  // 🔥 0. R2 (NO BLOQUEANTE)
+  // 🔥 R2
   // ======================
   try {
 
@@ -119,7 +116,7 @@ export default defineEventHandler(async (event) => {
   } catch {}
 
   // ======================
-  // 🔥 1. CACHE
+  // 🔥 CACHE
   // ======================
   const cached = await getCache(slug, Number(number), language);
 
@@ -131,7 +128,7 @@ export default defineEventHandler(async (event) => {
       ...(cached.sources.embed || []).map((url: string) => ({ embed: url }))
     ];
 
-    servers = validateServers(servers);
+    servers = await validateServers(servers, slug, Number(number));
     servers = uniqueServers(servers);
 
     if (servers.length) {
@@ -149,7 +146,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // ======================
-  // 🔥 2. SCRAPER
+  // 🔥 SCRAPER
   // ======================
   let servers = await getAllServers({
     slug,
@@ -158,47 +155,14 @@ export default defineEventHandler(async (event) => {
     lang: language
   });
 
-  servers = validateServers(servers);
+  servers = await validateServers(servers, slug, Number(number));
   servers = uniqueServers(servers);
 
   // ======================
-  // 🔥 ASEGURAR MÍNIMO 3 SERVERS
-  // ======================
-  if (servers.length > 0 && servers.length < 3) {
-
-    const extra = await getAllServers({
-      slug,
-      number: Number(number),
-      title: slug,
-      lang: "sub"
-    });
-
-    const merged = [...servers, ...extra];
-
-    servers = uniqueServers(validateServers(merged));
-  }
-
-  // ======================
-  // 🔥 GUARDAR CACHE
+  // 🔥 CACHE SAVE
   // ======================
   if (servers.length) {
     saveCache(slug, Number(number), language, servers);
-  }
-
-  // ======================
-  // 🔥 FALLBACK FINAL
-  // ======================
-  if (!servers.length) {
-    return {
-      success: true,
-      source: "empty",
-      total: 0,
-      data: {
-        slug,
-        number: Number(number),
-        servers: []
-      }
-    };
   }
 
   // ======================
@@ -206,7 +170,7 @@ export default defineEventHandler(async (event) => {
   // ======================
   return {
     success: true,
-    source: "scraper",
+    source: servers.length ? "scraper" : "empty",
     total: servers.length,
     data: {
       slug,
