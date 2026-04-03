@@ -79,9 +79,10 @@ export async function getAllServers({ slug, number, title }: any) {
         s.embed && s.embed.includes(".m3u8")
       );
 
-      if (hlsOnly.length) {
-        return uniqueServers(hlsOnly).slice(0, 3);
-      }
+     if (hlsOnly.length) {
+  collected.push(...hlsOnly);
+  break;
+}
 
       collected.push(...jk);
     }
