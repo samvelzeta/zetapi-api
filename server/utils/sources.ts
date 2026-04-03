@@ -2,7 +2,7 @@ import { getEpisode } from "animeflv-scraper";
 import { fetchHtml } from "./fetcher";
 
 // ======================
-// 🔥 EXTRAER VIDEO
+// 🔥 EXTRAER VIDEO REAL
 // ======================
 function extractVideo(html: string) {
 
@@ -23,10 +23,20 @@ function extractVideo(html: string) {
 async function resolveIframe(url: string) {
 
   try {
+
+    if (!url || url.includes("facebook") || url.includes("twitter")) {
+      return null;
+    }
+
     const html = await fetchHtml(url);
     if (!html) return null;
 
     const vids = extractVideo(html);
+
+    // 🔥 prioridad HLS
+    const hls = vids.find(v => v.includes(".m3u8"));
+    if (hls) return hls;
+
     return vids.length ? vids[0] : null;
 
   } catch {
@@ -35,7 +45,47 @@ async function resolveIframe(url: string) {
 }
 
 // ======================
-// 🔥 JKANIME (DESU + MAGI FIX REAL)
+// 🔥 EXTRAER PLAYERS DESU / MAGI
+// ======================
+function extractJKPlayers(html: string) {
+
+  const players: string[] = [];
+
+  // 🔥 data-player (nuevo)
+  const dataPlayers = [
+    ...html.matchAll(/data-player="([^"]+)"/g)
+  ];
+
+  for (const match of dataPlayers) {
+    try {
+      const decoded = decodeURIComponent(match[1]);
+      const clean = decoded.replace(/\\/g, "");
+      players.push(clean);
+    } catch {}
+  }
+
+  // 🔥 iframe directo
+  const iframes = [
+    ...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)
+  ].map(m => m[1]);
+
+  for (const f of iframes) {
+
+    if (
+      f.includes("facebook") ||
+      f.includes("twitter") ||
+      f.includes("disqus") ||
+      f.includes("ads")
+    ) continue;
+
+    players.push(f);
+  }
+
+  return players;
+}
+
+// ======================
+// 🔥 JKANIME (DESU + MAGI REAL FIX)
 // ======================
 export async function getJKAnimeServers(slug: string, number: number) {
 
@@ -48,54 +98,43 @@ export async function getJKAnimeServers(slug: string, number: number) {
 
     if (!html) return [];
 
-    // ======================
-    // 🔥 1. BUSCAR DESU / MAGI
-    // ======================
-    const playerMatches = [
-      ...html.matchAll(/data-player="([^"]+)"/g)
-    ];
+    const players = extractJKPlayers(html);
 
-    for (const match of playerMatches) {
+    for (const p of players) {
 
-      try {
+      const lower = p.toLowerCase();
 
-        const decoded = decodeURIComponent(match[1]);
-        const playerUrl = decoded.replace(/\\/g, "");
+      // 🔥 SOLO DESU / MAGI (PRIORIDAD REAL)
+      if (
+        !lower.includes("desu") &&
+        !lower.includes("magi")
+      ) continue;
 
-        const real = await resolveIframe(playerUrl);
+      const real = await resolveIframe(p);
 
-        if (real) {
-          servers.push({
-            name: "jkanime_hls",
-            embed: real
-          });
-        }
-
-      } catch {}
+      if (real && real.includes(".m3u8")) {
+        servers.push({
+          name: "jkanime_hls",
+          embed: real
+        });
+      }
     }
 
     // ======================
-    // 🔥 2. FALLBACK (iframes normales)
+    // 🔥 SI NO HAY DESU/MAGI → fallback
     // ======================
-    const frames = [
-      ...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)
-    ].map(m => m[1]);
+    if (!servers.length) {
 
-    for (const f of frames) {
+      for (const p of players) {
 
-      if (
-        f.includes("facebook") ||
-        f.includes("twitter") ||
-        f.includes("disqus")
-      ) continue;
+        const real = await resolveIframe(p);
 
-      const real = await resolveIframe(f);
-
-      if (real) {
-        servers.push({
-          name: "jkanime_embed",
-          embed: real
-        });
+        if (real) {
+          servers.push({
+            name: "jkanime_fallback",
+            embed: real
+          });
+        }
       }
     }
 
@@ -105,7 +144,7 @@ export async function getJKAnimeServers(slug: string, number: number) {
 }
 
 // ======================
-// 🔥 ANIMEFLV
+// 🔥 ANIMEFLV (fallback limpio)
 // ======================
 export async function getAnimeFLVServers(slug: string, number: number) {
 
@@ -113,10 +152,17 @@ export async function getAnimeFLVServers(slug: string, number: number) {
 
     const res = await getEpisode(slug, number);
 
-    return (res?.servers || []).map((s: any) => ({
+    const servers = (res?.servers || []).map((s: any) => ({
       name: s.server || "flv",
       embed: s.url || s.embed
     }));
+
+    // 🔥 limpiar basura
+    return servers.filter(s =>
+      s.embed &&
+      !s.embed.includes("facebook") &&
+      !s.embed.includes("twitter")
+    );
 
   } catch {
     return [];
