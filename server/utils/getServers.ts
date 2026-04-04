@@ -4,9 +4,8 @@ import {
 } from "./sources";
 
 import { filterWorkingServers } from "./filter";
+import { resolveServer } from "./resolver"; // 🔥 IMPORTANTE
 
-// ======================
-// 🔥 UNIQUE
 // ======================
 function uniqueServers(list: any[]) {
 
@@ -29,8 +28,6 @@ function uniqueServers(list: any[]) {
 }
 
 // ======================
-// 🔥 SCORE
-// ======================
 function scoreServer(server: any) {
 
   const url = (server.embed || "").toLowerCase();
@@ -50,8 +47,6 @@ function scoreServer(server: any) {
   return 100;
 }
 
-// ======================
-// 🔥 MAIN
 // ======================
 export async function getAllServers({ slug, number, title }: any) {
 
@@ -78,7 +73,6 @@ export async function getAllServers({ slug, number, title }: any) {
       s.embed && s.embed.includes(".m3u8")
     );
 
-    // 🔥 prioridad absoluta
     if (hls.length) {
       return uniqueServers(hls).slice(0, 5);
     }
@@ -87,27 +81,37 @@ export async function getAllServers({ slug, number, title }: any) {
   }
 
   // =====================
-  // 🥈 ANIMEFLV
+  // 🥈 ANIMEFLV (FIX REAL)
   // =====================
   const flv = await getAnimeFLVServers(cleanSlug, number);
 
   if (flv.length) {
-    collected.push(...flv);
+
+    const resolved: any[] = [];
+
+    for (const s of flv) {
+
+      const real = await resolveServer(s.embed);
+
+      if (real) {
+        resolved.push({
+          name: "flv_resolved",
+          embed: real
+        });
+      }
+    }
+
+    collected.push(...resolved);
   }
 
   // =====================
   if (!collected.length) return [];
 
   // =====================
-  // 🔥 FILTRO
-  // =====================
   const filtered = await filterWorkingServers(collected);
 
   const unique = uniqueServers(filtered);
 
-  // =====================
-  // 🔥 ORDEN
-  // =====================
   const sorted = unique.sort((a, b) =>
     scoreServer(b) - scoreServer(a)
   );
