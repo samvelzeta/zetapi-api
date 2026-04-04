@@ -1,6 +1,6 @@
 // server/api/admin/override.post.ts
 
-import { saveOverride } from "../../utils/saveOverride";
+import { saveOverride } from "../../utils/saveOverrides";
 
 export default defineEventHandler(async (event) => {
 
