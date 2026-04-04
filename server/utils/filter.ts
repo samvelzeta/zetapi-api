@@ -2,40 +2,52 @@ export async function filterWorkingServers(servers: any[]) {
 
   if (!servers?.length) return [];
 
-  const BAD = [
-    "/ver/",
-    "/anime/",
-    "/search",
-    "facebook",
-    "twitter",
-    ".css",
-    ".js",
-    "logo",
-    "banner",
-    "comment",
-    "disqus",
-    "captcha",
-    "preview",
-    "sample"
+  const GOOD = [
+    "streamwish",
+    "filemoon",
+    "streamtape",
+    "mp4upload",
+    "ok.ru",
+    "dood",
+    "netu"
   ];
 
-  const clean: any[] = [];
+  const BAD = [
+    "facebook",
+    "twitter",
+    "ads",
+    ".css",
+    ".js"
+  ];
 
-  for (const s of servers) {
+  const clean = servers.filter(s => {
 
-    if (!s?.embed) continue;
+    if (!s?.embed) return false;
 
     const url = s.embed.toLowerCase();
 
-    // ❌ basura REAL
-    if (BAD.some(b => url.includes(b))) continue;
+    // â Œ basura real
+    if (BAD.some(b => url.includes(b))) return false;
 
-    // 🔥 TODO lo demás pasa (NO bloquear)
-    clean.push(s);
+    // âœ” directos SIEMPRE
+    if (url.includes(".m3u8") || url.includes(".mp4")) return true;
+
+    // âœ” servers conocidos
+    if (GOOD.some(g => url.includes(g))) return true;
+
+    // âœ” embeds válidos
+    if (
+      url.includes("embed") ||
+      url.includes("player")
+    ) return true;
+
+    return false;
+  });
+
+  // ðŸ”¥ fallback si se filtró todo
+  if (!clean.length) {
+    return servers.slice(0, 3);
   }
-
-  // 🔥 CLAVE: nunca devolver vacío
-  if (!clean.length) return servers;
 
   return clean;
 }
