@@ -38,24 +38,31 @@ export default defineEventHandler(async (event) => {
   // ======================
   // 🔥 OVERRIDE
   // ======================
-  const override = await getOverride(slug);
+ const override = await getOverride(slug);
 
-  if (override) {
+if (override) {
 
-    const clean = override.replace(/\/$/, "");
-    const servers = await scrapePage(`${clean}/${number}`);
+  let url = override;
 
-    if (servers.length) {
-
-      await saveCache(slug, Number(number), language, servers);
-
-      return {
-        success: true,
-        source: "override",
-        data: { slug, number, servers }
-      };
-    }
+  // 🔥 FIX AUTOMÁTICO
+  if (!url.endsWith("/")) url += "/";
+  if (!url.match(/\/\d+\/$/)) {
+    url += `${number}/`;
   }
+
+  const servers = await scrapePage(url);
+
+  if (servers.length) {
+
+    await saveCache(slug, Number(number), language, servers);
+
+    return {
+      success: true,
+      source: "override",
+      data: { slug, number, servers }
+    };
+  }
+}
 
   // ======================
   // 🔥 SCRAPER
