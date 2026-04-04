@@ -6,16 +6,14 @@ import {
 import { filterWorkingServers } from "./filter";
 import { resolveServer } from "./resolver";
 import { resolveSlugVariants } from "./slugResolver";
-import { findJKAnimeSlug } from "./jkSearch"; // 🔥 NUEVO
+import { findJKAnimeSlug } from "./jkSearch";
 
 // ======================
 function uniqueServers(list: any[]) {
-
   const seen = new Set();
   const result = [];
 
   for (const s of list) {
-
     if (!s?.embed) continue;
 
     const clean = s.embed.split("?")[0];
@@ -34,21 +32,15 @@ function scoreServer(server: any) {
 
   const url = (server.embed || "").toLowerCase();
 
-  // 🥇 HLS absoluto
   if (url.includes(".m3u8")) return 1000;
-
-  // 🥈 MP4 directo
   if (url.includes(".mp4")) return 900;
 
-  // 🥈 JKAnime internos
   if (url.includes("desu")) return 880;
   if (url.includes("magi")) return 870;
 
-  // 🥉 buenos embeds
   if (url.includes("yourupload")) return 800;
   if (url.includes("ok.ru")) return 750;
 
-  // fallback
   if (url.includes("filemoon")) return 700;
   if (url.includes("streamwish")) return 600;
 
@@ -56,11 +48,10 @@ function scoreServer(server: any) {
 }
 
 // ======================
-export async function getAllServers({ slug, number, title }: any) {
+export async function getAllServers({ slug, number, title, env }: any) {
 
   const cleanSlug = slug.replace(/-\d+$/, "");
 
-  // 🔥 variantes inteligentes
   const variants = [
     ...resolveSlugVariants(cleanSlug),
     ...resolveSlugVariants(slug),
@@ -70,16 +61,16 @@ export async function getAllServers({ slug, number, title }: any) {
   let collected: any[] = [];
 
   // =====================
-  // 🥇 JKANIME (ULTRA FIX)
+  // 🥇 JKANIME
   // =====================
   for (const v of variants) {
 
     let jk = await getJKAnimeServers(v, number);
 
-    // 🔥 🔥 SI NO ENCUENTRA → BUSQUEDA REAL
+    // 🔥 BUSQUEDA REAL + KV
     if (!jk.length) {
 
-      const realSlug = await findJKAnimeSlug(v);
+      const realSlug = await findJKAnimeSlug(v, env);
 
       if (realSlug) {
         jk = await getJKAnimeServers(realSlug, number);
@@ -88,7 +79,6 @@ export async function getAllServers({ slug, number, title }: any) {
 
     if (jk.length) {
 
-      // 🥇 PRIORIDAD ABSOLUTA → HLS
       const hls = jk.filter(s =>
         s.embed && s.embed.includes(".m3u8")
       );
@@ -104,7 +94,7 @@ export async function getAllServers({ slug, number, title }: any) {
   }
 
   // =====================
-  // 🥈 ANIMEFLV (RESUELTO)
+  // 🥈 ANIMEFLV
   // =====================
   const flv = await getAnimeFLVServers(cleanSlug, number);
 
@@ -127,15 +117,12 @@ export async function getAllServers({ slug, number, title }: any) {
     collected.push(...resolved);
   }
 
-  // =====================
   if (!collected.length) return [];
 
   const filtered = await filterWorkingServers(collected);
   const unique = uniqueServers(filtered);
 
-  const sorted = unique.sort((a, b) =>
+  return unique.sort((a, b) =>
     scoreServer(b) - scoreServer(a)
-  );
-
-  return sorted.slice(0, 10);
+  ).slice(0, 10);
 }
