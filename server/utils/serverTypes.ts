@@ -1,5 +1,5 @@
 // ==============================
-// 🔥 DETECTOR DE SERVIDORES
+// ðŸ”¥ DETECTOR DE SERVIDORES
 // ==============================
 
 export type ServerType =
@@ -16,7 +16,7 @@ export type ServerType =
   | "generic";
 
 // ==============================
-// 🔥 NORMALIZADOR DE URL
+// ðŸ”¥ NORMALIZADOR DE URL
 // ==============================
 export function normalizeUrl(url: string): string {
   try {
@@ -27,20 +27,20 @@ export function normalizeUrl(url: string): string {
 }
 
 // ==============================
-// 🔥 DETECTAR TIPO DE SERVIDOR
+// ðŸ”¥ DETECTAR TIPO DE SERVIDOR
 // ==============================
 export function detectServerType(rawUrl: string): ServerType {
 
   const url = normalizeUrl(rawUrl).toLowerCase();
 
   // ==========================
-  // 🥇 DIRECTOS
+  // ðŸ¥‡ DIRECTOS
   // ==========================
   if (url.includes(".m3u8")) return "hls";
   if (url.includes(".mp4")) return "mp4";
 
   // ==========================
-  // 🥇 SERVERS PRINCIPALES
+  // ðŸ¥‡ SERVERS PRINCIPALES
   // ==========================
   if (url.includes("streamwish") || url.includes("wish") || url.includes("sw")) {
     return "streamwish";
@@ -59,7 +59,7 @@ export function detectServerType(rawUrl: string): ServerType {
   }
 
   // ==========================
-  // 🥈 OTROS COMUNES
+  // ðŸ¥ˆ OTROS COMUNES
   // ==========================
   if (url.includes("ok.ru") || url.includes("okru")) {
     return "okru";
@@ -78,13 +78,13 @@ export function detectServerType(rawUrl: string): ServerType {
   }
 
   // ==========================
-  // 🧠 FALLBACK
+  // ðŸ§  FALLBACK
   // ==========================
   return "generic";
 }
 
 // ==============================
-// 🔥 VALIDAR URL DE VIDEO
+// ðŸ”¥ VALIDAR URL DE VIDEO
 // ==============================
 export function isValidVideo(url: string | null): boolean {
   if (!url) return false;
