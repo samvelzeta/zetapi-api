@@ -64,9 +64,16 @@ export async function getAllServers({ slug, number, title }: any) {
   // =====================
   const jk = await getJKAnimeServers(cleanSlug, number);
 
-  if (jk.length) {
-    collected.push(...jk);
+if (jk.length) {
+
+  const hls = jk.filter(s => s.embed.includes(".m3u8"));
+
+  if (hls.length) {
+    return hls.slice(0, 5);
   }
+
+  collected.push(...jk);
+}
 
   // =====================
   // 🥈 ANIMEFLV
