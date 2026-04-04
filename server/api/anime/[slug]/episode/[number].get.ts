@@ -1,49 +1,14 @@
+// server/api/anime/episode/[slug]/[number].get.ts
+
 import { getAllServers } from "../../../../utils/getServers";
-import { filterWorkingServers } from "../../../../utils/filter";
 import { getCache } from "../../../../utils/cache";
+import { getOverride } from "../../../../utils/override";
+import { saveCache } from "../../../../utils/saveCache";
+import { scrapePage } from "../../../../utils/sources"; // usa tu scraper base
 
-// ======================
-// ðŸ”¥ VALIDAR SERVERS
-// ======================
-function validateServers(servers: any[]) {
-
-  if (!servers?.length) return [];
-
-  return servers.filter(s => {
-
-    if (!s?.embed) return false;
-
-    const url = s.embed.toLowerCase();
-
-    if (
-      url.includes("error") ||
-      url.includes("blank") ||
-      url.length < 20
-    ) return false;
-
-    return true;
-  });
-}
-
-// ======================
-// ðŸ”¥ NORMALIZAR OUTPUT
-// ======================
-function normalizeServers(servers: any[]) {
-
-  return servers.map((s, i) => ({
-    name: `server_${i + 1}`,
-    embed: s.embed
-  }));
-}
-
-// ======================
-// ðŸ”¥ MAIN
-// ======================
 export default defineEventHandler(async (event) => {
 
   setHeader(event, "Access-Control-Allow-Origin", "*");
-
-  if (event.method === "OPTIONS") return "";
 
   const { slug, number } = getRouterParams(event);
   const { lang } = getQuery(event);
@@ -51,72 +16,72 @@ export default defineEventHandler(async (event) => {
   const language = lang === "latino" ? "latino" : "sub";
 
   // ======================
-  // ðŸ”¥ 1. CACHE REAL (ARREGLADO)
+  // 🧠 1. CACHE
   // ======================
   const cached = await getCache(slug, Number(number), language);
 
-  if (cached && cached.sources) {
+  if (cached?.sources) {
 
-    let servers = [
-      ...(cached.sources.hls || []).map((url: string) => ({ embed: url })),
-      ...(cached.sources.mp4 || []).map((url: string) => ({ embed: url })),
-      ...(cached.sources.embed || []).map((url: string) => ({ embed: url }))
-    ];
-
-    servers = validateServers(servers);
+    const servers = [
+      ...(cached.sources.hls || []),
+      ...(cached.sources.mp4 || []),
+      ...(cached.sources.embed || [])
+    ].map((u: string) => ({ embed: u }));
 
     if (servers.length) {
       return {
         success: true,
         source: "cache",
-        total: servers.length,
-        data: {
-          slug,
-          number: Number(number),
-          servers: normalizeServers(servers)
-        }
+        data: { slug, number, servers }
       };
     }
   }
 
   // ======================
-  // ðŸ”¥ 2. SCRAPER
+  // 🧠 2. OVERRIDE (🔥 CLAVE)
   // ======================
-  let servers = await getAllServers({
+  const override = await getOverride(slug);
+
+  if (override) {
+
+    const servers = await scrapePage(`${override}/${number}`);
+
+    if (servers.length) {
+
+      await saveCache(slug, Number(number), language, servers);
+
+      return {
+        success: true,
+        source: "override",
+        data: { slug, number, servers }
+      };
+    }
+  }
+
+  // ======================
+  // 🔥 3. SCRAPER NORMAL
+  // ======================
+  const servers = await getAllServers({
     slug,
     number: Number(number),
     title: slug,
     lang: language
   });
 
-  servers = validateServers(servers);
+  if (servers.length) {
 
-  // ======================
-  // ðŸ”¥ 3. FALLBACK LATINO â†’ SUB
-  // ======================
-  if (!servers.length && language === "latino") {
+    await saveCache(slug, Number(number), language, servers);
 
-    servers = await getAllServers({
-      slug,
-      number: Number(number),
-      title: slug,
-      lang: "sub"
-    });
-
-    servers = validateServers(servers);
+    return {
+      success: true,
+      source: "scraper",
+      data: { slug, number, servers }
+    };
   }
 
-  // ======================
-  // ðŸ”¥ 4. RESPUESTA FINAL
-  // ======================
   return {
     success: true,
-    source: "scraper",
-    total: servers.length,
-    data: {
-      slug,
-      number: Number(number),
-      servers: normalizeServers(servers)
-    }
+    source: "empty",
+    data: { slug, number, servers: [] }
   };
 });
