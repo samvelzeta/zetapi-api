@@ -1,10 +1,8 @@
-// server/api/anime/episode/[slug]/[number].get.ts
-
 import { getAllServers } from "../../../../utils/getServers";
 import { getCache } from "../../../../utils/cache";
 import { getOverride } from "../../../../utils/override";
 import { saveCache } from "../../../../utils/saveCache";
-import { scrapePage } from "../../../../utils/sources"; // usa tu scraper base
+import { scrapePage } from "../../../../utils/sources";
 
 export default defineEventHandler(async (event) => {
 
@@ -16,7 +14,7 @@ export default defineEventHandler(async (event) => {
   const language = lang === "latino" ? "latino" : "sub";
 
   // ======================
-  // 🧠 1. CACHE
+  // 🧠 CACHE
   // ======================
   const cached = await getCache(slug, Number(number), language);
 
@@ -38,13 +36,14 @@ export default defineEventHandler(async (event) => {
   }
 
   // ======================
-  // 🧠 2. OVERRIDE (🔥 CLAVE)
+  // 🔥 OVERRIDE
   // ======================
   const override = await getOverride(slug);
 
   if (override) {
 
-    const servers = await scrapePage(`${override}/${number}`);
+    const clean = override.replace(/\/$/, "");
+    const servers = await scrapePage(`${clean}/${number}`);
 
     if (servers.length) {
 
@@ -59,7 +58,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // ======================
-  // 🔥 3. SCRAPER NORMAL
+  // 🔥 SCRAPER
   // ======================
   const servers = await getAllServers({
     slug,
