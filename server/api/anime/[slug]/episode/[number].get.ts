@@ -38,29 +38,55 @@ export default defineEventHandler(async (event) => {
   // ======================
   // 🔥 OVERRIDE
   // ======================
- const override = await getOverride(slug);
+// ======================
+// 🔥 OVERRIDE PRO (FIX REAL)
+// ======================
+const override = await getOverride(slug);
 
 if (override) {
 
-  let url = override;
+  try {
 
-  // 🔥 FIX AUTOMÁTICO
-  if (!url.endsWith("/")) url += "/";
-  if (!url.match(/\/\d+\/$/)) {
-    url += `${number}/`;
-  }
+    let finalUrl = override.trim();
 
-  const servers = await scrapePage(url);
+    // 🔥 limpiar doble slash
+    if (!finalUrl.endsWith("/")) finalUrl += "/";
 
-  if (servers.length) {
+    // ==========================
+    // 🧠 DETECTAR SI YA TIENE EPISODIO
+    // ==========================
+    const hasEpisode = /\/\d+\/$/.test(finalUrl);
 
-    await saveCache(slug, Number(number), language, servers);
+    if (!hasEpisode) {
+      finalUrl = `${finalUrl}${number}/`;
+    }
 
-    return {
-      success: true,
-      source: "override",
-      data: { slug, number, servers }
-    };
+    console.log("🎯 OVERRIDE URL:", finalUrl);
+
+    // ==========================
+    // 🔥 SCRAPEAR SOLO ESA URL
+    // ==========================
+    const servers = await scrapePage(finalUrl);
+
+    if (servers.length) {
+
+      // 🔥 guardar en cache (CLAVE)
+      await saveCache(slug, Number(number), language, servers);
+
+      return {
+        success: true,
+        source: "override",
+        total: servers.length,
+        data: {
+          slug,
+          number,
+          servers
+        }
+      };
+    }
+
+  } catch (e) {
+    console.log("❌ override error", e);
   }
 }
 
