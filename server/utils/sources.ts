@@ -94,7 +94,6 @@ export async function getJKAnimeServers(slug: string, number: number) {
 
     const servers: any[] = [];
 
-    // 🔥 detectar players (DESU / MAGI / etc)
     const players = [
       ...html.matchAll(/data-player="([^"]+)"/g)
     ];
@@ -106,11 +105,12 @@ export async function getJKAnimeServers(slug: string, number: number) {
         const decoded = decodeURIComponent(match[1]);
         const clean = decoded.replace(/\\/g, "");
 
+        // 🔥 intentar resolver directo
         const resolved = await resolveServer(clean);
 
         if (resolved) {
           servers.push({
-            name: "jkanime",
+            name: "server",
             embed: resolved
           });
         }
@@ -118,7 +118,11 @@ export async function getJKAnimeServers(slug: string, number: number) {
       } catch {}
     }
 
-    // 🔥 fallback con scrape completo
+    // 🔥 PRIORIDAD: si hay HLS → devolver solo eso
+    const hls = servers.filter(s => s.embed.includes(".m3u8"));
+    if (hls.length) return hls;
+
+    // 🔥 fallback completo
     if (!servers.length) {
       return await scrapePage(url);
     }
