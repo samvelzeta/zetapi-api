@@ -1,12 +1,12 @@
 import { fetchHtml } from "./fetcher";
 
 // ==============================
-// 🔥 CACHE EN MEMORIA
+// 🔥 KV CACHE + MEMORIA
 // ==============================
-const slugCache = new Map<string, string>();
+const memoryCache = new Map<string, string>();
 
 // ==============================
-// 🔥 NORMALIZAR TEXTO
+// 🔥 NORMALIZAR
 // ==============================
 function normalize(text: string): string {
   return text
@@ -24,7 +24,6 @@ function normalize(text: string): string {
 // 🔥 LEVENSHTEIN
 // ==============================
 function levenshtein(a: string, b: string): number {
-
   const matrix = [];
 
   for (let i = 0; i <= b.length; i++) matrix[i] = [i];
@@ -32,16 +31,14 @@ function levenshtein(a: string, b: string): number {
 
   for (let i = 1; i <= b.length; i++) {
     for (let j = 1; j <= a.length; j++) {
-
-      if (b[i - 1] === a[j - 1]) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
-      }
+      matrix[i][j] =
+        b[i - 1] === a[j - 1]
+          ? matrix[i - 1][j - 1]
+          : Math.min(
+              matrix[i - 1][j - 1] + 1,
+              matrix[i][j - 1] + 1,
+              matrix[i - 1][j] + 1
+            );
     }
   }
 
@@ -49,40 +46,22 @@ function levenshtein(a: string, b: string): number {
 }
 
 // ==============================
-// 🔥 SCORE INTELIGENTE
+// 🔥 SCORE REAL (UMBRAL 85%)
 // ==============================
-function scoreMatch(query: string, target: string): number {
-
+function similarity(query: string, target: string): number {
   const q = normalize(query);
   const t = normalize(target);
 
-  // coincidencia directa fuerte
-  if (t.includes(q)) return 120;
-
   const distance = levenshtein(q, t);
-
   const maxLen = Math.max(q.length, t.length);
 
-  const similarityScore = 100 - (distance / maxLen) * 100;
-
-  // bonus por palabras en común
-  const qWords = q.split(" ");
-  const tWords = t.split(" ");
-
-  let wordScore = 0;
-
-  for (const w of qWords) {
-    if (tWords.includes(w)) wordScore += 10;
-  }
-
-  return similarityScore + wordScore;
+  return 100 - (distance / maxLen) * 100;
 }
 
 // ==============================
 // 🔥 EXTRAER RESULTADOS
 // ==============================
 function extractResults(html: string) {
-
   const results: { slug: string; title: string }[] = [];
 
   const matches = [
@@ -100,84 +79,88 @@ function extractResults(html: string) {
 }
 
 // ==============================
-// 🔥 GENERAR VARIANTES INTERNAS
+// 🔥 QUERIES PROGRESIVAS
 // ==============================
-function generateSearchQueries(input: string): string[] {
-
+function generateQueries(input: string): string[] {
   const base = normalize(input);
-
   const words = base.split(" ");
 
-  const variants = new Set<string>();
+  const set = new Set<string>();
 
-  variants.add(base);
+  set.add(base);
+  set.add(words.join("-"));
+  set.add(words.join(""));
 
-  // recortes progresivos
   for (let i = words.length; i > 1; i--) {
-    variants.add(words.slice(0, i).join(" "));
+    set.add(words.slice(0, i).join(" "));
   }
 
-  // quitar palabras comunes
-  variants.add(base.replace(/\b(the|no|of)\b/g, "").trim());
-
-  // versiones compactas
-  variants.add(words.join(""));
-  variants.add(words.join("-"));
-
-  return Array.from(variants).filter(v => v.length > 2);
+  return Array.from(set);
 }
 
 // ==============================
-// 🔥 BUSQUEDA PROGRESIVA REAL
+// 🔥 MAIN
 // ==============================
-export async function findJKAnimeSlug(query: string): Promise<string | null> {
+export async function findJKAnimeSlug(query: string, env?: any): Promise<string | null> {
 
-  try {
+  const key = normalize(query);
 
-    const key = normalize(query);
-
-    // 🔥 CACHE
-    if (slugCache.has(key)) {
-      return slugCache.get(key)!;
-    }
-
-    const queries = generateSearchQueries(query);
-
-    let bestSlug: string | null = null;
-    let bestScore = 0;
-
-    for (const q of queries) {
-
-      const url = `https://jkanime.net/buscar/${encodeURIComponent(q)}`;
-      const html = await fetchHtml(url);
-
-      if (!html) continue;
-
-      const results = extractResults(html);
-
-      for (const r of results) {
-
-        const score = scoreMatch(query, r.title);
-
-        if (score > bestScore) {
-          bestScore = score;
-          bestSlug = r.slug;
-        }
-      }
-
-      // 🔥 si encontramos uno muy bueno → parar
-      if (bestScore > 140) break;
-    }
-
-    // 🔥 umbral mínimo
-    if (!bestSlug || bestScore < 50) return null;
-
-    // 🔥 GUARDAR CACHE
-    slugCache.set(key, bestSlug);
-
-    return bestSlug;
-
-  } catch {
-    return null;
+  // ======================
+  // 🧠 MEMORY CACHE
+  // ======================
+  if (memoryCache.has(key)) {
+    return memoryCache.get(key)!;
   }
+
+  // ======================
+  // ☁️ KV CACHE
+  // ======================
+  if (env?.SLUG_CACHE) {
+    const cached = await env.SLUG_CACHE.get(key);
+    if (cached) {
+      memoryCache.set(key, cached);
+      return cached;
+    }
+  }
+
+  const queries = generateQueries(query);
+
+  let bestSlug: string | null = null;
+  let bestScore = 0;
+
+  for (const q of queries) {
+
+    const url = `https://jkanime.net/buscar/${encodeURIComponent(q)}`;
+    const html = await fetchHtml(url);
+
+    if (!html) continue;
+
+    const results = extractResults(html);
+
+    for (const r of results) {
+
+      const score = similarity(query, r.title);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestSlug = r.slug;
+      }
+    }
+  }
+
+  // ======================
+  // 🔥 UMBRAL REAL
+  // ======================
+  if (!bestSlug || bestScore < 85) return null;
+
+  // ======================
+  // 💾 GUARDAR CACHE
+  // ======================
+  memoryCache.set(key, bestSlug);
+
+  if (env?.SLUG_CACHE) {
+    await env.SLUG_CACHE.put(key, bestSlug);
+  }
+
+  return bestSlug;
 }
