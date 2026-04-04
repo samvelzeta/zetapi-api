@@ -1,11 +1,11 @@
 // ==============================
-// 🔥 NORMALIZAR TÍTULO
+// ðŸ”¥ NORMALIZAR TÍTULO
 // ==============================
 export function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u0300-\u036f]/g, "") // quitar acentos
     .replace(/[:\-]/g, " ")
     .replace(/\b(season|temporada|part|parte|capitulo|episode)\b/g, "")
     .replace(/\d+/g, "")
@@ -14,124 +14,46 @@ export function normalizeTitle(title: string): string {
 }
 
 // ==============================
-// 🔥 RECORTE INTELIGENTE (FIX REAL)
-// ==============================
-export function smartTrimSlug(slug: string) {
-
-  let clean = slug
-    .toLowerCase()
-    .replace(/-\d+$/, "") // 🔥 FIX CLAVE (quita -1, -2...)
-    .replace(/-/g, " ")
-    .replace(/\b(season|temporada|part|parte)\b.*$/, "")
-    .replace(/\b(tv|ova|ona)\b/g, "")
-    .trim();
-
-  return clean
-    .replace(/\s+/g, "-")
-    .replace(/[^\w-]/g, "");
-}
-
-// ==============================
-// 🔥 SLUGIFY
-// ==============================
-function toSlug(text: string) {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .trim();
-}
-
-// ==============================
-// 🔥 ANILIST
-// ==============================
-async function fetchAniList(title: string) {
-
-  try {
-    const res = await fetch("https://graphql.anilist.co", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: `
-          query ($search: String) {
-            Media(search: $search, type: ANIME) {
-              title { romaji english native }
-              synonyms
-            }
-          }
-        `,
-        variables: { search: title }
-      })
-    });
-
-    const json = await res.json();
-    return json?.data?.Media || null;
-
-  } catch {
-    return null;
-  }
-}
-
-// ==============================
-// 🔥 EXPANSIÓN
+// ðŸ”¥ EXPANSIÓN AVANZADA
 // ==============================
 export function expandSlugVariants(input: string): string[] {
 
   const base = normalizeTitle(input);
   const variants = new Set<string>();
 
+  // base
   variants.add(base);
+
+  // formatos
   variants.add(base.replace(/ /g, "-"));
   variants.add(base.replace(/ /g, ""));
   variants.add(base.replace(/ /g, "_"));
 
+  // idioma
   variants.add(base + " anime");
   variants.add(base + " online");
+  variants.add(base + " latino");
   variants.add(base + " sub");
+  variants.add(base + " castellano");
 
-  return Array.from(variants);
-}
+  // simplificaciones
+  variants.add(base.replace("the", ""));
+  variants.add(base.replace("no", ""));
+  variants.add(base.replace("of", ""));
 
-// ==============================
-// 🔥 RESOLVER FINAL
-// ==============================
-export async function resolveSlugVariants(input: string): Promise<string[]> {
+  // romaji típicos
+  variants.add(base.replace("shingeki no kyojin", "attack on titan"));
+  variants.add(base.replace("boku no hero", "my hero academia"));
 
-  const trimmed = smartTrimSlug(input);
-
-  const variants = new Set<string>();
-
-  variants.add(trimmed);
-
-  expandSlugVariants(trimmed).forEach(v => variants.add(v));
-
-  // 🔥 ANILIST
-  const data = await fetchAniList(trimmed);
-
-  if (data) {
-
-    const titles = [
-      data.title?.romaji,
-      data.title?.english,
-      data.title?.native,
-      ...(data.synonyms || [])
-    ];
-
-    for (const t of titles) {
-
-      if (!t) continue;
-
-      const slug = toSlug(t);
-
-      variants.add(slug);
-      variants.add(slug.replace(/-/g, ""));
-    }
+  // casos especiales manuales (ðŸ”¥ importante)
+  if (base.includes("one piece")) {
+    variants.add("one-piece");
+    variants.add("onepiece");
   }
 
-  return Array.from(variants)
-    .filter(v => v.length > 2)
-    .slice(0, 20);
+  if (base.includes("dragon ball")) {
+    variants.add("dragon-ball");
+  }
+
+  return Array.from(variants).filter(v => v.length > 2);
 }
