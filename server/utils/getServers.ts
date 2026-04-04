@@ -1,159 +1,95 @@
 import {
   getAnimeFLVServers,
-  getJKAnimeServers,
-  getLatanimeServers,
-  getTioAnimeServers,
-  getAnimeIDServers,
-  getAnimeYTServers,
-  getAnimeFenixServers
+  getJKAnimeServers
 } from "./sources";
 
 import { filterWorkingServers } from "./filter";
 
 // ======================
-// ðŸ§  NORMALIZADOR
+// 🔥 UNIQUE
 // ======================
-function normalizeTitle(title: string) {
-  return title
-    .toLowerCase()
-    .replace(/[:\-]/g, " ")
-    .replace(/\b(season|temporada|part|parte|capitulo|episode)\b/g, "")
-    .replace(/\d+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+function uniqueServers(list: any[]) {
+
+  const seen = new Set();
+  const result = [];
+
+  for (const s of list) {
+
+    if (!s?.embed) continue;
+
+    const clean = s.embed.split("?")[0];
+
+    if (!seen.has(clean)) {
+      seen.add(clean);
+      result.push(s);
+    }
+  }
+
+  return result;
 }
 
 // ======================
-// ðŸ§  EXPANSIÓN
-// ======================
-function expandTitle(title: string) {
-  const base = normalizeTitle(title);
-  const variants = new Set<string>();
-
-  variants.add(base);
-  variants.add(base.replace(/ /g, "-"));
-  variants.add(base.replace(/ /g, ""));
-  variants.add(base.replace(/ /g, "_"));
-
-  variants.add(base + " anime");
-  variants.add(base + " online");
-  variants.add(base + " latino");
-  variants.add(base + " sub");
-  variants.add(base + " hd");
-
-  return Array.from(variants).filter(v => v.length > 2);
-}
-
-// ======================
-// ðŸ”¥ SCORE
+// 🔥 SCORE
 // ======================
 function scoreServer(server: any) {
+
   const url = (server.embed || "").toLowerCase();
-  let score = 0;
 
-  if (url.includes(".m3u8")) score += 100;
-  if (url.includes(".mp4")) score += 90;
+  if (url.includes(".m3u8")) return 1000;
+  if (url.includes(".mp4")) return 900;
 
-  if (url.includes("filemoon")) score += 80;
-  if (url.includes("streamtape")) score += 75;
-  if (url.includes("ok.ru")) score += 70;
+  if (url.includes("desu")) return 850;
+  if (url.includes("magi")) return 840;
 
-  if (server.name === "jkanime") score += 85;
+  if (url.includes("yourupload")) return 800;
+  if (url.includes("ok.ru")) return 750;
 
-  if (url.includes("streamwish")) score -= 50;
+  if (url.includes("filemoon")) return 700;
+  if (url.includes("streamwish")) return 600;
 
-  return score;
+  return 100;
 }
 
 // ======================
-// ðŸ”¥ SORT
+// 🔥 MAIN
 // ======================
-function sortServers(servers: any[]) {
-  return servers.sort((a, b) => scoreServer(b) - scoreServer(a));
-}
+export async function getAllServers({ slug, number, title }: any) {
 
-// ======================
-// ðŸ”¥ PIPELINE
-// ======================
-async function processServers(raw: any[]) {
-  if (!raw?.length) return [];
+  const cleanSlug = slug.replace(/-\d+$/, "");
 
-  const unique = Array.from(
-    new Map(raw.map(s => [s.embed, s])).values()
-  );
-
-  const filtered = await filterWorkingServers(unique);
-  const sorted = sortServers(filtered);
-
-  return sorted;
-}
-
-// ======================
-// ðŸ”¥ MAIN
-// ======================
-export async function getAllServers({
-  slug,
-  number,
-  title,
-  lang
-}: any) {
-
-  let servers: any[] = [];
+  let collected: any[] = [];
 
   // =====================
-  // ðŸ”¹ SUB
+  // 🥇 JKANIME PRIMERO
   // =====================
-  if (lang === "sub") {
+  const jk = await getJKAnimeServers(cleanSlug, number);
 
-    const [jk, flv] = await Promise.all([
-      getJKAnimeServers(slug, number),
-      getAnimeFLVServers(slug, number)
-    ]);
-
-    servers = [...jk, ...flv];
-
-    return await processServers(servers);
+  if (jk.length) {
+    collected.push(...jk);
   }
 
   // =====================
-  // ðŸ”¹ LATINO
+  // 🥈 ANIMEFLV
   // =====================
-  if (lang === "latino") {
+  const flv = await getAnimeFLVServers(cleanSlug, number);
 
-    const variants = expandTitle(title).slice(0, 10);
-
-    for (const v of variants) {
-
-      const results = await Promise.all([
-        getLatanimeServers(v, number),
-        getTioAnimeServers(v, number),
-        getAnimeYTServers(v, number),
-        getAnimeFenixServers(v, number),
-        getAnimeIDServers(v, number)
-      ]);
-
-      const flat = results.flat().filter(Boolean);
-
-      if (flat.length) {
-        servers.push(...flat);
-
-        if (flat.length >= 3) break;
-      }
-    }
-
-    // ðŸ”¥ FALLBACK LATINO â†’ SUB
-    if (!servers.length) {
-
-      const [jk, flv] = await Promise.all([
-        getJKAnimeServers(slug, number),
-        getAnimeFLVServers(slug, number)
-      ]);
-
-      servers = [...jk, ...flv];
-    }
-
-    return await processServers(servers);
+  if (flv.length) {
+    collected.push(...flv);
   }
 
-  return [];
+  if (!collected.length) return [];
+
+  // =====================
+  // 🔥 LIMPIEZA
+  // =====================
+  const filtered = await filterWorkingServers(collected);
+
+  const unique = uniqueServers(filtered);
+
+  // =====================
+  // 🔥 ORDEN
+  // =====================
+  const sorted = unique.sort((a, b) => scoreServer(b) - scoreServer(a));
+
+  return sorted.slice(0, 10);
 }
