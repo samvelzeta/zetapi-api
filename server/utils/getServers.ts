@@ -6,6 +6,7 @@ import {
 import { filterWorkingServers } from "./filter";
 import { resolveServer } from "./resolver";
 import { resolveSlugVariants } from "./slugResolver";
+import { findJKAnimeSlug } from "./jkSearch"; // 🔥 NUEVO
 
 // ======================
 function uniqueServers(list: any[]) {
@@ -33,15 +34,21 @@ function scoreServer(server: any) {
 
   const url = (server.embed || "").toLowerCase();
 
+  // 🥇 HLS absoluto
   if (url.includes(".m3u8")) return 1000;
+
+  // 🥈 MP4 directo
   if (url.includes(".mp4")) return 900;
 
-  if (url.includes("desu")) return 850;
-  if (url.includes("magi")) return 840;
+  // 🥈 JKAnime internos
+  if (url.includes("desu")) return 880;
+  if (url.includes("magi")) return 870;
 
+  // 🥉 buenos embeds
   if (url.includes("yourupload")) return 800;
   if (url.includes("ok.ru")) return 750;
 
+  // fallback
   if (url.includes("filemoon")) return 700;
   if (url.includes("streamwish")) return 600;
 
@@ -53,7 +60,7 @@ export async function getAllServers({ slug, number, title }: any) {
 
   const cleanSlug = slug.replace(/-\d+$/, "");
 
-  // 🔥 SUPER VARIANTES
+  // 🔥 variantes inteligentes
   const variants = [
     ...resolveSlugVariants(cleanSlug),
     ...resolveSlugVariants(slug),
@@ -63,14 +70,25 @@ export async function getAllServers({ slug, number, title }: any) {
   let collected: any[] = [];
 
   // =====================
-  // 🥇 JKANIME (MEJORADO)
+  // 🥇 JKANIME (ULTRA FIX)
   // =====================
   for (const v of variants) {
 
     let jk = await getJKAnimeServers(v, number);
 
+    // 🔥 🔥 SI NO ENCUENTRA → BUSQUEDA REAL
+    if (!jk.length) {
+
+      const realSlug = await findJKAnimeSlug(v);
+
+      if (realSlug) {
+        jk = await getJKAnimeServers(realSlug, number);
+      }
+    }
+
     if (jk.length) {
 
+      // 🥇 PRIORIDAD ABSOLUTA → HLS
       const hls = jk.filter(s =>
         s.embed && s.embed.includes(".m3u8")
       );
@@ -86,7 +104,7 @@ export async function getAllServers({ slug, number, title }: any) {
   }
 
   // =====================
-  // 🥈 ANIMEFLV
+  // 🥈 ANIMEFLV (RESUELTO)
   // =====================
   const flv = await getAnimeFLVServers(cleanSlug, number);
 
@@ -109,6 +127,7 @@ export async function getAllServers({ slug, number, title }: any) {
     collected.push(...resolved);
   }
 
+  // =====================
   if (!collected.length) return [];
 
   const filtered = await filterWorkingServers(collected);
