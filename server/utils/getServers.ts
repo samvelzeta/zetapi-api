@@ -62,11 +62,22 @@ export async function getAllServers({ slug, number, title }: any) {
   // =====================
   // 🥇 JKANIME PRIMERO
   // =====================
-  const jk = await getJKAnimeServers(cleanSlug, number);
+let jk = await getJKAnimeServers(cleanSlug, number);
+
+// 🔥 fallback con slug original
+if (!jk.length && slug !== cleanSlug) {
+  jk = await getJKAnimeServers(slug, number);
+}
+
+// 🔥 si aún no hay → intentar title
+if (!jk.length && title) {
+  jk = await getJKAnimeServers(title, number);
+}
 
 if (jk.length) {
 
-  const hls = jk.filter(s => s.embed.includes(".m3u8"));
+  // 🥇 prioridad absoluta HLS
+  const hls = jk.filter(s => s.embed && s.embed.includes(".m3u8"));
 
   if (hls.length) {
     return hls.slice(0, 5);
@@ -78,13 +89,44 @@ if (jk.length) {
   // =====================
   // 🥈 ANIMEFLV
   // =====================
-  const flv = await getAnimeFLVServers(cleanSlug, number);
+export async function getAnimeFLVServers(slug: string, number: number) {
 
-  if (flv.length) {
-    collected.push(...flv);
+  try {
+
+    const url = `https://animeflv.net/ver/${slug}-${number}`;
+    const html = await fetchHtml(url);
+
+    if (!html) return [];
+
+    const servers: any[] = [];
+
+    const frames = [
+      ...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)
+    ];
+
+    for (const match of frames) {
+
+      const src = match[1];
+
+      if (
+        src.includes("facebook") ||
+        src.includes("twitter") ||
+        src.includes("ads")
+      ) continue;
+
+      // 🔥 NO resolver aquí
+      servers.push({
+        name: "flv",
+        embed: src
+      });
+    }
+
+    return servers;
+
+  } catch {
+    return [];
   }
-
-  if (!collected.length) return [];
+}
 
   // =====================
   // 🔥 LIMPIEZA
