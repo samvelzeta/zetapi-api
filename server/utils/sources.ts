@@ -141,12 +141,43 @@ export async function getAnimeFLVServers(slug: string, number: number) {
 
   try {
 
-    const res = await getEpisode(slug, number);
+    const url = `https://animeflv.net/ver/${slug}-${number}`;
+    const html = await fetchHtml(url);
 
-    return (res?.servers || []).map((s: any) => ({
-      name: s.server || "flv",
-      embed: s.url || s.embed
-    }));
+    if (!html) return [];
+
+    const servers: any[] = [];
+
+    // 🔥 buscar iframes reales
+    const frames = [
+      ...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)
+    ];
+
+    for (const match of frames) {
+
+      const src = match[1];
+
+      if (
+        src.includes("facebook") ||
+        src.includes("twitter") ||
+        src.includes("ads")
+      ) continue;
+
+      try {
+
+        const resolved = await resolveServer(src);
+
+        if (resolved) {
+          servers.push({
+            name: "flv",
+            embed: resolved
+          });
+        }
+
+      } catch {}
+    }
+
+    return servers;
 
   } catch {
     return [];
