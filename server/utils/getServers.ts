@@ -4,7 +4,8 @@ import {
 } from "./sources";
 
 import { filterWorkingServers } from "./filter";
-import { resolveServer } from "./resolver"; // 🔥 IMPORTANTE
+import { resolveServer } from "./resolver";
+import { resolveSlugVariants } from "./slugResolver";
 
 // ======================
 function uniqueServers(list: any[]) {
@@ -52,36 +53,40 @@ export async function getAllServers({ slug, number, title }: any) {
 
   const cleanSlug = slug.replace(/-\d+$/, "");
 
+  // 🔥 SUPER VARIANTES
+  const variants = [
+    ...resolveSlugVariants(cleanSlug),
+    ...resolveSlugVariants(slug),
+    ...resolveSlugVariants(title || "")
+  ];
+
   let collected: any[] = [];
 
   // =====================
-  // 🥇 JKANIME
+  // 🥇 JKANIME (MEJORADO)
   // =====================
-  let jk = await getJKAnimeServers(cleanSlug, number);
+  for (const v of variants) {
 
-  if (!jk.length && slug !== cleanSlug) {
-    jk = await getJKAnimeServers(slug, number);
-  }
+    let jk = await getJKAnimeServers(v, number);
 
-  if (!jk.length && title) {
-    jk = await getJKAnimeServers(title, number);
-  }
+    if (jk.length) {
 
-  if (jk.length) {
+      const hls = jk.filter(s =>
+        s.embed && s.embed.includes(".m3u8")
+      );
 
-    const hls = jk.filter(s =>
-      s.embed && s.embed.includes(".m3u8")
-    );
+      if (hls.length) {
+        return uniqueServers(hls).slice(0, 5);
+      }
 
-    if (hls.length) {
-      return uniqueServers(hls).slice(0, 5);
+      collected.push(...jk);
     }
 
-    collected.push(...jk);
+    if (collected.length >= 6) break;
   }
 
   // =====================
-  // 🥈 ANIMEFLV (FIX REAL)
+  // 🥈 ANIMEFLV
   // =====================
   const flv = await getAnimeFLVServers(cleanSlug, number);
 
@@ -95,7 +100,7 @@ export async function getAllServers({ slug, number, title }: any) {
 
       if (real) {
         resolved.push({
-          name: "flv_resolved",
+          name: "flv",
           embed: real
         });
       }
@@ -104,12 +109,9 @@ export async function getAllServers({ slug, number, title }: any) {
     collected.push(...resolved);
   }
 
-  // =====================
   if (!collected.length) return [];
 
-  // =====================
   const filtered = await filterWorkingServers(collected);
-
   const unique = uniqueServers(filtered);
 
   const sorted = unique.sort((a, b) =>
