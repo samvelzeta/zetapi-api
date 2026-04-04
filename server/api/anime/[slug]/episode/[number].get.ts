@@ -1,14 +1,15 @@
 import { getAllServers } from "../../../../utils/getServers";
-import { getCache, saveCache } from "../../../../utils/cache";
+import { filterWorkingServers } from "../../../../utils/filter";
+import { getCache } from "../../../../utils/cache";
 
 // ======================
-async function validateServers(
-  servers: any[],
-  slug: string,
-  number: number
-) {
+// ðŸ”¥ VALIDAR SERVERS
+// ======================
+function validateServers(servers: any[]) {
 
-  let clean = servers.filter(s => {
+  if (!servers?.length) return [];
+
+  return servers.filter(s => {
 
     if (!s?.embed) return false;
 
@@ -22,61 +23,47 @@ async function validateServers(
 
     return true;
   });
-
-  // 🔥 mínimo 3
-  if (clean.length < 3) {
-
-    const extra = await getAllServers({
-      slug,
-      number,
-      title: slug,
-      lang: "sub"
-    });
-
-    clean = [...clean, ...extra];
-  }
-
-  // 🔥 quitar duplicados
-  const seen = new Set();
-
-  return clean.filter(s => {
-    const u = s.embed.split("?")[0];
-    if (seen.has(u)) return false;
-    seen.add(u);
-    return true;
-  }).slice(0, 6);
 }
 
 // ======================
+// ðŸ”¥ NORMALIZAR OUTPUT
+// ======================
 function normalizeServers(servers: any[]) {
+
   return servers.map((s, i) => ({
     name: `server_${i + 1}`,
-    embed: s.embed,
-    type: s.embed.includes(".m3u8") ? "hls" : "embed"
+    embed: s.embed
   }));
 }
 
+// ======================
+// ðŸ”¥ MAIN
 // ======================
 export default defineEventHandler(async (event) => {
 
   setHeader(event, "Access-Control-Allow-Origin", "*");
 
+  if (event.method === "OPTIONS") return "";
+
   const { slug, number } = getRouterParams(event);
+  const { lang } = getQuery(event);
+
+  const language = lang === "latino" ? "latino" : "sub";
 
   // ======================
-  // 🔥 CACHE
+  // ðŸ”¥ 1. CACHE REAL (ARREGLADO)
   // ======================
-  const cached = await getCache(slug, Number(number), "sub");
+  const cached = await getCache(slug, Number(number), language);
 
-  if (cached?.sources) {
+  if (cached && cached.sources) {
 
     let servers = [
-      ...(cached.sources.hls || []).map((u: string) => ({ embed: u })),
-      ...(cached.sources.mp4 || []).map((u: string) => ({ embed: u })),
-      ...(cached.sources.embed || []).map((u: string) => ({ embed: u }))
+      ...(cached.sources.hls || []).map((url: string) => ({ embed: url })),
+      ...(cached.sources.mp4 || []).map((url: string) => ({ embed: url })),
+      ...(cached.sources.embed || []).map((url: string) => ({ embed: url }))
     ];
 
-    servers = await validateServers(servers, slug, Number(number));
+    servers = validateServers(servers);
 
     if (servers.length) {
       return {
@@ -85,7 +72,7 @@ export default defineEventHandler(async (event) => {
         total: servers.length,
         data: {
           slug,
-          number,
+          number: Number(number),
           servers: normalizeServers(servers)
         }
       };
@@ -93,31 +80,42 @@ export default defineEventHandler(async (event) => {
   }
 
   // ======================
-  // 🔥 SCRAPER
+  // ðŸ”¥ 2. SCRAPER
   // ======================
   let servers = await getAllServers({
     slug,
     number: Number(number),
     title: slug,
-    lang: "sub"
+    lang: language
   });
 
-  servers = await validateServers(servers, slug, Number(number));
+  servers = validateServers(servers);
 
   // ======================
-  // 🔥 SAVE CACHE
+  // ðŸ”¥ 3. FALLBACK LATINO â†’ SUB
   // ======================
-  if (servers.length) {
-    saveCache(slug, Number(number), "sub", servers);
+  if (!servers.length && language === "latino") {
+
+    servers = await getAllServers({
+      slug,
+      number: Number(number),
+      title: slug,
+      lang: "sub"
+    });
+
+    servers = validateServers(servers);
   }
 
+  // ======================
+  // ðŸ”¥ 4. RESPUESTA FINAL
+  // ======================
   return {
     success: true,
     source: "scraper",
     total: servers.length,
     data: {
       slug,
-      number,
+      number: Number(number),
       servers: normalizeServers(servers)
     }
   };
