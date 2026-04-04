@@ -1,59 +1,82 @@
-// ==============================
-// ðŸ”¥ NORMALIZAR TÍTULO
-// ==============================
-export function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // quitar acentos
-    .replace(/[:\-]/g, " ")
-    .replace(/\b(season|temporada|part|parte|capitulo|episode)\b/g, "")
-    .replace(/\d+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+ const words = base.split(" ").filter(w => w.length > 1);
 
-// ==============================
-// ðŸ”¥ EXPANSIÓN AVANZADA
-// ==============================
-export function expandSlugVariants(input: string): string[] {
-
-  const base = normalizeTitle(input);
   const variants = new Set<string>();
 
-  // base
-  variants.add(base);
+  // ======================
+  // 🔥 BASES
+  // ======================
+  const joined = words.join("-");
+  const compact = words.join("");
+  const underscore = words.join("_");
 
-  // formatos
-  variants.add(base.replace(/ /g, "-"));
-  variants.add(base.replace(/ /g, ""));
-  variants.add(base.replace(/ /g, "_"));
+  variants.add(joined);
+  variants.add(compact);
+  variants.add(underscore);
 
-  // idioma
-  variants.add(base + " anime");
-  variants.add(base + " online");
-  variants.add(base + " latino");
-  variants.add(base + " sub");
-  variants.add(base + " castellano");
-
-  // simplificaciones
-  variants.add(base.replace("the", ""));
-  variants.add(base.replace("no", ""));
-  variants.add(base.replace("of", ""));
-
-  // romaji típicos
-  variants.add(base.replace("shingeki no kyojin", "attack on titan"));
-  variants.add(base.replace("boku no hero", "my hero academia"));
-
-  // casos especiales manuales (ðŸ”¥ importante)
-  if (base.includes("one piece")) {
-    variants.add("one-piece");
-    variants.add("onepiece");
+  // ======================
+  // 🔥 VERSIONES CORTAS
+  // ======================
+  if (words.length >= 2) {
+    variants.add(words.slice(0, 2).join("-"));
+    variants.add(words.slice(0, 3).join("-"));
   }
 
-  if (base.includes("dragon ball")) {
-    variants.add("dragon-ball");
+  // ======================
+  // 🔥 SUFIJOS CLAVE (JKANIME)
+  // ======================
+  const suffixes = [
+    "",
+    "-tv",
+    "-tv-2",
+    "-tv-3",
+    "-season-2",
+    "-season-3",
+    "-2nd-season",
+    "-3rd-season",
+    "-4th-season",
+    "-part-2",
+    "-part-3",
+    "-sub",
+    "-anime"
+  ];
+
+  for (const suf of suffixes) {
+    variants.add(joined + suf);
+    variants.add(compact + suf);
   }
 
-  return Array.from(variants).filter(v => v.length > 2);
+  // ======================
+  // 🔥 VARIANTES COMBINADAS
+  // ======================
+  for (let i = 0; i < words.length; i++) {
+    const slice = words.slice(0, i + 1).join("-");
+    variants.add(slice);
+    variants.add(slice + "-tv");
+    variants.add(slice + "-season");
+  }
+
+  // ======================
+  // 🔥 CASOS ESPECIALES
+  // ======================
+  const map: Record<string, string[]> = {
+    "black clover": ["black-clover-tv"],
+    "shingeki no kyojin": ["attack-on-titan"],
+    "boku no hero academia": ["my-hero-academia"],
+    "kimetsu no yaiba": ["demon-slayer"],
+    "jujutsu kaisen": ["jujutsu-kaisen-tv"]
+  };
+
+  for (const key in map) {
+    if (base.includes(key)) {
+      map[key].forEach(v => variants.add(v));
+    }
+  }
+
+  // ======================
+  // 🔥 LIMPIEZA FINAL
+  // ======================
+  return Array.from(variants)
+    .map(v => v.replace(/--+/g, "-"))
+    .filter(v => v.length > 2)
+    .slice(0, 60); // 🔥 límite fuerte
 }
