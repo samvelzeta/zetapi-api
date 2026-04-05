@@ -33,12 +33,13 @@ export default defineEventHandler(async (event) => {
   // ======================
   // 🔥 SCRAPER
   // ======================
-  const servers = await getAllServers({
-    slug,
-    number: Number(number),
-    title: slug,
-    env: event.context.cloudflare?.env
-  });
+ const servers = await getAllServers({
+  slug,
+  number: Number(number),
+  title: slug,
+  env: event.context.cloudflare?.env,
+  lang: language
+});
 
   if (servers.length) {
 
