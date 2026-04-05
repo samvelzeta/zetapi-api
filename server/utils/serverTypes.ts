@@ -1,6 +1,6 @@
 // ==============================
 // ðŸ”¥ DETECTOR DE SERVIDORES
-// ==============================
+// ==============================sssssssss
 
 export type ServerType =
   | "hls"
