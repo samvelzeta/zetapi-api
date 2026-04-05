@@ -7,6 +7,7 @@ import { filterWorkingServers } from "./filter";
 import { resolveServer } from "./resolver";
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
+import { getKVVideo } from "./kv"; // 🔥 NUEVO
 
 // ======================
 function uniqueServers(list: any[]) {
@@ -29,7 +30,6 @@ function uniqueServers(list: any[]) {
 
 // ======================
 function scoreServer(server: any) {
-
   const url = (server.embed || "").toLowerCase();
 
   if (url.includes(".m3u8")) return 1000;
@@ -48,7 +48,7 @@ function scoreServer(server: any) {
 }
 
 // ======================
-export async function getAllServers({ slug, number, title, env }: any) {
+export async function getAllServers({ slug, number, title, env, lang }: any) {
 
   const cleanSlug = slug.replace(/-\d+$/, "");
 
@@ -61,13 +61,12 @@ export async function getAllServers({ slug, number, title, env }: any) {
   let collected: any[] = [];
 
   // =====================
-  // 🥇 JKANIME
+  // 🥇 SCRAPER
   // =====================
   for (const v of variants) {
 
     let jk = await getJKAnimeServers(v, number);
 
-    // 🔥 BUSQUEDA REAL + KV
     if (!jk.length) {
 
       const realSlug = await findJKAnimeSlug(v, env);
@@ -103,7 +102,6 @@ export async function getAllServers({ slug, number, title, env }: any) {
     const resolved: any[] = [];
 
     for (const s of flv) {
-
       const real = await resolveServer(s.embed);
 
       if (real) {
@@ -117,12 +115,31 @@ export async function getAllServers({ slug, number, title, env }: any) {
     collected.push(...resolved);
   }
 
-  if (!collected.length) return [];
+  // =====================
+  // 🧠 SI NO HAY NADA → KV
+  // =====================
+  if (!collected.length) {
+
+    const kv = await getKVVideo(cleanSlug, number, lang || "sub", env);
+
+    if (kv?.sources) {
+
+      const servers = [
+        ...(kv.sources.hls || []),
+        ...(kv.sources.mp4 || []),
+        ...(kv.sources.embed || [])
+      ].map((u: string) => ({ embed: u }));
+
+      return servers;
+    }
+
+    return [];
+  }
 
   const filtered = await filterWorkingServers(collected);
   const unique = uniqueServers(filtered);
 
-  return unique.sort((a, b) =>
-    scoreServer(b) - scoreServer(a)
-  ).slice(0, 10);
+  return unique
+    .sort((a, b) => scoreServer(b) - scoreServer(a))
+    .slice(0, 10);
 }
