@@ -26,7 +26,7 @@ export async function filterWorkingServers(servers: any[]) {
 
     const url = s.embed.toLowerCase();
 
-    // â Œ basura real
+    // â Œ basura reallllllll
     if (BAD.some(b => url.includes(b))) return false;
 
     // âœ” directos SIEMPRE
