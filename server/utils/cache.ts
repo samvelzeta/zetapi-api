@@ -1,5 +1,5 @@
 // ======================
-// ðŸ”¥ CACHE FETCH REAL
+// ðŸ”¥ CACHE FETCH REALllllll
 // ======================
 export async function getCache(slug: string, number: number, lang: string) {
 
