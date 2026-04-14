@@ -1,8 +1,8 @@
 import {
-  getJKAnimeServers
+  getJKAnimeServers,
+  scrapePage
 } from "./sources";
 
-import { fetchHtml } from "./fetcher";
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
 
@@ -31,66 +31,29 @@ function isHLS(url: string) {
 }
 
 // ======================
-// 🔥 EXTRAER ZILLA DIRECTO (SIN SCRAPER)
-// ======================
-function extractZilla(html: string) {
-
-  const results: string[] = [];
-
-  const matches = html.match(/https?:\/\/[^"' ]*zilla-networks[^"' ]*/g) || [];
-
-  for (const m of matches) {
-    results.push(m);
-  }
-
-  return results;
-}
-
-// ======================
-// 🔥 SENSOR AV1 REAL
+// 🔥 AV1
 // ======================
 async function tryAV1(variants: string[], number: number, requestedLang: string) {
 
-  let results: any[] = [];
-
   for (const v of variants) {
 
-    try {
+    const url = `https://animeav1.com/media/${v}/${number}`;
+    const scraped = await scrapePage(url);
 
-      const url = `https://animeav1.com/media/${v}/${number}`;
-      const html = await fetchHtml(url);
+    if (!scraped.length) continue;
 
-      if (!html) continue;
+    const filtered = scraped.filter(s => s.lang === requestedLang);
 
-      const zillaLinks = extractZilla(html);
-
-      if (!zillaLinks.length) continue;
-
-      for (const link of zillaLinks) {
-
-        results.push({
-          name: "Z",
-          type: "embed",
-          embed: link,
-          lang: requestedLang
-        });
-      }
-
-      // 🔥 cortar cuando encuentra algo
-      if (results.length) break;
-
-    } catch {}
+    if (filtered.length) return filtered;
   }
 
-  return results;
+  return [];
 }
 
 // ======================
-// 🔥 SENSOR JK
+// 🔥 JK
 // ======================
 async function tryJK(variants: string[], number: number, env: any) {
-
-  let jkServers: any[] = [];
 
   for (const v of variants) {
 
@@ -105,24 +68,15 @@ async function tryJK(variants: string[], number: number, env: any) {
 
     if (!jk.length) continue;
 
-    for (const s of jk) {
-
-      const u = s.embed || "";
-
-      if (!isHLS(u)) continue;
-
-      jkServers.push({
-        name: "K",
-        type: "hls",
-        embed: `${PROXY}${encodeURIComponent(u)}`,
-        lang: "sub"
-      });
-    }
-
-    if (jkServers.length) break;
+    return jk.map(s => ({
+      name: "K",
+      type: "hls",
+      embed: `${PROXY}${encodeURIComponent(s.embed)}`,
+      lang: "sub"
+    }));
   }
 
-  return jkServers;
+  return [];
 }
 
 // ======================
@@ -137,39 +91,26 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
     ...resolveSlugVariants(title || "")
   ];
 
-  // =====================
   // 🥇 AV1
-  // =====================
   let av1 = await tryAV1(variants, number, requestedLang);
 
-  // =====================
-  // 🔁 SENSOR REINTENTO AV1
-  // =====================
+  // 🔁 retry AV1
   if (!av1.length) {
-
-    const retryVariants = [
+    const retry = [
       ...variants,
       slug.replace(/-/g, ""),
-      slug.split("-").slice(0, 2).join("-"),
-      slug.split("-").slice(0, 3).join("-")
+      slug.split("-").slice(0, 2).join("-")
     ];
 
-    av1 = await tryAV1(retryVariants, number, requestedLang);
+    av1 = await tryAV1(retry, number, requestedLang);
   }
 
-  // =====================
-  // 🥈 JK BACKUP
-  // =====================
+  // 🥈 JK
   const jk = await tryJK(variants, number, env);
 
-  // =====================
-  // 🔥 PRIORIDAD FINAL
-  // =====================
+  // 🔥 RESULT
   if (av1.length) {
-    return uniqueServers([
-      ...av1,
-      ...jk
-    ]).slice(0, 5);
+    return uniqueServers([...av1, ...jk]).slice(0, 5);
   }
 
   if (jk.length) {
