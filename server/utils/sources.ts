@@ -3,117 +3,23 @@ import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
 // ======================
-// 🔥 FETCH AV1 JSON
+// 🔥 FILTROS REALES
 // ======================
-async function fetchAV1Data(slug: string, number: number) {
+function isZilla(url: string) {
+  return url.includes("zilla-networks");
+}
 
-  const url = `https://animeav1.com/media/${slug}/${number}/__data.json?x-sveltekit-invalidated=1`;
-
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json",
-        "Referer": `https://animeav1.com/media/${slug}/${number}`
-      }
-    });
-
-    if (!res.ok) return null;
-
-    return await res.json();
-
-  } catch {
-    return null;
-  }
+function isGoodHLS(url: string) {
+  return (
+    url.includes(".m3u8") &&
+    !url.includes("mp4upload") &&
+    !url.includes("mega") &&
+    !url.includes("1fichier")
+  );
 }
 
 // ======================
-// 🔥 EXTRAER DIRECTO (SIN PARSE COMPLEJO)
-// ======================
-function extractFromJSON(json: any) {
-
-  const latino: any[] = [];
-  const sub: any[] = [];
-
-  if (!json?.nodes) return { latino, sub };
-
-  const raw = JSON.stringify(json.nodes);
-
-  // 🔥 detectar idioma real
-  const hasSUB = raw.includes('"SUB"'); // latino
-  const hasDUB = raw.includes('"DUB"'); // japonés
-
-  // 🔥 extraer zilla directo
-  const urls =
-    raw.match(/https?:\/\/player\.zilla-networks\.com\/play\/[a-z0-9]+/g) || [];
-
-  for (const u of urls) {
-
-    if (hasSUB) {
-      latino.push({
-        name: "animeav1",
-        embed: u
-      });
-    }
-
-    if (hasDUB) {
-      sub.push({
-        name: "animeav1",
-        embed: u
-      });
-    }
-  }
-
-  return { latino, sub };
-}
-
-// ======================
-// 🔥 AV1 PRINCIPAL (JSON + FALLBACK)
-// ======================
-export async function getAV1Servers(slug: string, number: number) {
-
-  // 🔥 1. intentar JSON
-  const json = await fetchAV1Data(slug, number);
-
-  if (json) {
-
-    const parsed = extractFromJSON(json);
-
-    if (parsed.latino.length || parsed.sub.length) {
-      return parsed;
-    }
-  }
-
-  // 🔥 2. fallback a scraper (TU LOGICA ORIGINAL)
-  const url = `https://animeav1.com/media/${slug}/${number}`;
-  const scraped = await scrapePage(url);
-
-  const latino: any[] = [];
-  const sub: any[] = [];
-
-  for (const s of scraped) {
-
-    const u = s.embed || "";
-
-    if (!u.includes("zilla-networks")) continue;
-
-    // fallback duplicado (igual que ya hacías)
-    latino.push({
-      name: "animeav1",
-      embed: u
-    });
-
-    sub.push({
-      name: "animeav1",
-      embed: u
-    });
-  }
-
-  return { latino, sub };
-}
-
-// ======================
-// 🔥 SCRAPER ORIGINAL (NO TOCADO)
+// 🔥 SCRAPER AV1 LIMPIO (SOLO ZILLA)
 // ======================
 export async function scrapePage(url: string) {
 
@@ -128,38 +34,16 @@ export async function scrapePage(url: string) {
 
     for (const u of urls) {
 
-      if (
-        u.includes("zilla-networks") ||
-        u.includes("pixeldrain") ||
-        u.includes("mega.nz") ||
-        u.includes("mp4upload") ||
-        u.includes("1fichier") ||
-        u.includes("streamwish") ||
-        u.includes("filemoon")
-      ) {
+      // 🔥 SOLO ZILLA (LO IMPORTANTE)
+      if (!isZilla(u)) continue;
 
-        if (u.includes("zilla-networks")) {
-          servers.push({
-            name: "animeav1",
-            embed: u
-          });
-          continue;
-        }
-
-        try {
-          const resolved = await resolveServer(u);
-
-          if (resolved) {
-            servers.push({
-              name: "animeav1",
-              embed: resolved
-            });
-          }
-
-        } catch {}
-      }
+      servers.push({
+        name: "animeav1",
+        embed: u
+      });
     }
 
+    // 🔥 UNIQUE
     const unique = new Map();
 
     for (const s of servers) {
@@ -176,7 +60,7 @@ export async function scrapePage(url: string) {
 }
 
 // ======================
-// 🔥 JKANIME (NO TOCADO)
+// 🔥 JKANIME (SOLO HLS REAL)
 // ======================
 export async function getJKAnimeServers(slug: string, number: number) {
 
@@ -201,18 +85,29 @@ export async function getJKAnimeServers(slug: string, number: number) {
         const clean = decoded.replace(/\\/g, "");
 
         const resolved = await resolveServer(clean);
+        if (!resolved) continue;
 
-        if (resolved) {
-          servers.push({
-            name: "jkanime",
-            embed: resolved
-          });
-        }
+        // 🔥 SOLO HLS REAL
+        if (!isGoodHLS(resolved)) continue;
+
+        servers.push({
+          name: "jkanime",
+          embed: resolved
+        });
 
       } catch {}
     }
 
-    return servers;
+    // 🔥 UNIQUE
+    const unique = new Map();
+
+    for (const s of servers) {
+      if (!unique.has(s.embed)) {
+        unique.set(s.embed, s);
+      }
+    }
+
+    return Array.from(unique.values());
 
   } catch {
     return [];
@@ -220,7 +115,7 @@ export async function getJKAnimeServers(slug: string, number: number) {
 }
 
 // ======================
-// 🔥 ANIMEFLV (NO TOCADO)
+// 🔥 ANIMEFLV (OPCIONAL)
 // ======================
 export async function getAnimeFLVServers(slug: string, number: number) {
 
@@ -238,12 +133,15 @@ export async function getAnimeFLVServers(slug: string, number: number) {
 
         const resolved = await resolveServer(s.url);
 
-        if (resolved) {
-          servers.push({
-            name: "animeflv",
-            embed: resolved
-          });
-        }
+        if (!resolved) continue;
+
+        // 🔥 SOLO HLS
+        if (!isGoodHLS(resolved)) continue;
+
+        servers.push({
+          name: "animeflv",
+          embed: resolved
+        });
 
       } catch {}
     }
