@@ -10,10 +10,11 @@ async function fetchAV1Data(slug: string, number: number) {
   const url = `https://animeav1.com/media/${slug}/${number}/__data.json?x-sveltekit-invalidated=1`;
 
   try {
+
     const res = await fetch(url, {
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+          "Mozilla/5.0 (Linux; Android 16; SM-A155M Build/BP2A.250605.031.A3; wv) AppleWebKit/537.36 Chrome/147.0.7727.55 Mobile Safari/537.36",
         "Accept": "application/json",
         "Referer": `https://animeav1.com/media/${slug}/${number}`
       }
@@ -29,47 +30,46 @@ async function fetchAV1Data(slug: string, number: number) {
 }
 
 // ======================
-// 🔥 PARSER REAL (ROBUSTO)
+// 🔥 PARSER REAL AV1
 // ======================
-function parseAV1Nodes(json: any) {
+function parseAV1(json: any) {
 
   const servers: any[] = [];
 
-  if (!json) return servers;
+  if (!json?.nodes) return servers;
 
-  const raw = JSON.stringify(json);
+  const raw = JSON.stringify(json.nodes);
 
-  // 🔥 EXTRAER TODAS LAS URLS
-  const urls = raw.match(/https?:\/\/[^"\\]+/g) || [];
+  // 🔥 EXTRAER TODOS LOS STRINGS
+  const strings = raw.match(/"(.*?)"/g)?.map(s => s.replace(/"/g, "")) || [];
 
-  for (const url of urls) {
+  for (let i = 0; i < strings.length; i++) {
 
-    // 🔥 FILTRO REAL DE SERVERS
+    const current = strings[i];
+    const next = strings[i + 1];
+
+    // 🔥 detectar server + url
     if (
-      url.includes("zilla") ||
-      url.includes("pixeldrain") ||
-      url.includes("mega.nz") ||
-      url.includes("mp4upload") ||
-      url.includes("1fichier") ||
-      url.includes("stream") ||
-      url.includes(".m3u8")
+      (current === "HLS" ||
+        current === "Mega" ||
+        current === "MP4Upload" ||
+        current === "PDrain" ||
+        current === "1Fichier") &&
+      next?.startsWith("http")
     ) {
 
       servers.push({
         name: "animeav1",
-        embed: url,
-        type:
-          url.includes(".m3u8") || url.includes("zilla")
-            ? "hls"
-            : "embed",
-        lang: raw.includes("DUB") ? "latino" : "sub"
+        server: current,
+        embed: next,
+        type: current === "HLS" ? "hls" : "embed",
+        lang: raw.includes('"DUB"') ? "latino" : "sub"
       });
     }
   }
 
-  // 🔥 ELIMINAR DUPLICADOS
+  // 🔥 quitar duplicados
   const unique = new Map();
-
   for (const s of servers) {
     if (!unique.has(s.embed)) {
       unique.set(s.embed, s);
@@ -80,7 +80,7 @@ function parseAV1Nodes(json: any) {
 }
 
 // ======================
-// 🔥 ANIMEAV1
+// 🔥 AV1 MAIN
 // ======================
 export async function getAnimeAV1Servers(slug: string, number: number) {
 
@@ -88,10 +88,32 @@ export async function getAnimeAV1Servers(slug: string, number: number) {
 
   if (json) {
 
-    const parsed = parseAV1Nodes(json);
+    const parsed = parseAV1(json);
 
     if (parsed.length) {
-      return parsed;
+
+      // 🔥 resolver HLS reales
+      const final: any[] = [];
+
+      for (const s of parsed) {
+
+        try {
+
+          const resolved = await resolveServer(s.embed);
+
+          if (resolved) {
+            final.push({
+              ...s,
+              embed: resolved
+            });
+          } else {
+            final.push(s);
+          }
+
+        } catch {}
+      }
+
+      return final;
     }
   }
 
@@ -120,9 +142,10 @@ export async function getJKAnimeServers(slug: string, number: number) {
 
       try {
 
-        const decoded = Buffer.from(match[1], "base64").toString("utf-8");
+        const decoded = decodeURIComponent(match[1]);
+        const clean = decoded.replace(/\\/g, "");
 
-        const resolved = await resolveServer(decoded);
+        const resolved = await resolveServer(clean);
 
         if (resolved) {
           servers.push({
