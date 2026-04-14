@@ -176,4 +176,4 @@ export async function getAnimeFLVServers(slug: string, number: number) {
 }
 
 // porque no envias debe de enviarse 
-const xd = xd
+
