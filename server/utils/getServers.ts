@@ -8,6 +8,8 @@ import { filterWorkingServers } from "./filter";
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
 
+import { getKVVideo, saveKVVideo } from "./kv";
+
 // ======================
 function uniqueServers(list: any[]) {
   const seen = new Set();
@@ -27,7 +29,7 @@ function uniqueServers(list: any[]) {
   return result;
 }
 
-// ======================sasas
+// ======================
 function scoreServer(server: any) {
   const url = (server.embed || "").toLowerCase();
 
@@ -45,7 +47,7 @@ function pickBestServers(list: any[], lang: string) {
 
   let filtered = list;
 
-  // 🔥 FILTRAR POR IDIOMA SI EXISTE
+  // 🔥 FILTRAR POR IDIOMA
   if (lang) {
     const byLang = list.filter(s => s.lang === lang);
     if (byLang.length) filtered = byLang;
@@ -67,6 +69,17 @@ function pickBestServers(list: any[], lang: string) {
 // ======================
 export async function getAllServers({ slug, number, title, env, lang }: any) {
 
+  const language = lang === "latino" ? "latino" : "sub";
+
+  // ======================
+  // 🧠 1. INTENTO CACHE
+  // ======================
+  const cached = await getKVVideo(slug, number, language, env);
+
+  if (cached?.servers?.length) {
+    return cached.servers;
+  }
+
   const cleanSlug = slug.replace(/-\d+$/, "");
 
   const variants = [
@@ -78,7 +91,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   let collected: any[] = [];
 
   // =====================
-  // 🥇 1. ANIMEAV1 (__data.json)
+  // 🥇 2. ANIMEAV1
   // =====================
   for (const v of variants) {
 
@@ -92,9 +105,16 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
           s.embed && s.embed.includes(".m3u8")
         );
 
-        // 🔥 SI HAY HLS → SALIDA DIRECTA
         if (hls.length) {
-          return pickBestServers(hls, lang);
+
+          const final = pickBestServers(hls, language);
+
+          // 🔥 GUARDAR CACHE
+          await saveKVVideo(slug, number, language, {
+            servers: final
+          }, env);
+
+          return final;
         }
 
         collected.push(...av1);
@@ -106,7 +126,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   }
 
   // =====================
-  // 🥈 2. JKANIME
+  // 🥈 3. JKANIME
   // =====================
   for (const v of variants) {
 
@@ -128,7 +148,14 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
       );
 
       if (hls.length) {
-        return pickBestServers(hls, lang);
+
+        const final = pickBestServers(hls, language);
+
+        await saveKVVideo(slug, number, language, {
+          servers: final
+        }, env);
+
+        return final;
       }
 
       collected.push(...jk);
@@ -138,7 +165,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   }
 
   // =====================
-  // 🥉 3. FALLBACK (FLV)
+  // 🥉 4. FLV FALLBACK
   // =====================
   try {
 
@@ -151,7 +178,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   } catch {}
 
   // =====================
-  // 🔥 FILTRADO FINAL
+  // 🔥 5. FILTRADO FINAL
   // =====================
   const filtered = await filterWorkingServers(collected);
 
@@ -159,5 +186,12 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
     return [];
   }
 
-  return pickBestServers(filtered, lang);
+  const final = pickBestServers(filtered, language);
+
+  // 🔥 GUARDAR CACHE FINAL
+  await saveKVVideo(slug, number, language, {
+    servers: final
+  }, env);
+
+  return final;
 }
