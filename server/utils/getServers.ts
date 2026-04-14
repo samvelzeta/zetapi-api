@@ -5,10 +5,8 @@ import {
 } from "./sources";
 
 import { filterWorkingServers } from "./filter";
-import { resolveServer } from "./resolver";
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
-import { getKVVideo } from "./kv";
 
 // ======================
 function uniqueServers(list: any[]) {
@@ -36,12 +34,6 @@ function scoreServer(server: any) {
   if (url.includes(".m3u8")) return 1000;
   if (url.includes(".mp4")) return 900;
 
-  if (url.includes("desu")) return 880;
-  if (url.includes("magi")) return 870;
-
-  if (url.includes("yourupload")) return 800;
-  if (url.includes("ok.ru")) return 750;
-
   if (url.includes("filemoon")) return 700;
   if (url.includes("streamwish")) return 600;
 
@@ -49,20 +41,26 @@ function scoreServer(server: any) {
 }
 
 // ======================
-function pickBestServers(list: any[]) {
+function pickBestServers(list: any[], lang: string) {
 
-  const sorted = list
+  let filtered = list;
+
+  // 🔥 FILTRAR POR IDIOMA SI EXISTE
+  if (lang) {
+    const byLang = list.filter(s => s.lang === lang);
+    if (byLang.length) filtered = byLang;
+  }
+
+  const sorted = filtered
     .filter(s => s?.embed)
     .sort((a, b) => scoreServer(b) - scoreServer(a));
 
   const hls = sorted.filter(s => s.embed.includes(".m3u8"));
 
-  // 🔥 SI HAY HLS → PRIORIDAD TOTAL
   if (hls.length) {
     return uniqueServers(hls).slice(0, 3);
   }
 
-  // 🔥 SI NO → MEJORES GENERALES
   return uniqueServers(sorted).slice(0, 3);
 }
 
@@ -80,7 +78,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   let collected: any[] = [];
 
   // =====================
-  // 🥇 1. ANIMEAV1 (PRIORIDAD ABSOLUTA)
+  // 🥇 1. ANIMEAV1 (__data.json)
   // =====================
   for (const v of variants) {
 
@@ -94,9 +92,9 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
           s.embed && s.embed.includes(".m3u8")
         );
 
-        // 🔥 SI ENCONTRAMOS HLS → SALIMOS DIRECTO
+        // 🔥 SI HAY HLS → SALIDA DIRECTA
         if (hls.length) {
-          return pickBestServers(hls);
+          return pickBestServers(hls, lang);
         }
 
         collected.push(...av1);
@@ -130,7 +128,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
       );
 
       if (hls.length) {
-        return pickBestServers(hls);
+        return pickBestServers(hls, lang);
       }
 
       collected.push(...jk);
@@ -140,7 +138,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   }
 
   // =====================
-  // 🥉 3. FALLBACK GENERAL (FLV u otros)
+  // 🥉 3. FALLBACK (FLV)
   // =====================
   try {
 
@@ -161,5 +159,5 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
     return [];
   }
 
-  return pickBestServers(filtered);
+  return pickBestServers(filtered, lang);
 }
