@@ -11,7 +11,6 @@ import { findJKAnimeSlug } from "./jkSearch";
 import { getKVVideo } from "./kv";
 
 // ======================
-// 🔥 PROXY GLOBAL (CORRECTO)
 const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
 
 // ======================
@@ -34,24 +33,43 @@ function uniqueServers(list: any[]) {
 }
 
 // ======================
-function scoreServer(server: any) {
-  const url = (server.embed || "").toLowerCase();
+function normalizeFinalServers(list: any[]) {
 
-  if (url.includes(".m3u8")) return 1000;
-  if (url.includes(".mp4")) return 900;
-  if (url.includes("filemoon")) return 700;
-  if (url.includes("streamwish")) return 600;
+  const final: any[] = [];
 
-  return 100;
-}
+  for (const s of list) {
 
-// ======================
-// 🔥 APLICAR PROXY GLOBAL (FIX REAL)
-function applyProxy(servers: any[]) {
-  return servers.map(s => ({
-    ...s,
-    embed: `${PROXY}${encodeURIComponent(s.embed)}`
-  }));
+    const url = s.embed || "";
+
+    // 🟣 ZILLA → PRIORIDAD 1 (EMBED LIMPIO)
+    if (url.includes("zilla-networks")) {
+      final.unshift({
+        name: "Z",
+        type: "embed",
+        embed: url
+      });
+      continue;
+    }
+
+    // 🟢 JK / HLS → PRIORIDAD 2 (CON PROXY)
+    if (url.includes(".m3u8")) {
+      final.push({
+        name: "K",
+        type: "hls",
+        embed: `${PROXY}${encodeURIComponent(url)}`
+      });
+      continue;
+    }
+
+    // 🔵 RESTO
+    final.push({
+      name: s.name || "S",
+      type: url.includes(".mp4") ? "mp4" : "embed",
+      embed: url
+    });
+  }
+
+  return final.slice(0, 10);
 }
 
 // ======================
@@ -68,7 +86,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   let collected: any[] = [];
 
   // =====================
-  // 🥇 AV1 SCRAPER
+  // 🥇 AV1
   // =====================
   for (const v of variants) {
 
@@ -76,23 +94,14 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
     const scraped = await scrapePage(url);
 
     if (scraped.length) {
-
-      const hls = scraped.filter(s =>
-        s.embed && s.embed.includes(".m3u8")
-      );
-
-      if (hls.length) {
-        return applyProxy(uniqueServers(hls).slice(0, 5));
-      }
-
       collected.push(...scraped);
     }
 
-    if (collected.length >= 5) break;
+    if (collected.length >= 6) break;
   }
 
   // =====================
-  // 🥈 JKANIME
+  // 🥈 JK
   // =====================
   for (const v of variants) {
 
@@ -106,19 +115,10 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
     }
 
     if (jk.length) {
-
-      const hls = jk.filter(s =>
-        s.embed && s.embed.includes(".m3u8")
-      );
-
-      if (hls.length) {
-        return applyProxy(uniqueServers(hls).slice(0, 5));
-      }
-
       collected.push(...jk);
     }
 
-    if (collected.length >= 6) break;
+    if (collected.length >= 10) break;
   }
 
   // =====================
@@ -127,21 +127,15 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   const flv = await getAnimeFLVServers(cleanSlug, number);
 
   if (flv.length) {
-
-    const resolved: any[] = [];
-
     for (const s of flv) {
       const real = await resolveServer(s.embed);
-
       if (real) {
-        resolved.push({
+        collected.push({
           name: "flv",
           embed: real
         });
       }
     }
-
-    collected.push(...resolved);
   }
 
   // =====================
@@ -152,14 +146,13 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
     const kv = await getKVVideo(cleanSlug, number, lang || "sub", env);
 
     if (kv?.sources) {
-
       const servers = [
         ...(kv.sources.hls || []),
         ...(kv.sources.mp4 || []),
         ...(kv.sources.embed || [])
       ].map((u: string) => ({ embed: u }));
 
-      return applyProxy(servers);
+      return normalizeFinalServers(servers);
     }
 
     return [];
@@ -168,9 +161,5 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   const filtered = await filterWorkingServers(collected);
   const unique = uniqueServers(filtered);
 
-  return applyProxy(
-    unique
-      .sort((a, b) => scoreServer(b) - scoreServer(a))
-      .slice(0, 10)
-  );
+  return normalizeFinalServers(unique);
 }
