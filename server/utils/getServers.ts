@@ -6,35 +6,22 @@ import {
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
 
-// ======================
 const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
 
 // ======================
 function uniqueServers(list: any[]) {
   const seen = new Set();
-  const result = [];
-
-  for (const s of list) {
-    if (!s?.embed) continue;
-
+  return list.filter(s => {
+    if (!s?.embed) return false;
     const clean = s.embed.split("?")[0];
-
-    if (!seen.has(clean)) {
-      seen.add(clean);
-      result.push(s);
-    }
-  }
-
-  return result;
+    if (seen.has(clean)) return false;
+    seen.add(clean);
+    return true;
+  });
 }
 
 // ======================
-function isHLS(url: string) {
-  return url.includes(".m3u8");
-}
-
-// ======================
-// 🔥 SENSOR CORE
+// 🔥 AV1 INTENTO
 // ======================
 async function tryAV1(variants: string[], number: number) {
 
@@ -69,7 +56,6 @@ async function tryAV1(variants: string[], number: number) {
       }
     }
 
-    // 🔥 si ya encontró algo → cortar
     if (latino.length || sub.length) break;
   }
 
@@ -77,9 +63,11 @@ async function tryAV1(variants: string[], number: number) {
 }
 
 // ======================
+// 🔥 JK BACKUP
+// ======================
 async function tryJK(variants: string[], number: number, env: any) {
 
-  let jk: any[] = [];
+  let results: any[] = [];
 
   for (const v of variants) {
 
@@ -96,87 +84,58 @@ async function tryJK(variants: string[], number: number, env: any) {
 
     for (const s of servers) {
 
-      const u = s.embed || "";
-
-      if (!isHLS(u)) continue;
-
-      jk.push({
+      results.push({
         name: "K",
         type: "hls",
-        embed: `${PROXY}${encodeURIComponent(u)}`,
+        embed: `${PROXY}${encodeURIComponent(s.embed)}`,
         lang: "sub"
       });
     }
 
-    if (jk.length) break;
+    if (results.length) break;
   }
 
-  return jk;
+  return results;
 }
 
 // ======================
-// 🔥 MAIN CON SENSOR
+// 🔥 MAIN FINAL
 // ======================
 export async function getAllServers({ slug, number, title, env }: any) {
 
-  const baseVariants = [
+  const variants = [
     ...resolveSlugVariants(slug),
     ...resolveSlugVariants(title || "")
   ];
 
-  // =====================
-  // 🥇 PRIMER INTENTO AV1
-  // =====================
-  let { latino, sub } = await tryAV1(baseVariants, number);
+  // 🥇 AV1
+  let { latino, sub } = await tryAV1(variants, number);
 
-  // =====================
-  // 🔁 SENSOR: REINTENTO AV1
-  // =====================
+  // 🔁 SENSOR REINTENTO
   if (!latino.length && !sub.length) {
 
-    const extended = [
-      ...baseVariants,
+    const retryVariants = [
+      ...variants,
       slug.replace(/-/g, ""),
       slug.split("-").slice(0, 2).join("-"),
       slug.split("-").slice(0, 3).join("-")
     ];
 
-    const retry = await tryAV1(extended, number);
+    const retry = await tryAV1(retryVariants, number);
 
     latino = retry.latino;
     sub = retry.sub;
   }
 
-  // =====================
-  // 🥈 JK SIEMPRE COMO BACKUP
-  // =====================
-  const jk = await tryJK(baseVariants, number, env);
+  // 🥈 JK
+  const jk = await tryJK(variants, number, env);
 
-  // =====================
-  // 🚨 SENSOR FINAL
-  // =====================
-  if (!latino.length && !sub.length && !jk.length) {
-
-    // 🔥 último intento global
-    const lastTry = await tryAV1(baseVariants.reverse(), number);
-
-    latino = lastTry.latino;
-    sub = lastTry.sub;
-  }
-
-  // =====================
-  // 🔥 NUNCA VACÍO
-  // =====================
+  // 🔥 FINAL
   const final = uniqueServers([
     ...latino,
     ...sub,
     ...jk
   ]).slice(0, 6);
-
-  // 🔥 fallback absoluto
-  if (!final.length) {
-    return jk.length ? jk : [];
-  }
 
   return final;
 }
