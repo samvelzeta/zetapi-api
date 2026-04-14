@@ -34,35 +34,19 @@ function isHLS(url: string) {
 }
 
 // ======================
-// 🔥 DETECTAR IDIOMA AV1 (INVERTIDO)
-function matchAV1Lang(requested: string, html: string) {
-
-  // AV1:
-  // SUB = latino
-  // DUB = japonés
-
-  if (requested === "latino") {
-    return html.includes('"SUB"');
-  }
-
-  return html.includes('"DUB"');
-}
-
-// ======================
-export async function getAllServers({ slug, number, title, env, lang }: any) {
-
-  const requestedLang = lang === "latino" ? "latino" : "sub";
+export async function getAllServers({ slug, number, title, env }: any) {
 
   const variants = [
     ...resolveSlugVariants(slug),
     ...resolveSlugVariants(title || "")
   ];
 
-  let av1Servers: any[] = [];
-  let jkServers: any[] = [];
+  let latino: any[] = [];
+  let sub: any[] = [];
+  let jk: any[] = [];
 
   // =====================
-  // 🔥 BUSQUEDA EN PARALELO
+  // 🔥 BUSQUEDA PARALELA REAL
   // =====================
   await Promise.all(
 
@@ -76,31 +60,32 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
         const url = `https://animeav1.com/media/${v}/${number}`;
         const scraped = await scrapePage(url);
 
-        if (scraped.length) {
+        if (!scraped.length) return;
 
-          for (const s of scraped) {
+        // 🔥 IMPORTANTE:
+        // AV1 NO DIFERENCIA POR URL → hay que DUPLICAR
 
-            const u = s.embed || "";
+        for (const s of scraped) {
 
-            if (!u.includes("zilla-networks")) continue;
+          const u = s.embed || "";
 
-            // 🔥 idioma forzado por request
-            if (requestedLang === "latino") {
-              av1Servers.push({
-                name: "Z",
-                type: "embed",
-                embed: u,
-                lang: "latino"
-              });
-            } else {
-              av1Servers.push({
-                name: "Z",
-                type: "embed",
-                embed: u,
-                lang: "sub"
-              });
-            }
-          }
+          if (!u.includes("zilla-networks")) continue;
+
+          // 🔥 SUB = LATINO
+          latino.push({
+            name: "Z",
+            type: "embed",
+            embed: u,
+            lang: "latino"
+          });
+
+          // 🔥 DUB = JAPONES
+          sub.push({
+            name: "Z",
+            type: "embed",
+            embed: u,
+            lang: "sub"
+          });
         }
 
       } catch {}
@@ -110,30 +95,29 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
       // =====================
       try {
 
-        let jk = await getJKAnimeServers(v, number);
+        let servers = await getJKAnimeServers(v, number);
 
-        if (!jk.length) {
+        if (!servers.length) {
           const realSlug = await findJKAnimeSlug(v, env);
           if (realSlug) {
-            jk = await getJKAnimeServers(realSlug, number);
+            servers = await getJKAnimeServers(realSlug, number);
           }
         }
 
-        if (jk.length) {
+        if (!servers.length) return;
 
-          for (const s of jk) {
+        for (const s of servers) {
 
-            const u = s.embed || "";
+          const u = s.embed || "";
 
-            if (!isHLS(u)) continue;
+          if (!isHLS(u)) continue;
 
-            jkServers.push({
-              name: "K",
-              type: "hls",
-              embed: `${PROXY}${encodeURIComponent(u)}`,
-              lang: "sub" // JK normalmente subtitulado
-            });
-          }
+          jk.push({
+            name: "K",
+            type: "hls",
+            embed: `${PROXY}${encodeURIComponent(u)}`,
+            lang: "sub"
+          });
         }
 
       } catch {}
@@ -142,21 +126,12 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   );
 
   // =====================
-  // 🔥 PRIORIDAD FINAL
+  // 🔥 RESULTADO FINAL
   // =====================
 
-  // 🥇 AV1 primero
-  if (av1Servers.length) {
-    return uniqueServers([
-      ...av1Servers,
-      ...jkServers
-    ]).slice(0, 5);
-  }
-
-  // 🥈 fallback JK
-  if (jkServers.length) {
-    return uniqueServers(jkServers).slice(0, 5);
-  }
-
-  return [];
+  return uniqueServers([
+    ...latino,
+    ...sub,
+    ...jk
+  ]).slice(0, 6);
 }
