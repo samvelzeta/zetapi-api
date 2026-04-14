@@ -4,7 +4,7 @@ import { resolveServer } from "./resolver";
 
 // ======================
 // 🔥 FETCH AV1 JSON
-// ======================   sasd
+// ======================
 async function fetchAV1Data(slug: string, number: number) {
 
   const url = `https://animeav1.com/media/${slug}/${number}/__data.json?x-sveltekit-invalidated=1`;
