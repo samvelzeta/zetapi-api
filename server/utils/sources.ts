@@ -3,7 +3,7 @@ import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
 // ======================
-// 🔥 EXTRAER URLS
+// 🔥 EXTRAER URLS GENERICO
 // ======================
 function extractUrls(html: string) {
 
@@ -25,6 +25,114 @@ function extractUrls(html: string) {
   links?.forEach(l => urls.add(l));
 
   return Array.from(urls);
+}
+
+// ======================
+// 🔥 DETECTAR HLS EN HTML / JS (LOGICA PYTHON ADAPTADA)
+// ======================
+function extractHLSDeep(html: string) {
+
+  const results = new Set<string>();
+
+  if (!html) return [];
+
+  // 🔥 m3u8 directos
+  const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
+  m3u8?.forEach(u => results.add(u));
+
+  // 🔥 file: "..."
+  const file = html.match(/file\s*:\s*"([^"]+)"/g);
+  file?.forEach(f => {
+    const url = f.match(/"([^"]+)"/)?.[1];
+    if (url && url.includes(".m3u8")) results.add(url);
+  });
+
+  // 🔥 sources: [{file: "..."}]
+  const sources = html.match(/sources\s*:\s*\[[^\]]+\]/g);
+  sources?.forEach(block => {
+    const urls = block.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
+    urls?.forEach(u => results.add(u));
+  });
+
+  // 🔥 JSON embebido
+  const jsonUrls = html.match(/https?:\/\/[^"' ]+\/playlist[^"' ]+\.m3u8[^"' ]*/g);
+  jsonUrls?.forEach(u => results.add(u));
+
+  return Array.from(results);
+}
+
+// ======================
+// 🔥 ANIMEAV1 EXTRACTOR (NUEVO)
+// ======================
+export async function getAnimeAV1Servers(slug: string, number: number) {
+
+  const servers: any[] = [];
+
+  const url = `https://animeav1.com/media/${slug}/${number}`;
+
+  try {
+
+    const html = await fetchHtml(url);
+    if (!html) return [];
+
+    // ======================
+    // 🔥 1. HLS DIRECTO
+    // ======================
+    const hls = extractHLSDeep(html);
+
+    for (const h of hls) {
+      servers.push({
+        name: "animeav1",
+        embed: h,
+        type: "hls",
+        lang: detectLang(html)
+      });
+    }
+
+    // ======================
+    // 🔥 2. FALLBACK (EMBEDS)
+    // ======================
+    const urls = extractUrls(html);
+
+    for (const u of urls) {
+
+      try {
+
+        const resolved = await resolveServer(u);
+
+        if (resolved) {
+          servers.push({
+            name: "animeav1",
+            embed: resolved,
+            type: "embed",
+            lang: detectLang(html)
+          });
+        }
+
+      } catch {}
+    }
+
+    return servers;
+
+  } catch {
+    return [];
+  }
+}
+
+// ======================
+// 🔥 DETECTAR IDIOMA (LATINO / SUB)
+// ======================
+function detectLang(html: string): string {
+
+  const lower = html.toLowerCase();
+
+  if (
+    lower.includes("latino") ||
+    lower.includes("español") ||
+    lower.includes("spanish")
+  ) return "latino";
+
+  return "sub";
 }
 
 // ======================
@@ -81,7 +189,7 @@ export async function scrapePage(url: string) {
 }
 
 // ======================
-// 🔥 JKANIME
+// 🔥 JKANIME (SIN TOCAR)
 // ======================
 export async function getJKAnimeServers(slug: string, number: number) {
 
@@ -102,74 +210,13 @@ export async function getJKAnimeServers(slug: string, number: number) {
 
       try {
 
-        const decoded = decodeURIComponent(match[1]);
-        const clean = decoded.replace(/\\/g, "");
+        const decoded = Buffer.from(match[1], "base64").toString("utf-8");
 
-        // 🔥 intentar resolver directo
-        const resolved = await resolveServer(clean);
+        const resolved = await resolveServer(decoded);
 
         if (resolved) {
           servers.push({
-            name: "server",
-            embed: resolved
-          });
-        }
-
-      } catch {}
-    }
-
-    // 🔥 PRIORIDAD: si hay HLS → devolver solo eso
-    const hls = servers.filter(s => s.embed.includes(".m3u8"));
-    if (hls.length) return hls;
-
-    // 🔥 fallback completo
-    if (!servers.length) {
-      return await scrapePage(url);
-    }
-
-    return servers;
-
-  } catch {
-    return [];
-  }
-}
-
-// ======================
-// 🔥 ANIMEFLV
-// ======================
-export async function getAnimeFLVServers(slug: string, number: number) {
-
-  try {
-
-    const url = `https://animeflv.net/ver/${slug}-${number}`;
-    const html = await fetchHtml(url);
-
-    if (!html) return [];
-
-    const servers: any[] = [];
-
-    // 🔥 buscar iframes reales
-    const frames = [
-      ...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)
-    ];
-
-    for (const match of frames) {
-
-      const src = match[1];
-
-      if (
-        src.includes("facebook") ||
-        src.includes("twitter") ||
-        src.includes("ads")
-      ) continue;
-
-      try {
-
-        const resolved = await resolveServer(src);
-
-        if (resolved) {
-          servers.push({
-            name: "flv",
+            name: "jkanime",
             embed: resolved
           });
         }
