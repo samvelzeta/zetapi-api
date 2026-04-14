@@ -1,4 +1,3 @@
-import { getEpisode } from "animeflv-scraper";
 import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
@@ -21,53 +20,128 @@ function extractUrls(html: string) {
     if (src) urls.add(src);
   });
 
-  const links = html.match(/https?:\/\/[^"' ]+/g);
-  links?.forEach(l => urls.add(l));
-
   return Array.from(urls);
 }
 
 // ======================
-// 🔥 DETECTAR HLS EN HTML / JS (LOGICA PYTHON ADAPTADA)
+// 🔥 DETECTAR IDIOMA
 // ======================
-function extractHLSDeep(html: string) {
+function detectLangFromLabel(label: string = ""): string {
+
+  const l = label.toLowerCase();
+
+  if (
+    l.includes("latino") ||
+    l.includes("español") ||
+    l.includes("spanish")
+  ) return "latino";
+
+  return "sub";
+}
+
+// ======================
+// 🔥 FETCH JSON AV1 (CLAVE TOTAL)
+// ======================
+async function fetchAV1Data(slug: string, number: number) {
+
+  const url = `https://animeav1.com/media/${slug}/${number}/__data.json?x-sveltekit-invalidated=1`;
+
+  try {
+
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "application/json",
+        "Referer": `https://animeav1.com/media/${slug}/${number}`
+      }
+    });
+
+    if (!res.ok) return null;
+
+    const json = await res.json();
+
+    return json;
+
+  } catch {
+    return null;
+  }
+}
+
+// ======================
+// 🔥 EXTRAER SERVERS DESDE JSON
+// ======================
+function extractServersFromJSON(json: any) {
+
+  const servers: any[] = [];
+
+  if (!json) return servers;
+
+  try {
+
+    const raw = JSON.stringify(json);
+
+    // 🔥 BUSCAR HLS DIRECTOS
+    const m3u8 = raw.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
+
+    if (m3u8?.length) {
+      for (const url of m3u8) {
+        servers.push({
+          name: "animeav1",
+          embed: url,
+          type: "hls",
+          lang: "sub" // se ajusta luego
+        });
+      }
+    }
+
+    // 🔥 EXTRAER POSIBLE INFO DE IDIOMA
+    if (raw.includes("latino")) {
+      servers.forEach(s => (s.lang = "latino"));
+    }
+
+  } catch {}
+
+  return servers;
+}
+
+// ======================
+// 🔥 FALLBACK HTML (SI JSON FALLA)
+// ======================
+function extractHLSFromHTML(html: string) {
 
   const results = new Set<string>();
 
-  if (!html) return [];
-
-  // 🔥 m3u8 directos
   const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
   m3u8?.forEach(u => results.add(u));
-
-  // 🔥 file: "..."
-  const file = html.match(/file\s*:\s*"([^"]+)"/g);
-  file?.forEach(f => {
-    const url = f.match(/"([^"]+)"/)?.[1];
-    if (url && url.includes(".m3u8")) results.add(url);
-  });
-
-  // 🔥 sources: [{file: "..."}]
-  const sources = html.match(/sources\s*:\s*\[[^\]]+\]/g);
-  sources?.forEach(block => {
-    const urls = block.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
-    urls?.forEach(u => results.add(u));
-  });
-
-  // 🔥 JSON embebido
-  const jsonUrls = html.match(/https?:\/\/[^"' ]+\/playlist[^"' ]+\.m3u8[^"' ]*/g);
-  jsonUrls?.forEach(u => results.add(u));
 
   return Array.from(results);
 }
 
 // ======================
-// 🔥 ANIMEAV1 EXTRACTOR (NUEVO)
+// 🔥 ANIMEAV1 (FINAL PRO)
 // ======================
 export async function getAnimeAV1Servers(slug: string, number: number) {
 
   const servers: any[] = [];
 
+  // ======================
+  // 🥇 1. INTENTO JSON
+  // ======================
+  const json = await fetchAV1Data(slug, number);
+
+  if (json) {
+
+    const parsed = extractServersFromJSON(json);
+
+    if (parsed.length) {
+      return parsed;
+    }
+  }
+
+  // ======================
+  // 🥈 2. FALLBACK HTML
+  // ======================
   const url = `https://animeav1.com/media/${slug}/${number}`;
 
   try {
@@ -75,23 +149,17 @@ export async function getAnimeAV1Servers(slug: string, number: number) {
     const html = await fetchHtml(url);
     if (!html) return [];
 
-    // ======================
-    // 🔥 1. HLS DIRECTO
-    // ======================
-    const hls = extractHLSDeep(html);
+    const hls = extractHLSFromHTML(html);
 
     for (const h of hls) {
       servers.push({
         name: "animeav1",
         embed: h,
         type: "hls",
-        lang: detectLang(html)
+        lang: detectLangFromLabel(html)
       });
     }
 
-    // ======================
-    // 🔥 2. FALLBACK (EMBEDS)
-    // ======================
     const urls = extractUrls(html);
 
     for (const u of urls) {
@@ -105,76 +173,7 @@ export async function getAnimeAV1Servers(slug: string, number: number) {
             name: "animeav1",
             embed: resolved,
             type: "embed",
-            lang: detectLang(html)
-          });
-        }
-
-      } catch {}
-    }
-
-    return servers;
-
-  } catch {
-    return [];
-  }
-}
-
-// ======================
-// 🔥 DETECTAR IDIOMA (LATINO / SUB)
-// ======================
-function detectLang(html: string): string {
-
-  const lower = html.toLowerCase();
-
-  if (
-    lower.includes("latino") ||
-    lower.includes("español") ||
-    lower.includes("spanish")
-  ) return "latino";
-
-  return "sub";
-}
-
-// ======================
-// 🔥 SCRAPER UNIVERSAL
-// ======================
-export async function scrapePage(url: string) {
-
-  try {
-
-    const html = await fetchHtml(url);
-    if (!html) return [];
-
-    const urls = extractUrls(html);
-
-    const clean = urls.filter(u =>
-      u &&
-      !u.includes("facebook") &&
-      !u.includes("twitter") &&
-      !u.includes(".css") &&
-      !u.includes(".js") &&
-      (
-        u.includes("embed") ||
-        u.includes("player") ||
-        u.includes("video") ||
-        u.includes("stream") ||
-        u.includes(".m3u8") ||
-        u.includes(".mp4")
-      )
-    );
-
-    const servers: any[] = [];
-
-    for (const u of clean) {
-
-      try {
-
-        const resolved = await resolveServer(u);
-
-        if (resolved) {
-          servers.push({
-            name: "scraped",
-            embed: resolved
+            lang: detectLangFromLabel(html)
           });
         }
 
