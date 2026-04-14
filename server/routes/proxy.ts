@@ -33,56 +33,60 @@ export default {
         redirect: "follow",
         headers: {
           "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
 
           "Accept": "*/*",
-          "Accept-Language": "en-US,en;q=0.9",
-
           "Referer": parsed.origin,
           "Origin": parsed.origin,
-
-          "Connection": "keep-alive",
         }
       });
 
       const contentType = res.headers.get("content-type") || "";
 
-      let body = res.body;
-
-      // 🔥 REESCRIBIR M3U8 (CLAVE)
-      if (contentType.includes("application/vnd.apple.mpegurl") || target.includes(".m3u8")) {
+      // ============================
+      // 🔥 SI ES M3U8 → REESCRIBIR TODO
+      // ============================
+      if (contentType.includes("mpegurl") || target.includes(".m3u8")) {
 
         const text = await res.text();
 
         const base = target.substring(0, target.lastIndexOf("/") + 1);
 
-        const rewritten = text.replace(/(.*\.ts.*)/g, (line) => {
+        const lines = text.split("\n");
+
+        const rewritten = lines.map(line => {
+
+          if (!line || line.startsWith("#")) return line;
+
+          // 🔥 absoluta
           if (line.startsWith("http")) {
             return `/proxy?url=${encodeURIComponent(line)}`;
           }
+
+          // 🔥 relativa
           return `/proxy?url=${encodeURIComponent(base + line)}`;
         });
 
-        body = rewritten;
+        return new Response(rewritten.join("\n"), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/vnd.apple.mpegurl",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "*",
+          }
+        });
       }
 
-      const headers = new Headers();
-
-      headers.set(
-        "Content-Type",
-        contentType || "application/vnd.apple.mpegurl"
-      );
-
-      headers.set("Access-Control-Allow-Origin", "*");
-      headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      headers.set("Access-Control-Allow-Headers", "*");
-      headers.set("Access-Control-Expose-Headers", "*");
-
-      headers.set("Cache-Control", "no-store");
-
-      return new Response(body, {
+      // ============================
+      // 🔥 STREAM NORMAL (.ts, .mp4, etc)
+      // ============================
+      return new Response(res.body, {
         status: res.status,
-        headers,
+        headers: {
+          "Content-Type": contentType || "application/octet-stream",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Expose-Headers": "*",
+        },
       });
 
     } catch (err) {
