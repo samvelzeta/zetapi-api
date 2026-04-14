@@ -1,9 +1,8 @@
-import { getEpisode } from "animeflv-scraper";
 import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
 // ======================
-// 🔥 FILTROS REALES
+// 🔥 HELPERS
 // ======================
 function isZilla(url: string) {
   return url.includes("zilla-networks");
@@ -19,7 +18,7 @@ function isGoodHLS(url: string) {
 }
 
 // ======================
-// 🔥 SCRAPER AV1 LIMPIO (SOLO ZILLA)
+// 🔥 AV1 SCRAPER REAL (CON IDIOMA)
 // ======================
 export async function scrapePage(url: string) {
 
@@ -28,22 +27,45 @@ export async function scrapePage(url: string) {
     const html = await fetchHtml(url);
     if (!html) return [];
 
-    const urls = html.match(/https?:\/\/[^"' ]+/g) || [];
-
     const servers: any[] = [];
 
-    for (const u of urls) {
+    // ======================
+    // 🟢 SUB = LATINO
+    // ======================
+    const subBlock = html.split("SUB")[1]?.split("DUB")[0] || "";
 
-      // 🔥 SOLO ZILLA (LO IMPORTANTE)
-      if (!isZilla(u)) continue;
+    const subUrls = subBlock.match(/https?:\/\/[^"' ]+/g) || [];
 
-      servers.push({
-        name: "animeav1",
-        embed: u
-      });
+    for (const u of subUrls) {
+      if (isZilla(u)) {
+        servers.push({
+          name: "animeav1",
+          embed: u,
+          lang: "latino"
+        });
+      }
     }
 
+    // ======================
+    // 🔵 DUB = JAPONES
+    // ======================
+    const dubBlock = html.split("DUB")[1] || "";
+
+    const dubUrls = dubBlock.match(/https?:\/\/[^"' ]+/g) || [];
+
+    for (const u of dubUrls) {
+      if (isZilla(u)) {
+        servers.push({
+          name: "animeav1",
+          embed: u,
+          lang: "sub"
+        });
+      }
+    }
+
+    // ======================
     // 🔥 UNIQUE
+    // ======================
     const unique = new Map();
 
     for (const s of servers) {
@@ -60,7 +82,7 @@ export async function scrapePage(url: string) {
 }
 
 // ======================
-// 🔥 JKANIME (SOLO HLS REAL)
+// 🔥 JKANIME (HLS REAL)
 // ======================
 export async function getJKAnimeServers(slug: string, number: number) {
 
@@ -87,60 +109,12 @@ export async function getJKAnimeServers(slug: string, number: number) {
         const resolved = await resolveServer(clean);
         if (!resolved) continue;
 
-        // 🔥 SOLO HLS REAL
         if (!isGoodHLS(resolved)) continue;
 
         servers.push({
           name: "jkanime",
-          embed: resolved
-        });
-
-      } catch {}
-    }
-
-    // 🔥 UNIQUE
-    const unique = new Map();
-
-    for (const s of servers) {
-      if (!unique.has(s.embed)) {
-        unique.set(s.embed, s);
-      }
-    }
-
-    return Array.from(unique.values());
-
-  } catch {
-    return [];
-  }
-}
-
-// ======================
-// 🔥 ANIMEFLV (OPCIONAL)
-// ======================
-export async function getAnimeFLVServers(slug: string, number: number) {
-
-  try {
-
-    const data = await getEpisode({ anime: slug, episode: number });
-
-    if (!data?.servers) return [];
-
-    const servers: any[] = [];
-
-    for (const s of data.servers) {
-
-      try {
-
-        const resolved = await resolveServer(s.url);
-
-        if (!resolved) continue;
-
-        // 🔥 SOLO HLS
-        if (!isGoodHLS(resolved)) continue;
-
-        servers.push({
-          name: "animeflv",
-          embed: resolved
+          embed: resolved,
+          lang: "sub"
         });
 
       } catch {}
