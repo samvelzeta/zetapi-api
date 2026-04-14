@@ -2,18 +2,18 @@ import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
 // ======================
-// 🔥 HELPERS
+// HELPERS
 // ======================
 function isZilla(url: string) {
   return url.includes("zilla-networks");
 }
 
-function extractHLS(block: string) {
-  return block.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g) || [];
+function extractUrls(block: string) {
+  return block.match(/https?:\/\/[^"' ]+/g) || [];
 }
 
 // ======================
-// 🔥 AV1 SCRAPER PRO
+// 🔥 SCRAPER AV1 CORREGIDO
 // ======================
 export async function scrapePage(url: string) {
 
@@ -28,13 +28,12 @@ export async function scrapePage(url: string) {
     // 🟢 SUB (LATINO)
     // ======================
     const subBlock = html.split("SUB")[1]?.split("DUB")[0] || "";
+    const subUrls = extractUrls(subBlock);
 
-    const subHLS = extractHLS(subBlock);
-
-    for (const u of subHLS) {
+    for (const u of subUrls) {
       if (isZilla(u)) {
         servers.push({
-          name: "animeav1",
+          name: "Z",
           embed: u,
           lang: "latino"
         });
@@ -45,22 +44,34 @@ export async function scrapePage(url: string) {
     // 🔵 DUB (JAPONES)
     // ======================
     const dubBlock = html.split("DUB")[1] || "";
+    const dubUrls = extractUrls(dubBlock);
 
-    const dubHLS = extractHLS(dubBlock);
-
-    for (const u of dubHLS) {
+    for (const u of dubUrls) {
       if (isZilla(u)) {
         servers.push({
-          name: "animeav1",
+          name: "Z",
           embed: u,
           lang: "sub"
         });
       }
     }
 
-    // ======================
-    // 🔥 UNIQUE REAL
-    // ======================
+    // fallback si no detecta bloques
+    if (!servers.length) {
+      const all = extractUrls(html);
+
+      for (const u of all) {
+        if (isZilla(u)) {
+          servers.push({
+            name: "Z",
+            embed: u,
+            lang: "latino"
+          });
+        }
+      }
+    }
+
+    // unique
     const seen = new Set();
     return servers.filter(s => {
       if (seen.has(s.embed)) return false;
@@ -104,7 +115,7 @@ export async function getJKAnimeServers(slug: string, number: number) {
         if (!resolved.includes(".m3u8")) continue;
 
         servers.push({
-          name: "jkanime",
+          name: "K",
           embed: resolved,
           lang: "sub"
         });
