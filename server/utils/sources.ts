@@ -8,90 +8,52 @@ function isZilla(url: string) {
   return url.includes("zilla-networks");
 }
 
-function isHLS(url: string) {
-  return url.includes(".m3u8");
+function extractHLS(block: string) {
+  return block.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g) || [];
 }
 
 // ======================
-// 🔥 SCRAPER REAL AV1 (IFRAME + HLS)
+// AV1 SCRAPER (ESTABLE)
 // ======================
 export async function scrapePage(url: string) {
-
   try {
-
     const html = await fetchHtml(url);
     if (!html) return [];
 
     const servers: any[] = [];
 
-    // ======================
-    // 🔥 1. IFRAMES (LO MÁS IMPORTANTE)
-    // ======================
-    const iframes = [
-      ...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)
-    ];
+    // 🟢 SUB = LATINO
+    const subBlock = html.split("SUB")[1]?.split("DUB")[0] || "";
+    const subHLS = extractHLS(subBlock);
 
-    for (const match of iframes) {
-
-      const src = match[1];
-      if (!src) continue;
-
-      if (isZilla(src)) {
+    for (const u of subHLS) {
+      if (isZilla(u)) {
         servers.push({
-          name: "Z",
-          embed: src,
-          lang: "unknown"
+          name: "animeav1",
+          embed: u,
+          lang: "latino"
         });
       }
     }
 
-    // ======================
-    // 🔥 2. DATA-PLAYER (AVANZADO)
-    // ======================
-    const players = [
-      ...html.matchAll(/data-player="([^"]+)"/g)
-    ];
+    // 🔵 DUB = JAPONES
+    const dubBlock = html.split("DUB")[1] || "";
+    const dubHLS = extractHLS(dubBlock);
 
-    for (const match of players) {
-
-      try {
-
-        const decoded = decodeURIComponent(match[1]);
-        const clean = decoded.replace(/\\/g, "");
-
-        const resolved = await resolveServer(clean);
-        if (!resolved) continue;
-
-        if (isHLS(resolved)) {
-          servers.push({
-            name: "H",
-            embed: resolved,
-            lang: "unknown"
-          });
-        }
-
-      } catch {}
+    for (const u of dubHLS) {
+      if (isZilla(u)) {
+        servers.push({
+          name: "animeav1",
+          embed: u,
+          lang: "sub"
+        });
+      }
     }
 
-    // ======================
-    // 🔥 3. HLS DIRECTO
-    // ======================
-    const hls = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g) || [];
-
-    for (const h of hls) {
-      servers.push({
-        name: "H",
-        embed: h,
-        lang: "unknown"
-      });
-    }
-
-    // ======================
-    // 🔥 UNIQUE
-    // ======================
+    // UNIQUE
     const seen = new Set();
-
     return servers.filter(s => {
+      if (!s?.embed) return false;
       if (seen.has(s.embed)) return false;
       seen.add(s.embed);
       return true;
@@ -103,12 +65,10 @@ export async function scrapePage(url: string) {
 }
 
 // ======================
-// 🔥 JKANIME (DEJAR CASI IGUAL)
+// JKANIME (HLS)
 // ======================
 export async function getJKAnimeServers(slug: string, number: number) {
-
   try {
-
     const url = `https://jkanime.net/${slug}/${number}/`;
     const html = await fetchHtml(url);
 
@@ -116,14 +76,10 @@ export async function getJKAnimeServers(slug: string, number: number) {
 
     const servers: any[] = [];
 
-    const players = [
-      ...html.matchAll(/data-player="([^"]+)"/g)
-    ];
+    const players = [...html.matchAll(/data-player="([^"]+)"/g)];
 
     for (const match of players) {
-
       try {
-
         const decoded = decodeURIComponent(match[1]);
         const clean = decoded.replace(/\\/g, "");
 
@@ -133,7 +89,7 @@ export async function getJKAnimeServers(slug: string, number: number) {
         if (!resolved.includes(".m3u8")) continue;
 
         servers.push({
-          name: "K",
+          name: "jkanime",
           embed: resolved,
           lang: "sub"
         });
