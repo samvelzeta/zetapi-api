@@ -1,6 +1,6 @@
 import { detectServerType, normalizeUrl } from "./serverTypes";
 
-// ==============================
+// ==============================aaaaa
 // 🔥 HEADERS PRO (ANTI BLOQUEO REAL)
 // ==============================
 function getHeaders(url: string) {
