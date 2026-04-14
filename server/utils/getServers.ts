@@ -1,6 +1,6 @@
 import {
   getJKAnimeServers,
-  getAV1Servers
+  scrapePage
 } from "./sources";
 
 import { resolveSlugVariants } from "./slugResolver";
@@ -29,8 +29,18 @@ function uniqueServers(list: any[]) {
 }
 
 // ======================
-function isHLS(url: string) {
-  return url.includes(".m3u8");
+function isGoodHLS(url: string) {
+  return (
+    url.includes(".m3u8") &&
+    !url.includes("mp4upload") &&
+    !url.includes("mega") &&
+    !url.includes("1fichier")
+  );
+}
+
+// ======================
+function isZilla(url: string) {
+  return url.includes("zilla-networks");
 }
 
 // ======================
@@ -46,100 +56,81 @@ export async function getAllServers({ slug, number, title, env }: any) {
   let jk: any[] = [];
 
   // =====================
-  // 🔥 BUSQUEDA PARALELA
+  // 🔥 SCRAPER AV1
   // =====================
-  await Promise.all(
+  for (const v of variants) {
 
-    variants.map(async (v) => {
+    const url = `https://animeav1.com/media/${v}/${number}`;
+    const scraped = await scrapePage(url);
 
-      // =====================
-      // 🟣 AV1 (JSON REAL)
-      // =====================
-      try {
+    if (!scraped.length) continue;
 
-        const av1 = await getAV1Servers(v, number);
+    for (const s of scraped) {
 
-        if (av1) {
+      const u = s.embed || "";
 
-          // ✔ SUB = LATINO
-          if (av1.latino?.length) {
-            for (const s of av1.latino) {
-              latino.push({
-                name: "Z",
-                type: "embed",
-                embed: s.embed,
-                lang: "latino"
-              });
-            }
-          }
+      // 🟣 SOLO ZILLA
+      if (!isZilla(u)) continue;
 
-          // ✔ DUB = JAPONES
-          if (av1.sub?.length) {
-            for (const s of av1.sub) {
-              sub.push({
-                name: "Z",
-                type: "embed",
-                embed: s.embed,
-                lang: "sub"
-              });
-            }
-          }
-        }
+      // 🔥 DUPLICAR LIMPIO (NO HAY OTRA FORMA)
+      latino.push({
+        name: "Z",
+        type: "embed",
+        embed: u,
+        lang: "latino"
+      });
 
-      } catch {}
+      sub.push({
+        name: "Z",
+        type: "embed",
+        embed: u,
+        lang: "sub"
+      });
+    }
 
-      // =====================
-      // 🟢 JKANIME (HLS)
-      // =====================
-      try {
-
-        let servers = await getJKAnimeServers(v, number);
-
-        if (!servers.length) {
-          const realSlug = await findJKAnimeSlug(v, env);
-          if (realSlug) {
-            servers = await getJKAnimeServers(realSlug, number);
-          }
-        }
-
-        if (!servers.length) return;
-
-        for (const s of servers) {
-
-          const u = s.embed || "";
-
-          if (!isHLS(u)) continue;
-
-          jk.push({
-            name: "K",
-            type: "hls",
-            embed: `${PROXY}${encodeURIComponent(u)}`,
-            lang: "sub"
-          });
-        }
-
-      } catch {}
-
-    })
-  );
-
-  // =====================
-  // 🔥 PRIORIDAD FINAL
-  // =====================
-
-  // 🥇 AV1 primero (ambos idiomas)
-  if (latino.length || sub.length) {
-    return uniqueServers([
-      ...latino,
-      ...sub,
-      ...jk
-    ]).slice(0, 6);
+    if (latino.length >= 2) break;
   }
 
-  // 🥈 fallback JK
-  if (jk.length) {
-    return uniqueServers(jk).slice(0, 6);
+  // =====================
+  // 🔥 JKANIME (SIEMPRE)
+  // =====================
+  for (const v of variants) {
+
+    let servers = await getJKAnimeServers(v, number);
+
+    if (!servers.length) {
+      const realSlug = await findJKAnimeSlug(v, env);
+      if (realSlug) {
+        servers = await getJKAnimeServers(realSlug, number);
+      }
+    }
+
+    if (!servers.length) continue;
+
+    for (const s of servers) {
+
+      const u = s.embed || "";
+
+      if (!isGoodHLS(u)) continue;
+
+      jk.push({
+        name: "K",
+        type: "hls",
+        embed: `${PROXY}${encodeURIComponent(u)}`,
+        lang: "sub"
+      });
+    }
+
+    if (jk.length >= 2) break;
   }
 
-  return [];
+  // =====================
+  // 🔥 RESULTADO FINAL
+  // =====================
+
+  return uniqueServers([
+    ...latino, // 🥇 ZILLA
+    ...sub,    // 🥇 ZILLA
+    ...jk      // 🥈 JK HLS
+  ]).slice(0, 6);
 }
