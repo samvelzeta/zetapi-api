@@ -27,7 +27,7 @@ function uniqueServers(list: any[]) {
   return result;
 }
 
-// ======================
+// ======================sasas
 function scoreServer(server: any) {
   const url = (server.embed || "").toLowerCase();
 
