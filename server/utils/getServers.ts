@@ -11,6 +11,10 @@ import { findJKAnimeSlug } from "./jkSearch";
 import { getKVVideo } from "./kv";
 
 // ======================
+// 🔥 PROXY GLOBAL (CORRECTO)
+const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
+
+// ======================
 function uniqueServers(list: any[]) {
   const seen = new Set();
   const result = [];
@@ -42,13 +46,11 @@ function scoreServer(server: any) {
 }
 
 // ======================
-// 🔥 APLICAR PROXY GLOBAL
+// 🔥 APLICAR PROXY GLOBAL (FIX REAL)
 function applyProxy(servers: any[]) {
   return servers.map(s => ({
     ...s,
-   const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
-
-   embed: `${PROXY}${encodeURIComponent(s.embed)}`
+    embed: `${PROXY}${encodeURIComponent(s.embed)}`
   }));
 }
 
