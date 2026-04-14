@@ -4,9 +4,14 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "*",
 };
 
+const PROXY_BASE = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
+
 export default {
   async fetch(request: Request) {
 
+    // ============================
+    // 🔥 PRE-FLIGHT
+    // ============================
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -32,9 +37,7 @@ export default {
         method: "GET",
         redirect: "follow",
         headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
           "Accept": "*/*",
           "Referer": parsed.origin,
           "Origin": parsed.origin,
@@ -44,7 +47,7 @@ export default {
       const contentType = res.headers.get("content-type") || "";
 
       // ============================
-      // 🔥 SI ES M3U8 → REESCRIBIR TODO
+      // 🔥 HLS (M3U8) REWRITE COMPLETO
       // ============================
       if (contentType.includes("mpegurl") || target.includes(".m3u8")) {
 
@@ -56,15 +59,20 @@ export default {
 
         const rewritten = lines.map(line => {
 
+          // comentarios o vacíos
           if (!line || line.startsWith("#")) return line;
 
-          // 🔥 absoluta
+          let finalUrl = "";
+
+          // 🔥 URL ABSOLUTA
           if (line.startsWith("http")) {
-            return `/proxy?url=${encodeURIComponent(line)}`;
+            finalUrl = line;
+          } else {
+            // 🔥 RELATIVA
+            finalUrl = base + line;
           }
 
-          // 🔥 relativa
-          return `/proxy?url=${encodeURIComponent(base + line)}`;
+          return `${PROXY_BASE}${encodeURIComponent(finalUrl)}`;
         });
 
         return new Response(rewritten.join("\n"), {
@@ -72,20 +80,26 @@ export default {
           headers: {
             "Content-Type": "application/vnd.apple.mpegurl",
             "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
             "Access-Control-Expose-Headers": "*",
+            "Cache-Control": "no-store"
           }
         });
       }
 
       // ============================
-      // 🔥 STREAM NORMAL (.ts, .mp4, etc)
+      // 🔥 SEGMENTOS (.ts, .key, .mp4)
       // ============================
       return new Response(res.body, {
         status: res.status,
         headers: {
           "Content-Type": contentType || "application/octet-stream",
           "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, OPTIONS",
+          "Access-Control-Allow-Headers": "*",
           "Access-Control-Expose-Headers": "*",
+          "Cache-Control": "no-store"
         },
       });
 
