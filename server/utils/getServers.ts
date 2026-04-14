@@ -7,8 +7,7 @@ import {
 import { filterWorkingServers } from "./filter";
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
-
-import { getKVVideo, saveKVVideo } from "./kv";
+import { getKVVideo } from "./kv";
 
 // ======================
 function uniqueServers(list: any[]) {
@@ -30,60 +29,15 @@ function uniqueServers(list: any[]) {
 }
 
 // ======================
-function scoreServer(server: any) {
-  const url = (server.embed || "").toLowerCase();
-
-  if (url.includes(".m3u8")) return 1000;
-  if (url.includes(".mp4")) return 900;
-
-  if (url.includes("filemoon")) return 700;
-  if (url.includes("streamwish")) return 600;
-
-  return 100;
-}
-
-// ======================
-function pickBestServers(list: any[], lang: string) {
-
-  let filtered = list;
-
-  // 🔥 FILTRAR POR IDIOMA
-  if (lang) {
-    const byLang = list.filter(s => s.lang === lang);
-    if (byLang.length) filtered = byLang;
-  }
-
-  const sorted = filtered
-    .filter(s => s?.embed)
-    .sort((a, b) => scoreServer(b) - scoreServer(a));
-
-  const hls = sorted.filter(s => s.embed.includes(".m3u8"));
-
-  if (hls.length) {
-    return uniqueServers(hls).slice(0, 3);
-  }
-
-  return uniqueServers(sorted).slice(0, 3);
-}
-
-// ======================
 export async function getAllServers({ slug, number, title, env, lang }: any) {
 
   const language = lang === "latino" ? "latino" : "sub";
 
-  // ======================
-  // 🧠 1. INTENTO CACHE
-  // ======================
+  // 🧠 CACHE
   const cached = await getKVVideo(slug, number, language, env);
-
-  if (cached?.servers?.length) {
-    return cached.servers;
-  }
-
-  const cleanSlug = slug.replace(/-\d+$/, "");
+  if (cached?.servers?.length) return cached.servers;
 
   const variants = [
-    ...resolveSlugVariants(cleanSlug),
     ...resolveSlugVariants(slug),
     ...resolveSlugVariants(title || "")
   ];
@@ -91,107 +45,57 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   let collected: any[] = [];
 
   // =====================
-  // 🥇 2. ANIMEAV1
+  // 🥇 ANIMEAV1 (PRIORIDAD REAL)
   // =====================
   for (const v of variants) {
 
-    try {
+    const av1 = await getAnimeAV1Servers(v, number);
 
-      const av1 = await getAnimeAV1Servers(v, number);
+    if (av1.length) {
 
-      if (av1?.length) {
+      const hls = av1.filter(s =>
+        s.embed.includes(".m3u8") ||
+        s.embed.includes("zilla")
+      );
 
-        const hls = av1.filter(s =>
-          s.embed && s.embed.includes(".m3u8")
-        );
-
-        if (hls.length) {
-
-          const final = pickBestServers(hls, language);
-
-          // 🔥 GUARDAR CACHE
-          await saveKVVideo(slug, number, language, {
-            servers: final
-          }, env);
-
-          return final;
-        }
-
-        collected.push(...av1);
+      if (hls.length) {
+        return uniqueServers(hls).slice(0, 3);
       }
 
-    } catch {}
-
-    if (collected.length >= 5) break;
+      collected.push(...av1);
+    }
   }
 
   // =====================
-  // 🥈 3. JKANIME
+  // 🥈 JKANIME
   // =====================
   for (const v of variants) {
 
     let jk = await getJKAnimeServers(v, number);
 
     if (!jk.length) {
-
       const realSlug = await findJKAnimeSlug(v, env);
-
       if (realSlug) {
         jk = await getJKAnimeServers(realSlug, number);
       }
     }
 
     if (jk.length) {
-
-      const hls = jk.filter(s =>
-        s.embed && s.embed.includes(".m3u8")
-      );
-
-      if (hls.length) {
-
-        const final = pickBestServers(hls, language);
-
-        await saveKVVideo(slug, number, language, {
-          servers: final
-        }, env);
-
-        return final;
-      }
-
       collected.push(...jk);
+      break;
     }
-
-    if (collected.length >= 6) break;
   }
 
   // =====================
-  // 🥉 4. FLV FALLBACK
+  // 🥉 FLV
   // =====================
-  try {
-
-    const flv = await getAnimeFLVServers(slug, number);
-
-    if (flv?.length) {
-      collected.push(...flv);
-    }
-
-  } catch {}
+  const flv = await getAnimeFLVServers(slug, number);
+  collected.push(...flv);
 
   // =====================
-  // 🔥 5. FILTRADO FINAL
+  // FINAL
   // =====================
   const filtered = await filterWorkingServers(collected);
 
-  if (!filtered.length) {
-    return [];
-  }
-
-  const final = pickBestServers(filtered, language);
-
-  // 🔥 GUARDAR CACHE FINAL
-  await saveKVVideo(slug, number, language, {
-    servers: final
-  }, env);
-
-  return final;
+  return uniqueServers(filtered).slice(0, 5);
 }
