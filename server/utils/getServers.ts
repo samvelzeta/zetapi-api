@@ -1,14 +1,10 @@
 import {
-  getAnimeFLVServers,
   getJKAnimeServers,
   scrapePage
 } from "./sources";
 
-import { filterWorkingServers } from "./filter";
-import { resolveServer } from "./resolver";
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
-import { getKVVideo } from "./kv";
 
 // ======================
 const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
@@ -33,86 +29,47 @@ function uniqueServers(list: any[]) {
 }
 
 // ======================
-// 🔥 DETECTOR HLS REAL
 function isHLS(url: string) {
-  return (
-    url.includes(".m3u8") ||
-    url.includes("playlist") ||
-    url.includes("hls") ||
-    url.includes("master")
-  );
+  return url.includes(".m3u8");
 }
 
 // ======================
-function normalizeFinalServers(list: any[]) {
-
-  const final: any[] = [];
-
-  for (const s of list) {
-
-    const url = s.embed || "";
-
-    // 🟣 ZILLA (EMBED LIMPIO)
-    if (url.includes("zilla-networks")) {
-      final.unshift({
-        name: "Z",
-        type: "embed",
-        embed: url
-      });
-      continue;
-    }
-
-    // 🟢 HLS (PRIORIDAD)
-    if (isHLS(url)) {
-      final.push({
-        name: "K",
-        type: "hls",
-        embed: `${PROXY}${encodeURIComponent(url)}`
-      });
-      continue;
-    }
-
-    // 🔵 RESTO
-    final.push({
-      name: s.name || "S",
-      type: url.includes(".mp4") ? "mp4" : "embed",
-      embed: url
-    });
-  }
-
-  return final.slice(0, 10);
-}
-
-// ======================
-export async function getAllServers({ slug, number, title, env, lang }: any) {
-
-  const cleanSlug = slug.replace(/-\d+$/, "");
+export async function getAllServers({ slug, number, title, env }: any) {
 
   const variants = [
-    ...resolveSlugVariants(cleanSlug),
     ...resolveSlugVariants(slug),
     ...resolveSlugVariants(title || "")
   ];
 
-  let collected: any[] = [];
+  let zilla: any[] = [];
+  let hls: any[] = [];
 
   // =====================
-  // 🥇 AV1
+  // 🟣 ZILLA (AV1)
   // =====================
   for (const v of variants) {
 
     const url = `https://animeav1.com/media/${v}/${number}`;
     const scraped = await scrapePage(url);
 
-    if (scraped.length) {
-      collected.push(...scraped);
+    for (const s of scraped) {
+
+      const u = s.embed || "";
+
+      if (u.includes("zilla-networks")) {
+        zilla.push({
+          name: "Z",
+          type: "embed",
+          embed: u
+        });
+      }
     }
 
-    if (collected.length >= 6) break;
+    if (zilla.length) break;
   }
 
   // =====================
-  // 🥈 JK
+  // 🟢 JKANIME HLS
   // =====================
   for (const v of variants) {
 
@@ -125,67 +82,27 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
       }
     }
 
-    if (jk.length) {
-      collected.push(...jk);
-    }
+    for (const s of jk) {
 
-    if (collected.length >= 10) break;
-  }
+      const u = s.embed || "";
 
-  // =====================
-  // 🥉 FLV
-  // =====================
-  const flv = await getAnimeFLVServers(cleanSlug, number);
-
-  if (flv.length) {
-    for (const s of flv) {
-      const real = await resolveServer(s.embed);
-      if (real) {
-        collected.push({
-          name: "flv",
-          embed: real
+      if (isHLS(u)) {
+        hls.push({
+          name: "K",
+          type: "hls",
+          embed: `${PROXY}${encodeURIComponent(u)}`
         });
       }
     }
+
+    if (hls.length) break;
   }
 
   // =====================
-  // 🧠 KV FALLBACK
+  // 🔥 RESULTADO FINAL LIMPIO
   // =====================
-  if (!collected.length) {
-
-    const kv = await getKVVideo(cleanSlug, number, lang || "sub", env);
-
-    if (kv?.sources) {
-      const servers = [
-        ...(kv.sources.hls || []),
-        ...(kv.sources.mp4 || []),
-        ...(kv.sources.embed || [])
-      ].map((u: string) => ({ embed: u }));
-
-      return normalizeFinalServers(servers);
-    }
-
-    return [];
-  }
-
-  // =====================
-  // 🔥 PRIORIDAD TOTAL HLS
-  // =====================
-  const hlsOnly = collected.filter(s =>
-    s.embed && isHLS(s.embed)
-  );
-
-  if (hlsOnly.length) {
-    const unique = uniqueServers(hlsOnly);
-    return normalizeFinalServers(unique);
-  }
-
-  // =====================
-  // 🔥 FALLBACK NORMAL
-  // =====================
-  const filtered = await filterWorkingServers(collected);
-  const unique = uniqueServers(filtered);
-
-  return normalizeFinalServers(unique);
+  return uniqueServers([
+    ...zilla,
+    ...hls
+  ]).slice(0, 5);
 }
