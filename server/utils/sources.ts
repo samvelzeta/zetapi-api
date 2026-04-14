@@ -12,7 +12,8 @@ async function fetchAV1Data(slug: string, number: number) {
   try {
     const res = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
         "Accept": "application/json",
         "Referer": `https://animeav1.com/media/${slug}/${number}`
       }
@@ -28,55 +29,54 @@ async function fetchAV1Data(slug: string, number: number) {
 }
 
 // ======================
-// 🔥 PARSER REAL SVELTEKIT
+// 🔥 PARSER REAL (ROBUSTO)
 // ======================
 function parseAV1Nodes(json: any) {
 
   const servers: any[] = [];
 
-  if (!json?.nodes) return servers;
+  if (!json) return servers;
 
-  const raw = JSON.stringify(json.nodes);
+  const raw = JSON.stringify(json);
 
-  // valores (strings)
-  const values = raw.match(/"(.*?)"/g)?.map(v => v.replace(/"/g, "")) || [];
+  // 🔥 EXTRAER TODAS LAS URLS
+  const urls = raw.match(/https?:\/\/[^"\\]+/g) || [];
 
-  const matches = raw.match(/"server":\d+,"url":\d+/g);
+  for (const url of urls) {
 
-  if (!matches) return servers;
+    // 🔥 FILTRO REAL DE SERVERS
+    if (
+      url.includes("zilla") ||
+      url.includes("pixeldrain") ||
+      url.includes("mega.nz") ||
+      url.includes("mp4upload") ||
+      url.includes("1fichier") ||
+      url.includes("stream") ||
+      url.includes(".m3u8")
+    ) {
 
-  for (const m of matches) {
-
-    const nums = m.match(/\d+/g);
-    if (!nums || nums.length < 2) continue;
-
-    const serverIndex = parseInt(nums[0]);
-    const urlIndex = parseInt(nums[1]);
-
-    const server = values[serverIndex];
-    const url = values[urlIndex];
-
-    if (!url) continue;
-
-    servers.push({
-      name: "animeav1",
-      server,
-      embed: url,
-      type: server === "HLS" ? "hls" : "embed",
-      lang: "sub"
-    });
+      servers.push({
+        name: "animeav1",
+        embed: url,
+        type:
+          url.includes(".m3u8") || url.includes("zilla")
+            ? "hls"
+            : "embed",
+        lang: raw.includes("DUB") ? "latino" : "sub"
+      });
+    }
   }
 
-  // 🔥 detectar idioma
-  if (raw.includes("DUB")) {
-    servers.forEach(s => {
-      if (s.server === "HLS") {
-        s.lang = "latino";
-      }
-    });
+  // 🔥 ELIMINAR DUPLICADOS
+  const unique = new Map();
+
+  for (const s of servers) {
+    if (!unique.has(s.embed)) {
+      unique.set(s.embed, s);
+    }
   }
 
-  return servers;
+  return Array.from(unique.values());
 }
 
 // ======================
@@ -87,8 +87,12 @@ export async function getAnimeAV1Servers(slug: string, number: number) {
   const json = await fetchAV1Data(slug, number);
 
   if (json) {
+
     const parsed = parseAV1Nodes(json);
-    if (parsed.length) return parsed;
+
+    if (parsed.length) {
+      return parsed;
+    }
   }
 
   return [];
@@ -174,6 +178,3 @@ export async function getAnimeFLVServers(slug: string, number: number) {
     return [];
   }
 }
-
-// porque no envias debe de enviarse 
-
