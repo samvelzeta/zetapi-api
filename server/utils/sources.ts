@@ -3,115 +3,59 @@ import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
 // ======================
-// 🔥 FETCH AV1 JSON
-// ======================
-async function fetchAV1Data(slug: string, number: number) {
-
-  const url = `https://animeav1.com/media/${slug}/${number}/__data.json?x-sveltekit-invalidated=1`;
-
-  try {
-
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Linux; Android 16; SM-A155M Build/BP2A.250605.031.A3; wv) AppleWebKit/537.36 Chrome/147.0.7727.55 Mobile Safari/537.36",
-        "Accept": "application/json",
-        "Referer": `https://animeav1.com/media/${slug}/${number}`
-      }
-    });
-
-    if (!res.ok) return null;
-
-    return await res.json();
-
-  } catch {
-    return null;
-  }
-}
-
-// ======================
-// 🔥 PARSER AV1 REAL
-// ======================
-function parseAV1(json: any) {
-
-  const servers: any[] = [];
-
-  if (!json?.nodes) return servers;
-
-  const raw = JSON.stringify(json.nodes);
-
-  const strings =
-    raw.match(/"(.*?)"/g)?.map(s => s.replace(/"/g, "")) || [];
-
-  for (let i = 0; i < strings.length; i++) {
-
-    const current = strings[i];
-    const next = strings[i + 1];
-
-    if (
-      (current === "HLS" ||
-        current === "Mega" ||
-        current === "MP4Upload" ||
-        current === "PDrain" ||
-        current === "1Fichier") &&
-      next?.startsWith("http")
-    ) {
-
-      servers.push({
-        name: "animeav1",
-        server: current,
-        embed: next,
-        type: current === "HLS" ? "hls" : "embed",
-        lang: raw.includes('"DUB"') ? "latino" : "sub"
-      });
-    }
-  }
-
-  // 🔥 quitar duplicados
-  const unique = new Map();
-  for (const s of servers) {
-    if (!unique.has(s.embed)) {
-      unique.set(s.embed, s);
-    }
-  }
-
-  return Array.from(unique.values());
-}
-
-// ======================
-// 🔥 AV1 PRINCIPAL (EXPORTADO)
+// 🔥 AV1 SCRAPER SIMPLE
 // ======================
 export async function getAnimeAV1Servers(slug: string, number: number) {
 
-  const json = await fetchAV1Data(slug, number);
+  const url = `https://animeav1.com/media/${slug}/${number}`;
 
-  if (json) {
+  try {
 
-    const parsed = parseAV1(json);
+    const html = await fetchHtml(url);
+    if (!html) return [];
 
-    if (parsed.length) {
+    const urls = html.match(/https?:\/\/[^"' ]+/g) || [];
 
-      const final: any[] = [];
+    const servers: any[] = [];
 
-      for (const s of parsed) {
+    for (const u of urls) {
+
+      if (
+        u.includes("zilla") ||
+        u.includes("pixeldrain") ||
+        u.includes("mega.nz") ||
+        u.includes("mp4upload") ||
+        u.includes("1fichier")
+      ) {
 
         try {
-          const resolved = await resolveServer(s.embed);
 
-          if (resolved) {
-            final.push({ ...s, embed: resolved });
-          } else {
-            final.push(s);
-          }
+          const resolved = await resolveServer(u);
+
+          servers.push({
+            name: "animeav1",
+            embed: resolved || u,
+            type: u.includes("zilla") ? "hls" : "embed",
+            lang: html.includes("DUB") ? "latino" : "sub"
+          });
 
         } catch {}
       }
-
-      return final;
     }
-  }
 
-  return [];
+    // 🔥 quitar duplicados
+    const unique = new Map();
+    for (const s of servers) {
+      if (!unique.has(s.embed)) {
+        unique.set(s.embed, s);
+      }
+    }
+
+    return Array.from(unique.values());
+
+  } catch {
+    return [];
+  }
 }
 
 // ======================
