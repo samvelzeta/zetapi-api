@@ -34,75 +34,129 @@ function isHLS(url: string) {
 }
 
 // ======================
-export async function getAllServers({ slug, number, title, env }: any) {
+// 🔥 DETECTAR IDIOMA AV1 (INVERTIDO)
+function matchAV1Lang(requested: string, html: string) {
+
+  // AV1:
+  // SUB = latino
+  // DUB = japonés
+
+  if (requested === "latino") {
+    return html.includes('"SUB"');
+  }
+
+  return html.includes('"DUB"');
+}
+
+// ======================
+export async function getAllServers({ slug, number, title, env, lang }: any) {
+
+  const requestedLang = lang === "latino" ? "latino" : "sub";
 
   const variants = [
     ...resolveSlugVariants(slug),
     ...resolveSlugVariants(title || "")
   ];
 
-  let zilla: any[] = [];
-  let hls: any[] = [];
+  let av1Servers: any[] = [];
+  let jkServers: any[] = [];
 
   // =====================
-  // 🟣 ZILLA (AV1)
+  // 🔥 BUSQUEDA EN PARALELO
   // =====================
-  for (const v of variants) {
+  await Promise.all(
 
-    const url = `https://animeav1.com/media/${v}/${number}`;
-    const scraped = await scrapePage(url);
+    variants.map(async (v) => {
 
-    for (const s of scraped) {
+      // =====================
+      // 🟣 AV1
+      // =====================
+      try {
 
-      const u = s.embed || "";
+        const url = `https://animeav1.com/media/${v}/${number}`;
+        const scraped = await scrapePage(url);
 
-      if (u.includes("zilla-networks")) {
-        zilla.push({
-          name: "Z",
-          type: "embed",
-          embed: u
-        });
-      }
-    }
+        if (scraped.length) {
 
-    if (zilla.length) break;
+          for (const s of scraped) {
+
+            const u = s.embed || "";
+
+            if (!u.includes("zilla-networks")) continue;
+
+            // 🔥 idioma forzado por request
+            if (requestedLang === "latino") {
+              av1Servers.push({
+                name: "Z",
+                type: "embed",
+                embed: u,
+                lang: "latino"
+              });
+            } else {
+              av1Servers.push({
+                name: "Z",
+                type: "embed",
+                embed: u,
+                lang: "sub"
+              });
+            }
+          }
+        }
+
+      } catch {}
+
+      // =====================
+      // 🟢 JKANIME
+      // =====================
+      try {
+
+        let jk = await getJKAnimeServers(v, number);
+
+        if (!jk.length) {
+          const realSlug = await findJKAnimeSlug(v, env);
+          if (realSlug) {
+            jk = await getJKAnimeServers(realSlug, number);
+          }
+        }
+
+        if (jk.length) {
+
+          for (const s of jk) {
+
+            const u = s.embed || "";
+
+            if (!isHLS(u)) continue;
+
+            jkServers.push({
+              name: "K",
+              type: "hls",
+              embed: `${PROXY}${encodeURIComponent(u)}`,
+              lang: "sub" // JK normalmente subtitulado
+            });
+          }
+        }
+
+      } catch {}
+
+    })
+  );
+
+  // =====================
+  // 🔥 PRIORIDAD FINAL
+  // =====================
+
+  // 🥇 AV1 primero
+  if (av1Servers.length) {
+    return uniqueServers([
+      ...av1Servers,
+      ...jkServers
+    ]).slice(0, 5);
   }
 
-  // =====================
-  // 🟢 JKANIME HLS
-  // =====================
-  for (const v of variants) {
-
-    let jk = await getJKAnimeServers(v, number);
-
-    if (!jk.length) {
-      const realSlug = await findJKAnimeSlug(v, env);
-      if (realSlug) {
-        jk = await getJKAnimeServers(realSlug, number);
-      }
-    }
-
-    for (const s of jk) {
-
-      const u = s.embed || "";
-
-      if (isHLS(u)) {
-        hls.push({
-          name: "K",
-          type: "hls",
-          embed: `${PROXY}${encodeURIComponent(u)}`
-        });
-      }
-    }
-
-    if (hls.length) break;
+  // 🥈 fallback JK
+  if (jkServers.length) {
+    return uniqueServers(jkServers).slice(0, 5);
   }
 
-  // =====================
-  // 🔥 RESULTADO FINAL LIMPIO
-  // =====================
-  return uniqueServers([
-    ...zilla,
-    ...hls
-  ]).slice(0, 5);
+  return [];
 }
