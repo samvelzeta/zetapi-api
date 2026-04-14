@@ -3,8 +3,7 @@ import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
 // ======================
-// 🔥 SCRAPER UNIVERSAL (AV1)
-// ======================
+// 🔥 SCRAPER AV1 LIMPIO (NO ROMPER ZILLA)
 export async function scrapePage(url: string) {
 
   try {
@@ -19,7 +18,7 @@ export async function scrapePage(url: string) {
     for (const u of urls) {
 
       if (
-        u.includes("zilla") ||
+        u.includes("zilla-networks") ||
         u.includes("pixeldrain") ||
         u.includes("mega.nz") ||
         u.includes("mp4upload") ||
@@ -28,20 +27,29 @@ export async function scrapePage(url: string) {
         u.includes("filemoon")
       ) {
 
-        try {
-
-          const resolved = await resolveServer(u);
-
+        // 🔥 ZILLA NO SE RESUELVE
+        if (u.includes("zilla-networks")) {
           servers.push({
             name: "animeav1",
-            embed: resolved || u
+            embed: u
           });
+          continue;
+        }
+
+        try {
+          const resolved = await resolveServer(u);
+
+          if (resolved) {
+            servers.push({
+              name: "animeav1",
+              embed: resolved
+            });
+          }
 
         } catch {}
       }
     }
 
-    // 🔥 quitar duplicados
     const unique = new Map();
 
     for (const s of servers) {
@@ -59,7 +67,6 @@ export async function scrapePage(url: string) {
 
 // ======================
 // 🔥 JKANIME
-// ======================
 export async function getJKAnimeServers(slug: string, number: number) {
 
   try {
@@ -103,7 +110,6 @@ export async function getJKAnimeServers(slug: string, number: number) {
 
 // ======================
 // 🔥 ANIMEFLV
-// ======================
 export async function getAnimeFLVServers(slug: string, number: number) {
 
   try {
