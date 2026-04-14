@@ -31,27 +31,38 @@ function isHLS(url: string) {
 }
 
 // ======================
-// 🔥 AV1
+// 🔥 SENSOR AV1 (REAL)
 // ======================
-async function tryAV1(variants: string[], number: number, requestedLang: string) {
+async function tryAV1(variants: string[], number: number, lang: string) {
 
   for (const v of variants) {
 
-    const url = `https://animeav1.com/media/${v}/${number}`;
-    const scraped = await scrapePage(url);
+    try {
 
-    if (!scraped.length) continue;
+      const url = `https://animeav1.com/media/${v}/${number}`;
+      const scraped = await scrapePage(url);
 
-    const filtered = scraped.filter(s => s.lang === requestedLang);
+      if (!scraped.length) continue;
 
-    if (filtered.length) return filtered;
+      const filtered = scraped.filter(s => s.lang === lang);
+
+      if (filtered.length) {
+        return filtered.map(s => ({
+          name: "Z",
+          type: "embed",
+          embed: s.embed,
+          lang
+        }));
+      }
+
+    } catch {}
   }
 
   return [];
 }
 
 // ======================
-// 🔥 JK
+// 🔥 SENSOR JK
 // ======================
 async function tryJK(variants: string[], number: number, env: any) {
 
@@ -68,12 +79,16 @@ async function tryJK(variants: string[], number: number, env: any) {
 
     if (!jk.length) continue;
 
-    return jk.map(s => ({
-      name: "K",
-      type: "hls",
-      embed: `${PROXY}${encodeURIComponent(s.embed)}`,
-      lang: "sub"
-    }));
+    const filtered = jk.filter(s => isHLS(s.embed));
+
+    if (filtered.length) {
+      return filtered.map(s => ({
+        name: "K",
+        type: "hls",
+        embed: `${PROXY}${encodeURIComponent(s.embed)}`,
+        lang: "sub"
+      }));
+    }
   }
 
   return [];
@@ -91,23 +106,39 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
     ...resolveSlugVariants(title || "")
   ];
 
+  // =====================
+  // 🥇 AV1
+  // =====================
   let av1 = await tryAV1(variants, number, requestedLang);
 
+  // =====================
+  // 🔁 SENSOR RETRY (SLUG FALLBACK)
+  // =====================
   if (!av1.length) {
 
-    const retry = [
+    const retryVariants = [
       ...variants,
       slug.replace(/-/g, ""),
-      slug.split("-").slice(0, 2).join("-")
+      slug.split("-").slice(0, 2).join("-"),
+      slug.split("-").slice(0, 3).join("-")
     ];
 
-    av1 = await tryAV1(retry, number, requestedLang);
+    av1 = await tryAV1(retryVariants, number, requestedLang);
   }
 
+  // =====================
+  // 🥈 JK SIEMPRE BACKUP
+  // =====================
   const jk = await tryJK(variants, number, env);
 
+  // =====================
+  // 🔥 PRIORIDAD FINAL
+  // =====================
   if (av1.length) {
-    return uniqueServers([...av1, ...jk]).slice(0, 5);
+    return uniqueServers([
+      ...av1,
+      ...jk
+    ]).slice(0, 5);
   }
 
   if (jk.length) {
@@ -115,4 +146,4 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   }
 
   return [];
-}anterior
+}
