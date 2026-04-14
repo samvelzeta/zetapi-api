@@ -6,7 +6,37 @@ export function getHeaders(url: string) {
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/118 Safari/537.36"
   ];
 
-  const ua = userAgents[Math.floor(Math.random() * userAgents.length)];
+  const ua = userAgents[Math.floor(Math.random() * userAgents.length)];export function getHeaders(url: string) {
+
+  return {
+    "User-Agent":
+      "Mozilla/5.0 (Linux; Android 16; SM-A155M Build/BP2A.250605.031.A3; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/147.0.7727.55 Mobile Safari/537.36",
+    "Accept": "*/*",
+    "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+    "Connection": "keep-alive",
+    "Referer": "https://animeav1.com/",
+    "Origin": "https://animeav1.com"
+  };
+}
+
+export async function fetchHtml(url: string): Promise<string | null> {
+
+  try {
+
+    const res = await fetch(url, {
+      headers: getHeaders(url)
+    });
+
+    if (!res.ok) return null;
+
+    const text = await res.text();
+
+    return text;
+
+  } catch {
+    return null;
+  }
+}
 
   return {
     "User-Agent": ua,
