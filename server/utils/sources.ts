@@ -8,17 +8,12 @@ function isZilla(url: string) {
   return url.includes("zilla-networks");
 }
 
-function isGoodHLS(url: string) {
-  return (
-    url.includes(".m3u8") &&
-    !url.includes("mp4upload") &&
-    !url.includes("mega") &&
-    !url.includes("1fichier")
-  );
+function extractHLS(block: string) {
+  return block.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g) || [];
 }
 
 // ======================
-// 🔥 AV1 SCRAPER REAL (CON IDIOMA)
+// 🔥 AV1 SCRAPER PRO
 // ======================
 export async function scrapePage(url: string) {
 
@@ -30,13 +25,13 @@ export async function scrapePage(url: string) {
     const servers: any[] = [];
 
     // ======================
-    // 🟢 SUB = LATINO
+    // 🟢 SUB (LATINO)
     // ======================
     const subBlock = html.split("SUB")[1]?.split("DUB")[0] || "";
 
-    const subUrls = subBlock.match(/https?:\/\/[^"' ]+/g) || [];
+    const subHLS = extractHLS(subBlock);
 
-    for (const u of subUrls) {
+    for (const u of subHLS) {
       if (isZilla(u)) {
         servers.push({
           name: "animeav1",
@@ -47,13 +42,13 @@ export async function scrapePage(url: string) {
     }
 
     // ======================
-    // 🔵 DUB = JAPONES
+    // 🔵 DUB (JAPONES)
     // ======================
     const dubBlock = html.split("DUB")[1] || "";
 
-    const dubUrls = dubBlock.match(/https?:\/\/[^"' ]+/g) || [];
+    const dubHLS = extractHLS(dubBlock);
 
-    for (const u of dubUrls) {
+    for (const u of dubHLS) {
       if (isZilla(u)) {
         servers.push({
           name: "animeav1",
@@ -64,17 +59,14 @@ export async function scrapePage(url: string) {
     }
 
     // ======================
-    // 🔥 UNIQUE
+    // 🔥 UNIQUE REAL
     // ======================
-    const unique = new Map();
-
-    for (const s of servers) {
-      if (!unique.has(s.embed)) {
-        unique.set(s.embed, s);
-      }
-    }
-
-    return Array.from(unique.values());
+    const seen = new Set();
+    return servers.filter(s => {
+      if (seen.has(s.embed)) return false;
+      seen.add(s.embed);
+      return true;
+    });
 
   } catch {
     return [];
@@ -109,7 +101,7 @@ export async function getJKAnimeServers(slug: string, number: number) {
         const resolved = await resolveServer(clean);
         if (!resolved) continue;
 
-        if (!isGoodHLS(resolved)) continue;
+        if (!resolved.includes(".m3u8")) continue;
 
         servers.push({
           name: "jkanime",
