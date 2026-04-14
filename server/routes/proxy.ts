@@ -9,7 +9,7 @@ const PROXY_BASE = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
 export default {
   async fetch(request: Request) {
 
-    // ============================
+    // ============================ no se envivia
     // 🔥 PRE-FLIGHT
     // ============================
     if (request.method === "OPTIONS") {
