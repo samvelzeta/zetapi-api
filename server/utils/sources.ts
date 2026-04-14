@@ -3,7 +3,118 @@ import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
 // ======================
-// 🔥 SCRAPER AV1 LIMPIO (NO ROMPER ZILLA)
+// 🔥 FETCH AV1 JSON
+// ======================
+async function fetchAV1Data(slug: string, number: number) {
+
+  const url = `https://animeav1.com/media/${slug}/${number}/__data.json?x-sveltekit-invalidated=1`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json",
+        "Referer": `https://animeav1.com/media/${slug}/${number}`
+      }
+    });
+
+    if (!res.ok) return null;
+
+    return await res.json();
+
+  } catch {
+    return null;
+  }
+}
+
+// ======================
+// 🔥 EXTRAER DIRECTO (SIN PARSE COMPLEJO)
+// ======================
+function extractFromJSON(json: any) {
+
+  const latino: any[] = [];
+  const sub: any[] = [];
+
+  if (!json?.nodes) return { latino, sub };
+
+  const raw = JSON.stringify(json.nodes);
+
+  // 🔥 detectar idioma real
+  const hasSUB = raw.includes('"SUB"'); // latino
+  const hasDUB = raw.includes('"DUB"'); // japonés
+
+  // 🔥 extraer zilla directo
+  const urls =
+    raw.match(/https?:\/\/player\.zilla-networks\.com\/play\/[a-z0-9]+/g) || [];
+
+  for (const u of urls) {
+
+    if (hasSUB) {
+      latino.push({
+        name: "animeav1",
+        embed: u
+      });
+    }
+
+    if (hasDUB) {
+      sub.push({
+        name: "animeav1",
+        embed: u
+      });
+    }
+  }
+
+  return { latino, sub };
+}
+
+// ======================
+// 🔥 AV1 PRINCIPAL (JSON + FALLBACK)
+// ======================
+export async function getAV1Servers(slug: string, number: number) {
+
+  // 🔥 1. intentar JSON
+  const json = await fetchAV1Data(slug, number);
+
+  if (json) {
+
+    const parsed = extractFromJSON(json);
+
+    if (parsed.latino.length || parsed.sub.length) {
+      return parsed;
+    }
+  }
+
+  // 🔥 2. fallback a scraper (TU LOGICA ORIGINAL)
+  const url = `https://animeav1.com/media/${slug}/${number}`;
+  const scraped = await scrapePage(url);
+
+  const latino: any[] = [];
+  const sub: any[] = [];
+
+  for (const s of scraped) {
+
+    const u = s.embed || "";
+
+    if (!u.includes("zilla-networks")) continue;
+
+    // fallback duplicado (igual que ya hacías)
+    latino.push({
+      name: "animeav1",
+      embed: u
+    });
+
+    sub.push({
+      name: "animeav1",
+      embed: u
+    });
+  }
+
+  return { latino, sub };
+}
+
+// ======================
+// 🔥 SCRAPER ORIGINAL (NO TOCADO)
+// ======================
 export async function scrapePage(url: string) {
 
   try {
@@ -27,7 +138,6 @@ export async function scrapePage(url: string) {
         u.includes("filemoon")
       ) {
 
-        // 🔥 ZILLA NO SE RESUELVE
         if (u.includes("zilla-networks")) {
           servers.push({
             name: "animeav1",
@@ -66,7 +176,8 @@ export async function scrapePage(url: string) {
 }
 
 // ======================
-// 🔥 JKANIME
+// 🔥 JKANIME (NO TOCADO)
+// ======================
 export async function getJKAnimeServers(slug: string, number: number) {
 
   try {
@@ -109,7 +220,8 @@ export async function getJKAnimeServers(slug: string, number: number) {
 }
 
 // ======================
-// 🔥 ANIMEFLV
+// 🔥 ANIMEFLV (NO TOCADO)
+// ======================
 export async function getAnimeFLVServers(slug: string, number: number) {
 
   try {
