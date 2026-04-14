@@ -1,7 +1,7 @@
 import {
   getAnimeFLVServers,
   getJKAnimeServers,
-  scrapePage // 🔥 IMPORTANTE
+  scrapePage
 } from "./sources";
 
 import { filterWorkingServers } from "./filter";
@@ -42,6 +42,15 @@ function scoreServer(server: any) {
 }
 
 // ======================
+// 🔥 APLICAR PROXY GLOBAL
+function applyProxy(servers: any[]) {
+  return servers.map(s => ({
+    ...s,
+    embed: `/proxy?url=${encodeURIComponent(s.embed)}`
+  }));
+}
+
+// ======================
 export async function getAllServers({ slug, number, title, env, lang }: any) {
 
   const cleanSlug = slug.replace(/-\d+$/, "");
@@ -55,12 +64,11 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   let collected: any[] = [];
 
   // =====================
-  // 🥇 SCRAPER UNIVERSAL (AV1 + OTROS)
+  // 🥇 AV1 SCRAPER
   // =====================
   for (const v of variants) {
 
     const url = `https://animeav1.com/media/${v}/${number}`;
-
     const scraped = await scrapePage(url);
 
     if (scraped.length) {
@@ -70,7 +78,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
       );
 
       if (hls.length) {
-        return uniqueServers(hls).slice(0, 5);
+        return applyProxy(uniqueServers(hls).slice(0, 5));
       }
 
       collected.push(...scraped);
@@ -87,9 +95,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
     let jk = await getJKAnimeServers(v, number);
 
     if (!jk.length) {
-
       const realSlug = await findJKAnimeSlug(v, env);
-
       if (realSlug) {
         jk = await getJKAnimeServers(realSlug, number);
       }
@@ -102,7 +108,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
       );
 
       if (hls.length) {
-        return uniqueServers(hls).slice(0, 5);
+        return applyProxy(uniqueServers(hls).slice(0, 5));
       }
 
       collected.push(...jk);
@@ -149,7 +155,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
         ...(kv.sources.embed || [])
       ].map((u: string) => ({ embed: u }));
 
-      return servers;
+      return applyProxy(servers);
     }
 
     return [];
@@ -158,7 +164,9 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   const filtered = await filterWorkingServers(collected);
   const unique = uniqueServers(filtered);
 
-  return unique
-    .sort((a, b) => scoreServer(b) - scoreServer(a))
-    .slice(0, 10);
+  return applyProxy(
+    unique
+      .sort((a, b) => scoreServer(b) - scoreServer(a))
+      .slice(0, 10)
+  );
 }
