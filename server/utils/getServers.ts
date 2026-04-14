@@ -33,6 +33,17 @@ function uniqueServers(list: any[]) {
 }
 
 // ======================
+// 🔥 DETECTOR HLS REAL
+function isHLS(url: string) {
+  return (
+    url.includes(".m3u8") ||
+    url.includes("playlist") ||
+    url.includes("hls") ||
+    url.includes("master")
+  );
+}
+
+// ======================
 function normalizeFinalServers(list: any[]) {
 
   const final: any[] = [];
@@ -41,7 +52,7 @@ function normalizeFinalServers(list: any[]) {
 
     const url = s.embed || "";
 
-    // 🟣 ZILLA → PRIORIDAD 1 (EMBED LIMPIO)
+    // 🟣 ZILLA (EMBED LIMPIO)
     if (url.includes("zilla-networks")) {
       final.unshift({
         name: "Z",
@@ -51,8 +62,8 @@ function normalizeFinalServers(list: any[]) {
       continue;
     }
 
-    // 🟢 JK / HLS → PRIORIDAD 2 (CON PROXY)
-    if (url.includes(".m3u8")) {
+    // 🟢 HLS (PRIORIDAD)
+    if (isHLS(url)) {
       final.push({
         name: "K",
         type: "hls",
@@ -158,6 +169,21 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
     return [];
   }
 
+  // =====================
+  // 🔥 PRIORIDAD TOTAL HLS
+  // =====================
+  const hlsOnly = collected.filter(s =>
+    s.embed && isHLS(s.embed)
+  );
+
+  if (hlsOnly.length) {
+    const unique = uniqueServers(hlsOnly);
+    return normalizeFinalServers(unique);
+  }
+
+  // =====================
+  // 🔥 FALLBACK NORMAL
+  // =====================
   const filtered = await filterWorkingServers(collected);
   const unique = uniqueServers(filtered);
 
