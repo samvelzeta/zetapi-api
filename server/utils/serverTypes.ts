@@ -1,7 +1,3 @@
-// ==============================
-// ðŸ”¥ DETECTOR DE SERVIDORES
-// ==============================sssssssss
-
 export type ServerType =
   | "hls"
   | "mp4"
@@ -16,8 +12,6 @@ export type ServerType =
   | "generic";
 
 // ==============================
-// ðŸ”¥ NORMALIZADOR DE URL
-// ==============================
 export function normalizeUrl(url: string): string {
   try {
     return decodeURIComponent(url).trim();
@@ -27,71 +21,43 @@ export function normalizeUrl(url: string): string {
 }
 
 // ==============================
-// ðŸ”¥ DETECTAR TIPO DE SERVIDOR
-// ==============================
 export function detectServerType(rawUrl: string): ServerType {
 
   const url = normalizeUrl(rawUrl).toLowerCase();
 
-  // ==========================
-  // ðŸ¥‡ DIRECTOS
-  // ==========================
-  if (url.includes(".m3u8")) return "hls";
+  // 🔥 HLS MÁS ROBUSTO
+  if (
+    url.includes(".m3u8") ||
+    url.includes("playlist.m3u8") ||
+    url.includes("/hls/") ||
+    url.includes("master.m3u8")
+  ) return "hls";
+
   if (url.includes(".mp4")) return "mp4";
 
-  // ==========================
-  // ðŸ¥‡ SERVERS PRINCIPALES
-  // ==========================
-  if (url.includes("streamwish") || url.includes("wish") || url.includes("sw")) {
+  if (url.includes("streamwish") || url.includes("wish")) {
     return "streamwish";
   }
 
-  if (url.includes("filemoon")) {
-    return "filemoon";
-  }
+  if (url.includes("filemoon")) return "filemoon";
+  if (url.includes("dood")) return "dood";
+  if (url.includes("streamtape")) return "streamtape";
+  if (url.includes("ok.ru")) return "okru";
+  if (url.includes("uqload")) return "uqload";
+  if (url.includes("vidhide")) return "vidhide";
+  if (url.includes("voe")) return "voe";
 
-  if (url.includes("dood") || url.includes("doodstream")) {
-    return "dood";
-  }
-
-  if (url.includes("streamtape")) {
-    return "streamtape";
-  }
-
-  // ==========================
-  // ðŸ¥ˆ OTROS COMUNES
-  // ==========================
-  if (url.includes("ok.ru") || url.includes("okru")) {
-    return "okru";
-  }
-
-  if (url.includes("uqload")) {
-    return "uqload";
-  }
-
-  if (url.includes("vidhide")) {
-    return "vidhide";
-  }
-
-  if (url.includes("voe")) {
-    return "voe";
-  }
-
-  // ==========================
-  // ðŸ§  FALLBACK
-  // ==========================
   return "generic";
 }
 
 // ==============================
-// ðŸ”¥ VALIDAR URL DE VIDEO
-// ==============================
-export function isValidVideo(url: string | null): boolean {
+export function isValidVideo(url?: string | null): boolean {
   if (!url) return false;
 
+  const u = url.toLowerCase();
+
   return (
-    url.includes(".m3u8") ||
-    url.includes(".mp4") ||
-    url.includes("playlist")
+    u.includes(".m3u8") ||
+    u.includes(".mp4")
   );
 }
