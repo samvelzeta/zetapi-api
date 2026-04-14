@@ -3,11 +3,9 @@ import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
 // ======================
-// 🔥 AV1 SCRAPER SIMPLE
+// 🔥 SCRAPER UNIVERSAL (AV1)
 // ======================
-export async function getAnimeAV1Servers(slug: string, number: number) {
-
-  const url = `https://animeav1.com/media/${slug}/${number}`;
+export async function scrapePage(url: string) {
 
   try {
 
@@ -25,7 +23,9 @@ export async function getAnimeAV1Servers(slug: string, number: number) {
         u.includes("pixeldrain") ||
         u.includes("mega.nz") ||
         u.includes("mp4upload") ||
-        u.includes("1fichier")
+        u.includes("1fichier") ||
+        u.includes("streamwish") ||
+        u.includes("filemoon")
       ) {
 
         try {
@@ -34,9 +34,7 @@ export async function getAnimeAV1Servers(slug: string, number: number) {
 
           servers.push({
             name: "animeav1",
-            embed: resolved || u,
-            type: u.includes("zilla") ? "hls" : "embed",
-            lang: html.includes("DUB") ? "latino" : "sub"
+            embed: resolved || u
           });
 
         } catch {}
@@ -45,6 +43,7 @@ export async function getAnimeAV1Servers(slug: string, number: number) {
 
     // 🔥 quitar duplicados
     const unique = new Map();
+
     for (const s of servers) {
       if (!unique.has(s.embed)) {
         unique.set(s.embed, s);
@@ -88,8 +87,7 @@ export async function getJKAnimeServers(slug: string, number: number) {
         if (resolved) {
           servers.push({
             name: "jkanime",
-            embed: resolved,
-            lang: "sub"
+            embed: resolved
           });
         }
 
@@ -125,8 +123,7 @@ export async function getAnimeFLVServers(slug: string, number: number) {
         if (resolved) {
           servers.push({
             name: "animeflv",
-            embed: resolved,
-            lang: "sub"
+            embed: resolved
           });
         }
 
