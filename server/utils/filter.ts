@@ -25,7 +25,7 @@ export async function filterWorkingServers(servers: any[]) {
 
     const url = s.embed.toLowerCase();
 
-    // 🔥 basura
+    // 🔥 basura sii
     if (BAD.some(b => url.includes(b))) return false;
 
     // 🔥 HLS SIEMPRE PASA
