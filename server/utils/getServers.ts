@@ -29,18 +29,8 @@ function uniqueServers(list: any[]) {
 }
 
 // ======================
-function isGoodHLS(url: string) {
-  return (
-    url.includes(".m3u8") &&
-    !url.includes("mp4upload") &&
-    !url.includes("mega") &&
-    !url.includes("1fichier")
-  );
-}
-
-// ======================
-function isZilla(url: string) {
-  return url.includes("zilla-networks");
+function isHLS(url: string) {
+  return url.includes(".m3u8");
 }
 
 // ======================
@@ -56,7 +46,7 @@ export async function getAllServers({ slug, number, title, env }: any) {
   let jk: any[] = [];
 
   // =====================
-  // 🔥 SCRAPER AV1
+  // 🔥 AV1 SCRAPER
   // =====================
   for (const v of variants) {
 
@@ -67,28 +57,26 @@ export async function getAllServers({ slug, number, title, env }: any) {
 
     for (const s of scraped) {
 
-      const u = s.embed || "";
+      if (s.lang === "latino") {
+        latino.push({
+          name: "Z",
+          type: "embed",
+          embed: s.embed,
+          lang: "latino"
+        });
+      }
 
-      // 🟣 SOLO ZILLA
-      if (!isZilla(u)) continue;
-
-      // 🔥 DUPLICAR LIMPIO (NO HAY OTRA FORMA)
-      latino.push({
-        name: "Z",
-        type: "embed",
-        embed: u,
-        lang: "latino"
-      });
-
-      sub.push({
-        name: "Z",
-        type: "embed",
-        embed: u,
-        lang: "sub"
-      });
+      if (s.lang === "sub") {
+        sub.push({
+          name: "Z",
+          type: "embed",
+          embed: s.embed,
+          lang: "sub"
+        });
+      }
     }
 
-    if (latino.length >= 2) break;
+    if (latino.length || sub.length) break;
   }
 
   // =====================
@@ -111,7 +99,7 @@ export async function getAllServers({ slug, number, title, env }: any) {
 
       const u = s.embed || "";
 
-      if (!isGoodHLS(u)) continue;
+      if (!isHLS(u)) continue;
 
       jk.push({
         name: "K",
@@ -127,10 +115,9 @@ export async function getAllServers({ slug, number, title, env }: any) {
   // =====================
   // 🔥 RESULTADO FINAL
   // =====================
-
   return uniqueServers([
-    ...latino, // 🥇 ZILLA
-    ...sub,    // 🥇 ZILLA
-    ...jk      // 🥈 JK HLS
+    ...latino, // 🥇 latino real
+    ...sub,    // 🥇 japonés real
+    ...jk      // 🥈 fallback
   ]).slice(0, 6);
 }
