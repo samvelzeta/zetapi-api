@@ -1,33 +1,11 @@
+import { getEpisode } from "animeflv-scraper";
 import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
 // ======================
-// 🔥 EXTRAER URLS GENERICO
-// ======================
-function extractUrls(html: string) {
-
-  const urls = new Set<string>();
-
-  const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
-  m3u8?.forEach(u => urls.add(u));
-
-  const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4[^"' ]*/g);
-  mp4?.forEach(u => urls.add(u));
-
-  const iframe = html.match(/<iframe[^>]+src="([^"]+)"/g);
-  iframe?.forEach(i => {
-    const src = i.match(/src="([^"]+)"/)?.[1];
-    if (src) urls.add(src);
-  });
-
-  return Array.from(urls);
-}
-
-// ======================
 // 🔥 DETECTAR IDIOMA
 // ======================
-function detectLangFromLabel(label: string = ""): string {
-
+function detectLang(label: string = "") {
   const l = label.toLowerCase();
 
   if (
@@ -40,18 +18,16 @@ function detectLangFromLabel(label: string = ""): string {
 }
 
 // ======================
-// 🔥 FETCH JSON AV1 (CLAVE TOTAL)
+// 🔥 AV1 JSON
 // ======================
 async function fetchAV1Data(slug: string, number: number) {
 
   const url = `https://animeav1.com/media/${slug}/${number}/__data.json?x-sveltekit-invalidated=1`;
 
   try {
-
     const res = await fetch(url, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "User-Agent": "Mozilla/5.0",
         "Accept": "application/json",
         "Referer": `https://animeav1.com/media/${slug}/${number}`
       }
@@ -59,9 +35,7 @@ async function fetchAV1Data(slug: string, number: number) {
 
     if (!res.ok) return null;
 
-    const json = await res.json();
-
-    return json;
+    return await res.json();
 
   } catch {
     return null;
@@ -69,118 +43,61 @@ async function fetchAV1Data(slug: string, number: number) {
 }
 
 // ======================
-// 🔥 EXTRAER SERVERS DESDE JSON
+// 🔥 EXTRAER HLS JSON
 // ======================
-function extractServersFromJSON(json: any) {
+function extractAV1(json: any) {
 
   const servers: any[] = [];
 
   if (!json) return servers;
 
-  try {
+  const raw = JSON.stringify(json);
 
-    const raw = JSON.stringify(json);
+  const m3u8 = raw.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
 
-    // 🔥 BUSCAR HLS DIRECTOS
-    const m3u8 = raw.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
-
-    if (m3u8?.length) {
-      for (const url of m3u8) {
-        servers.push({
-          name: "animeav1",
-          embed: url,
-          type: "hls",
-          lang: "sub" // se ajusta luego
-        });
-      }
+  if (m3u8?.length) {
+    for (const url of m3u8) {
+      servers.push({
+        name: "animeav1",
+        embed: url,
+        type: "hls",
+        lang: raw.includes("latino") ? "latino" : "sub"
+      });
     }
-
-    // 🔥 EXTRAER POSIBLE INFO DE IDIOMA
-    if (raw.includes("latino")) {
-      servers.forEach(s => (s.lang = "latino"));
-    }
-
-  } catch {}
+  }
 
   return servers;
 }
 
 // ======================
-// 🔥 FALLBACK HTML (SI JSON FALLA)
-// ======================
-function extractHLSFromHTML(html: string) {
-
-  const results = new Set<string>();
-
-  const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
-  m3u8?.forEach(u => results.add(u));
-
-  return Array.from(results);
-}
-
-// ======================
-// 🔥 ANIMEAV1 (FINAL PRO)
+// 🔥 ANIMEAV1
 // ======================
 export async function getAnimeAV1Servers(slug: string, number: number) {
 
-  const servers: any[] = [];
-
-  // ======================
-  // 🥇 1. INTENTO JSON
-  // ======================
+  // 🥇 JSON DIRECTO
   const json = await fetchAV1Data(slug, number);
 
   if (json) {
-
-    const parsed = extractServersFromJSON(json);
-
-    if (parsed.length) {
-      return parsed;
-    }
+    const parsed = extractAV1(json);
+    if (parsed.length) return parsed;
   }
 
-  // ======================
-  // 🥈 2. FALLBACK HTML
-  // ======================
-  const url = `https://animeav1.com/media/${slug}/${number}`;
-
+  // 🥈 fallback HTML
   try {
 
+    const url = `https://animeav1.com/media/${slug}/${number}`;
     const html = await fetchHtml(url);
+
     if (!html) return [];
 
-    const hls = extractHLSFromHTML(html);
+    const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
 
-    for (const h of hls) {
-      servers.push({
-        name: "animeav1",
-        embed: h,
-        type: "hls",
-        lang: detectLangFromLabel(html)
-      });
-    }
-
-    const urls = extractUrls(html);
-
-    for (const u of urls) {
-
-      try {
-
-        const resolved = await resolveServer(u);
-
-        if (resolved) {
-          servers.push({
-            name: "animeav1",
-            embed: resolved,
-            type: "embed",
-            lang: detectLangFromLabel(html)
-          });
-        }
-
-      } catch {}
-    }
-
-    return servers;
+    return (m3u8 || []).map(u => ({
+      name: "animeav1",
+      embed: u,
+      type: "hls",
+      lang: detectLang(html)
+    }));
 
   } catch {
     return [];
@@ -188,7 +105,7 @@ export async function getAnimeAV1Servers(slug: string, number: number) {
 }
 
 // ======================
-// 🔥 JKANIME (SIN TOCAR)
+// 🔥 JKANIME
 // ======================
 export async function getJKAnimeServers(slug: string, number: number) {
 
@@ -216,6 +133,42 @@ export async function getJKAnimeServers(slug: string, number: number) {
         if (resolved) {
           servers.push({
             name: "jkanime",
+            embed: resolved
+          });
+        }
+
+      } catch {}
+    }
+
+    return servers;
+
+  } catch {
+    return [];
+  }
+}
+
+// ======================
+// 🔥 ANIMEFLV (RESTAURADO)
+// ======================
+export async function getAnimeFLVServers(slug: string, number: number) {
+
+  try {
+
+    const data = await getEpisode({ anime: slug, episode: number });
+
+    if (!data?.servers) return [];
+
+    const servers: any[] = [];
+
+    for (const s of data.servers) {
+
+      try {
+
+        const resolved = await resolveServer(s.url);
+
+        if (resolved) {
+          servers.push({
+            name: "animeflv",
             embed: resolved
           });
         }
