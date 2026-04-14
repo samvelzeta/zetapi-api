@@ -34,20 +34,13 @@ function isHLS(url: string) {
 }
 
 // ======================
-export async function getAllServers({ slug, number, title, env }: any) {
-
-  const variants = [
-    ...resolveSlugVariants(slug),
-    ...resolveSlugVariants(title || "")
-  ];
+// 🔥 SENSOR CORE
+// ======================
+async function tryAV1(variants: string[], number: number) {
 
   let latino: any[] = [];
   let sub: any[] = [];
-  let jk: any[] = [];
 
-  // =====================
-  // 🔥 AV1 SCRAPER
-  // =====================
   for (const v of variants) {
 
     const url = `https://animeav1.com/media/${v}/${number}`;
@@ -76,12 +69,18 @@ export async function getAllServers({ slug, number, title, env }: any) {
       }
     }
 
+    // 🔥 si ya encontró algo → cortar
     if (latino.length || sub.length) break;
   }
 
-  // =====================
-  // 🔥 JKANIME (SIEMPRE)
-  // =====================
+  return { latino, sub };
+}
+
+// ======================
+async function tryJK(variants: string[], number: number, env: any) {
+
+  let jk: any[] = [];
+
   for (const v of variants) {
 
     let servers = await getJKAnimeServers(v, number);
@@ -109,15 +108,75 @@ export async function getAllServers({ slug, number, title, env }: any) {
       });
     }
 
-    if (jk.length >= 2) break;
+    if (jk.length) break;
+  }
+
+  return jk;
+}
+
+// ======================
+// 🔥 MAIN CON SENSOR
+// ======================
+export async function getAllServers({ slug, number, title, env }: any) {
+
+  const baseVariants = [
+    ...resolveSlugVariants(slug),
+    ...resolveSlugVariants(title || "")
+  ];
+
+  // =====================
+  // 🥇 PRIMER INTENTO AV1
+  // =====================
+  let { latino, sub } = await tryAV1(baseVariants, number);
+
+  // =====================
+  // 🔁 SENSOR: REINTENTO AV1
+  // =====================
+  if (!latino.length && !sub.length) {
+
+    const extended = [
+      ...baseVariants,
+      slug.replace(/-/g, ""),
+      slug.split("-").slice(0, 2).join("-"),
+      slug.split("-").slice(0, 3).join("-")
+    ];
+
+    const retry = await tryAV1(extended, number);
+
+    latino = retry.latino;
+    sub = retry.sub;
   }
 
   // =====================
-  // 🔥 RESULTADO FINAL
+  // 🥈 JK SIEMPRE COMO BACKUP
   // =====================
-  return uniqueServers([
-    ...latino, // 🥇 latino real
-    ...sub,    // 🥇 japonés real
-    ...jk      // 🥈 fallback
+  const jk = await tryJK(baseVariants, number, env);
+
+  // =====================
+  // 🚨 SENSOR FINAL
+  // =====================
+  if (!latino.length && !sub.length && !jk.length) {
+
+    // 🔥 último intento global
+    const lastTry = await tryAV1(baseVariants.reverse(), number);
+
+    latino = lastTry.latino;
+    sub = lastTry.sub;
+  }
+
+  // =====================
+  // 🔥 NUNCA VACÍO
+  // =====================
+  const final = uniqueServers([
+    ...latino,
+    ...sub,
+    ...jk
   ]).slice(0, 6);
+
+  // 🔥 fallback absoluto
+  if (!final.length) {
+    return jk.length ? jk : [];
+  }
+
+  return final;
 }
