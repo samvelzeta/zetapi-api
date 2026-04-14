@@ -8,16 +8,15 @@ export async function filterWorkingServers(servers: any[]) {
     "streamtape",
     "mp4upload",
     "ok.ru",
-    "dood",
-    "netu"
+    "dood"
   ];
 
   const BAD = [
     "facebook",
     "twitter",
-    "ads",
     ".css",
-    ".js"
+    ".js",
+    "ads"
   ];
 
   const clean = servers.filter(s => {
@@ -26,25 +25,21 @@ export async function filterWorkingServers(servers: any[]) {
 
     const url = s.embed.toLowerCase();
 
-    // â Œ basura reallllllll
+    // 🔥 basura
     if (BAD.some(b => url.includes(b))) return false;
 
-    // âœ” directos SIEMPRE
-    if (url.includes(".m3u8") || url.includes(".mp4")) return true;
+    // 🔥 HLS SIEMPRE PASA
+    if (url.includes(".m3u8")) return true;
 
-    // âœ” servers conocidos
+    // 🔥 MP4 válido
+    if (url.includes(".mp4")) return true;
+
+    // 🔥 servers conocidos
     if (GOOD.some(g => url.includes(g))) return true;
-
-    // âœ” embeds válidos
-    if (
-      url.includes("embed") ||
-      url.includes("player")
-    ) return true;
 
     return false;
   });
 
-  // ðŸ”¥ fallback si se filtró todo
   if (!clean.length) {
     return servers.slice(0, 3);
   }
