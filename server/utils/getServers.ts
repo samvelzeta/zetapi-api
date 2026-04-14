@@ -46,7 +46,9 @@ function scoreServer(server: any) {
 function applyProxy(servers: any[]) {
   return servers.map(s => ({
     ...s,
-    embed: `/proxy?url=${encodeURIComponent(s.embed)}`
+   const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
+
+   embed: `${PROXY}${encodeURIComponent(s.embed)}`
   }));
 }
 
