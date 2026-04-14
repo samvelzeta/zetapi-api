@@ -1,6 +1,6 @@
 import {
   getJKAnimeServers,
-  scrapePage
+  getAV1Servers
 } from "./sources";
 
 import { resolveSlugVariants } from "./slugResolver";
@@ -46,52 +46,50 @@ export async function getAllServers({ slug, number, title, env }: any) {
   let jk: any[] = [];
 
   // =====================
-  // 🔥 BUSQUEDA PARALELA REAL
+  // 🔥 BUSQUEDA PARALELA
   // =====================
   await Promise.all(
 
     variants.map(async (v) => {
 
       // =====================
-      // 🟣 AV1
+      // 🟣 AV1 (JSON REAL)
       // =====================
       try {
 
-        const url = `https://animeav1.com/media/${v}/${number}`;
-        const scraped = await scrapePage(url);
+        const av1 = await getAV1Servers(v, number);
 
-        if (!scraped.length) return;
+        if (av1) {
 
-        // 🔥 IMPORTANTE:
-        // AV1 NO DIFERENCIA POR URL → hay que DUPLICAR
+          // ✔ SUB = LATINO
+          if (av1.latino?.length) {
+            for (const s of av1.latino) {
+              latino.push({
+                name: "Z",
+                type: "embed",
+                embed: s.embed,
+                lang: "latino"
+              });
+            }
+          }
 
-        for (const s of scraped) {
-
-          const u = s.embed || "";
-
-          if (!u.includes("zilla-networks")) continue;
-
-          // 🔥 SUB = LATINO
-          latino.push({
-            name: "Z",
-            type: "embed",
-            embed: u,
-            lang: "latino"
-          });
-
-          // 🔥 DUB = JAPONES
-          sub.push({
-            name: "Z",
-            type: "embed",
-            embed: u,
-            lang: "sub"
-          });
+          // ✔ DUB = JAPONES
+          if (av1.sub?.length) {
+            for (const s of av1.sub) {
+              sub.push({
+                name: "Z",
+                type: "embed",
+                embed: s.embed,
+                lang: "sub"
+              });
+            }
+          }
         }
 
       } catch {}
 
       // =====================
-      // 🟢 JKANIME
+      // 🟢 JKANIME (HLS)
       // =====================
       try {
 
@@ -126,12 +124,22 @@ export async function getAllServers({ slug, number, title, env }: any) {
   );
 
   // =====================
-  // 🔥 RESULTADO FINAL
+  // 🔥 PRIORIDAD FINAL
   // =====================
 
-  return uniqueServers([
-    ...latino,
-    ...sub,
-    ...jk
-  ]).slice(0, 6);
+  // 🥇 AV1 primero (ambos idiomas)
+  if (latino.length || sub.length) {
+    return uniqueServers([
+      ...latino,
+      ...sub,
+      ...jk
+    ]).slice(0, 6);
+  }
+
+  // 🥈 fallback JK
+  if (jk.length) {
+    return uniqueServers(jk).slice(0, 6);
+  }
+
+  return [];
 }
