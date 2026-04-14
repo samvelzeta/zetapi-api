@@ -7,7 +7,6 @@ const corsHeaders = {
 export default {
   async fetch(request: Request) {
 
-    // 🔥 PRE-FLIGHT (SOLUCIONA FAILED TO FETCH)
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -33,16 +32,12 @@ export default {
         method: "GET",
         redirect: "follow",
         headers: {
-          // 🔥 HEADERS M�S REALES (IMPORTANTE)
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
 
-          "Accept":
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-
+          "Accept": "*/*",
           "Accept-Language": "en-US,en;q=0.9",
 
-          // 🔥 CLAVE PARA EVITAR BLOQUEOS
           "Referer": parsed.origin,
           "Origin": parsed.origin,
 
@@ -50,23 +45,42 @@ export default {
         }
       });
 
+      const contentType = res.headers.get("content-type") || "";
+
+      let body = res.body;
+
+      // 🔥 REESCRIBIR M3U8 (CLAVE)
+      if (contentType.includes("application/vnd.apple.mpegurl") || target.includes(".m3u8")) {
+
+        const text = await res.text();
+
+        const base = target.substring(0, target.lastIndexOf("/") + 1);
+
+        const rewritten = text.replace(/(.*\.ts.*)/g, (line) => {
+          if (line.startsWith("http")) {
+            return `/proxy?url=${encodeURIComponent(line)}`;
+          }
+          return `/proxy?url=${encodeURIComponent(base + line)}`;
+        });
+
+        body = rewritten;
+      }
+
       const headers = new Headers();
 
-      // 🔥 IMPORTANTE: mantener content-type original
       headers.set(
         "Content-Type",
-        res.headers.get("content-type") || "text/html"
+        contentType || "application/vnd.apple.mpegurl"
       );
 
-      // 🔥 CORS GLOBAL (ESTO ES LO QUE TE FALTABA ENTENDER)
       headers.set("Access-Control-Allow-Origin", "*");
       headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       headers.set("Access-Control-Allow-Headers", "*");
+      headers.set("Access-Control-Expose-Headers", "*");
 
-      // 🔥 OPCIONAL (MEJORA STREAM)
       headers.set("Cache-Control", "no-store");
 
-      return new Response(res.body, {
+      return new Response(body, {
         status: res.status,
         headers,
       });
@@ -79,4 +93,3 @@ export default {
     }
   }
 };
-//fix
