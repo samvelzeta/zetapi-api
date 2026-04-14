@@ -1,13 +1,14 @@
 import {
   getAnimeFLVServers,
-  getJKAnimeServers
+  getJKAnimeServers,
+  getAnimeAV1Servers
 } from "./sources";
 
 import { filterWorkingServers } from "./filter";
 import { resolveServer } from "./resolver";
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
-import { getKVVideo } from "./kv"; // 🔥 NUEVO
+import { getKVVideo } from "./kv";
 
 // ======================
 function uniqueServers(list: any[]) {
@@ -48,6 +49,24 @@ function scoreServer(server: any) {
 }
 
 // ======================
+function pickBestServers(list: any[]) {
+
+  const sorted = list
+    .filter(s => s?.embed)
+    .sort((a, b) => scoreServer(b) - scoreServer(a));
+
+  const hls = sorted.filter(s => s.embed.includes(".m3u8"));
+
+  // 🔥 SI HAY HLS → PRIORIDAD TOTAL
+  if (hls.length) {
+    return uniqueServers(hls).slice(0, 3);
+  }
+
+  // 🔥 SI NO → MEJORES GENERALES
+  return uniqueServers(sorted).slice(0, 3);
+}
+
+// ======================
 export async function getAllServers({ slug, number, title, env, lang }: any) {
 
   const cleanSlug = slug.replace(/-\d+$/, "");
@@ -61,7 +80,35 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   let collected: any[] = [];
 
   // =====================
-  // 🥇 SCRAPER
+  // 🥇 1. ANIMEAV1 (PRIORIDAD ABSOLUTA)
+  // =====================
+  for (const v of variants) {
+
+    try {
+
+      const av1 = await getAnimeAV1Servers(v, number);
+
+      if (av1?.length) {
+
+        const hls = av1.filter(s =>
+          s.embed && s.embed.includes(".m3u8")
+        );
+
+        // 🔥 SI ENCONTRAMOS HLS → SALIMOS DIRECTO
+        if (hls.length) {
+          return pickBestServers(hls);
+        }
+
+        collected.push(...av1);
+      }
+
+    } catch {}
+
+    if (collected.length >= 5) break;
+  }
+
+  // =====================
+  // 🥈 2. JKANIME
   // =====================
   for (const v of variants) {
 
@@ -83,7 +130,7 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
       );
 
       if (hls.length) {
-        return uniqueServers(hls).slice(0, 5);
+        return pickBestServers(hls);
       }
 
       collected.push(...jk);
@@ -93,53 +140,26 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   }
 
   // =====================
-  // 🥈 ANIMEFLV
+  // 🥉 3. FALLBACK GENERAL (FLV u otros)
   // =====================
-  const flv = await getAnimeFLVServers(cleanSlug, number);
+  try {
 
-  if (flv.length) {
+    const flv = await getAnimeFLVServers(slug, number);
 
-    const resolved: any[] = [];
-
-    for (const s of flv) {
-      const real = await resolveServer(s.embed);
-
-      if (real) {
-        resolved.push({
-          name: "flv",
-          embed: real
-        });
-      }
+    if (flv?.length) {
+      collected.push(...flv);
     }
 
-    collected.push(...resolved);
-  }
+  } catch {}
 
   // =====================
-  // 🧠 SI NO HAY NADA → KV
+  // 🔥 FILTRADO FINAL
   // =====================
-  if (!collected.length) {
+  const filtered = await filterWorkingServers(collected);
 
-    const kv = await getKVVideo(cleanSlug, number, lang || "sub", env);
-
-    if (kv?.sources) {
-
-      const servers = [
-        ...(kv.sources.hls || []),
-        ...(kv.sources.mp4 || []),
-        ...(kv.sources.embed || [])
-      ].map((u: string) => ({ embed: u }));
-
-      return servers;
-    }
-
+  if (!filtered.length) {
     return [];
   }
 
-  const filtered = await filterWorkingServers(collected);
-  const unique = uniqueServers(filtered);
-
-  return unique
-    .sort((a, b) => scoreServer(b) - scoreServer(a))
-    .slice(0, 10);
+  return pickBestServers(filtered);
 }
