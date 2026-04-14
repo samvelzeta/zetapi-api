@@ -1,10 +1,11 @@
 import {
   getAnimeFLVServers,
   getJKAnimeServers,
-  getAnimeAV1Servers
+  scrapePage // 🔥 IMPORTANTE
 } from "./sources";
 
 import { filterWorkingServers } from "./filter";
+import { resolveServer } from "./resolver";
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
 import { getKVVideo } from "./kv";
@@ -29,15 +30,24 @@ function uniqueServers(list: any[]) {
 }
 
 // ======================
+function scoreServer(server: any) {
+  const url = (server.embed || "").toLowerCase();
+
+  if (url.includes(".m3u8")) return 1000;
+  if (url.includes(".mp4")) return 900;
+  if (url.includes("filemoon")) return 700;
+  if (url.includes("streamwish")) return 600;
+
+  return 100;
+}
+
+// ======================
 export async function getAllServers({ slug, number, title, env, lang }: any) {
 
-  const language = lang === "latino" ? "latino" : "sub";
-
-  // 🧠 CACHE
-  const cached = await getKVVideo(slug, number, language, env);
-  if (cached?.servers?.length) return cached.servers;
+  const cleanSlug = slug.replace(/-\d+$/, "");
 
   const variants = [
+    ...resolveSlugVariants(cleanSlug),
     ...resolveSlugVariants(slug),
     ...resolveSlugVariants(title || "")
   ];
@@ -45,25 +55,28 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
   let collected: any[] = [];
 
   // =====================
-  // 🥇 ANIMEAV1 (PRIORIDAD REAL)
+  // 🥇 SCRAPER UNIVERSAL (AV1 + OTROS)
   // =====================
   for (const v of variants) {
 
-    const av1 = await getAnimeAV1Servers(v, number);
+    const url = `https://animeav1.com/media/${v}/${number}`;
 
-    if (av1.length) {
+    const scraped = await scrapePage(url);
 
-      const hls = av1.filter(s =>
-        s.embed.includes(".m3u8") ||
-        s.embed.includes("zilla")
+    if (scraped.length) {
+
+      const hls = scraped.filter(s =>
+        s.embed && s.embed.includes(".m3u8")
       );
 
       if (hls.length) {
-        return uniqueServers(hls).slice(0, 3);
+        return uniqueServers(hls).slice(0, 5);
       }
 
-      collected.push(...av1);
+      collected.push(...scraped);
     }
+
+    if (collected.length >= 5) break;
   }
 
   // =====================
@@ -74,28 +87,78 @@ export async function getAllServers({ slug, number, title, env, lang }: any) {
     let jk = await getJKAnimeServers(v, number);
 
     if (!jk.length) {
+
       const realSlug = await findJKAnimeSlug(v, env);
+
       if (realSlug) {
         jk = await getJKAnimeServers(realSlug, number);
       }
     }
 
     if (jk.length) {
+
+      const hls = jk.filter(s =>
+        s.embed && s.embed.includes(".m3u8")
+      );
+
+      if (hls.length) {
+        return uniqueServers(hls).slice(0, 5);
+      }
+
       collected.push(...jk);
-      break;
     }
+
+    if (collected.length >= 6) break;
   }
 
   // =====================
   // 🥉 FLV
   // =====================
-  const flv = await getAnimeFLVServers(slug, number);
-  collected.push(...flv);
+  const flv = await getAnimeFLVServers(cleanSlug, number);
+
+  if (flv.length) {
+
+    const resolved: any[] = [];
+
+    for (const s of flv) {
+      const real = await resolveServer(s.embed);
+
+      if (real) {
+        resolved.push({
+          name: "flv",
+          embed: real
+        });
+      }
+    }
+
+    collected.push(...resolved);
+  }
 
   // =====================
-  // FINAL
+  // 🧠 KV FALLBACK
   // =====================
+  if (!collected.length) {
+
+    const kv = await getKVVideo(cleanSlug, number, lang || "sub", env);
+
+    if (kv?.sources) {
+
+      const servers = [
+        ...(kv.sources.hls || []),
+        ...(kv.sources.mp4 || []),
+        ...(kv.sources.embed || [])
+      ].map((u: string) => ({ embed: u }));
+
+      return servers;
+    }
+
+    return [];
+  }
+
   const filtered = await filterWorkingServers(collected);
+  const unique = uniqueServers(filtered);
 
-  return uniqueServers(filtered).slice(0, 5);
+  return unique
+    .sort((a, b) => scoreServer(b) - scoreServer(a))
+    .slice(0, 10);
 }
