@@ -1,9 +1,11 @@
 import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
-// Helpers básicos
+// ======================
+// 🔥 HELPERS
+// ======================
 function isZilla(url: string) {
-  return url.includes("zilla-networks.com");
+  return url.includes("zilla-networks");
 }
 
 function isHLS(url: string) {
@@ -14,23 +16,25 @@ function extractUrls(block: string) {
   return block.match(/https?:\/\/[^"' ]+/g) || [];
 }
 
-// 🔥 SCRAPER AV1 (JSON + HTML FALLBACK)
+// ======================
+// 🔥 AV1 SCRAPER (JSON + HTML)
+// ======================
 export async function scrapePage(url: string) {
   try {
-    // 1. Intentar por JSON primero (más preciso para SUB/DUB)
-    const jsonUrl = `${url}/__data.json`;
+    // 1. Intentar vía JSON (MÉTODO DATA.JSON)
+    const jsonUrl = `${url.endsWith('/') ? url.slice(0, -1) : url}/__data.json`;
     const res = await fetch(jsonUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
     
     if (res.ok) {
       const json = await res.json();
       const servers: any[] = [];
-      const dataNodes = json.nodes || [];
+      const nodes = json.nodes || [];
       
-      for (const node of dataNodes) {
+      for (const node of nodes) {
         if (node?.data) {
           const epData = node.data.find((d: any) => d?.embeds);
           if (epData) {
-            // AV1: SUB suele ser Latino, DUB suele ser Japonés subtitulado
+            // En AV1: SUB suele ser Latino y DUB Japonés (Sub)
             if (epData.embeds.SUB) {
               epData.embeds.SUB.forEach((s: any) => {
                 if (isZilla(s.url) || isHLS(s.url)) {
@@ -51,7 +55,7 @@ export async function scrapePage(url: string) {
       }
     }
 
-    // 2. Fallback al HTML (tu código original mejorado)
+    // 2. Fallback: Parseo de HTML (Tu código original mejorado)
     const html = await fetchHtml(url);
     if (!html) return [];
 
@@ -59,15 +63,17 @@ export async function scrapePage(url: string) {
     const subBlock = html.split("SUB")[1]?.split("DUB")[0] || "";
     const dubBlock = html.split("DUB")[1] || "";
 
-    const processBlock = (block: string, lang: string) => {
-      extractUrls(block).forEach(u => {
-        if (isZilla(u)) servers.push({ name: "Z", embed: u, lang });
-        else if (isHLS(u)) servers.push({ name: "H", embed: u, lang });
-      });
-    };
+    const subUrls = extractUrls(subBlock);
+    for (const u of subUrls) {
+      if (isZilla(u)) servers.push({ name: "Z", embed: u, lang: "latino" });
+      else if (isHLS(u)) servers.push({ name: "H", embed: u, lang: "latino" });
+    }
 
-    processBlock(subBlock, "latino");
-    processBlock(dubBlock, "sub");
+    const dubUrls = extractUrls(dubBlock);
+    for (const u of dubUrls) {
+      if (isZilla(u)) servers.push({ name: "Z", embed: u, lang: "sub" });
+      else if (isHLS(u)) servers.push({ name: "H", embed: u, lang: "sub" });
+    }
 
     return servers;
   } catch {
@@ -75,7 +81,9 @@ export async function scrapePage(url: string) {
   }
 }
 
-// 🔥 JKANIME (HLS)
+// ======================
+// 🔥 JKANIME
+// ======================
 export async function getJKAnimeServers(slug: string, number: number) {
   try {
     const url = `https://jkanime.net/${slug}/${number}/`;
@@ -86,11 +94,13 @@ export async function getJKAnimeServers(slug: string, number: number) {
     const players = [...html.matchAll(/data-player="([^"]+)"/g)];
 
     for (const match of players) {
-      const decoded = decodeURIComponent(match[1]).replace(/\\/g, "");
-      const resolved = await resolveServer(decoded);
-      if (resolved && resolved.includes(".m3u8")) {
-        servers.push({ name: "K", embed: resolved, lang: "sub" });
-      }
+      try {
+        const decoded = decodeURIComponent(match[1]).replace(/\\/g, "");
+        const resolved = await resolveServer(decoded);
+        if (resolved && resolved.includes(".m3u8")) {
+          servers.push({ name: "K", embed: resolved, lang: "sub" });
+        }
+      } catch {}
     }
     return servers;
   } catch {
