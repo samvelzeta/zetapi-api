@@ -1,9 +1,17 @@
-// server/utils/saveCache.ts
+export async function saveCache(
+  slug: string,
+  number: number,
+  lang: string,
+  servers: any[],
+  env?: any
+) {
 
-export async function saveCache(slug: string, number: number, lang: string, servers: any[]) {
+  const token = env?.GITHUB_TOKEN;
 
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) return;
+  if (!token) {
+    console.log("❌ NO TOKEN");
+    return;
+  }
 
   const hls: string[] = [];
   const mp4: string[] = [];
@@ -51,10 +59,10 @@ export async function saveCache(slug: string, number: number, lang: string, serv
     },
     body: JSON.stringify({
       message: `cache ${slug} ep ${number}`,
-      content: Buffer.from(JSON.stringify(payload, null, 2)).toString("base64"),
+      content: btoa(JSON.stringify(payload, null, 2)),
       sha
     })
   });
 
-  console.log(`💾 cache guardado: ${slug} ep ${number}`);
+  console.log(`💾 guardado: ${slug} ep ${number}`);
 }
