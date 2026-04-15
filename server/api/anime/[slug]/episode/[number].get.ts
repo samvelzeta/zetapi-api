@@ -1,6 +1,5 @@
 import { getAllServers } from "../../../../utils/getServers";
-import { getCache } from "../../../../utils/cache";
-import { saveCache } from "../../../../utils/saveCache";
+import { getKVVideo, saveKVVideo } from "../../../../utils/kv";
 
 export default defineEventHandler(async (event) => {
 
@@ -10,8 +9,14 @@ export default defineEventHandler(async (event) => {
   const { lang } = getQuery(event);
 
   const language = lang === "latino" ? "latino" : "sub";
+  const ep = Number(number);
 
-  const cached = await getCache(slug, Number(number), language);
+  const env = event.context.cloudflare?.env;
+
+  // ======================
+  // 🔥 1. INTENTAR KV
+  // ======================
+  const cached = await getKVVideo(slug, ep, language, env);
 
   if (cached?.sources) {
 
@@ -24,43 +29,57 @@ export default defineEventHandler(async (event) => {
     if (servers.length) {
       return {
         success: true,
-        source: "cache",
-        data: { slug, number, servers }
+        source: "kv",
+        data: { slug, number: ep, servers }
       };
     }
   }
 
   // ======================
-  // 🔥 SCRAPER
+  // 🔥 2. SCRAPER
   // ======================
- const servers = await getAllServers({
-  slug,
-  number: Number(number),
-  title: slug,
-  env: event.context.cloudflare?.env,
-  lang: language
-});
+  const servers = await getAllServers({
+    slug,
+    number: ep,
+    title: slug,
+    env,
+    lang: language
+  });
 
+  // ======================
+  // 🔥 3. GUARDAR EN KV
+  // ======================
   if (servers.length) {
 
-   await saveKVVideo(
-  slug,
-  Number(number),
-  language,
-  { sources: { embed: servers.map(s => s.embed) } },
-  event.context.cloudflare?.env
-);
+    try {
+
+      const payload = {
+        sources: {
+          embed: servers.map(s => s.embed)
+        }
+      };
+
+      await saveKVVideo(slug, ep, language, payload, env);
+
+      console.log("💾 KV GUARDADO:", slug, ep, language);
+
+    } catch (e) {
+      console.log("❌ KV ERROR:", e);
+    }
 
     return {
       success: true,
       source: "scraper",
-      data: { slug, number, servers }
+      data: { slug, number: ep, servers }
     };
   }
 
+  // ======================
+  // 🔥 4. VACÍO
+  // ======================
   return {
     success: true,
     source: "empty",
-    data: { slug, number, servers: [] }
+    data: { slug, number: ep, servers: [] }
   };
 });
