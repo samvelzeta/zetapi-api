@@ -43,11 +43,11 @@ export default defineEventHandler(async (event) => {
 
   if (servers.length) {
 
-    await saveCache(
+   await saveKVVideo(
   slug,
   Number(number),
   language,
-  servers,
+  { sources: { embed: servers.map(s => s.embed) } },
   event.context.cloudflare?.env
 );
 
