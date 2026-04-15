@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   const env = event.context.cloudflare?.env;
 
   // ======================
-  // 🔥 1. INTENTAR KV
+  // 🔥 KV
   // ======================
   const cached = await getKVVideo(slug, ep, language, env);
 
@@ -36,32 +36,35 @@ export default defineEventHandler(async (event) => {
   }
 
   // ======================
-  // 🔥 2. SCRAPER
+  // 🔥 SCRAPER
   // ======================
   const servers = await getAllServers({
     slug,
     number: ep,
     title: slug,
-    env,
-    lang: language
+    env
   });
 
   // ======================
-  // 🔥 3. GUARDAR EN KV
+  // 🔥 GUARDAR KV
   // ======================
   if (servers.length) {
 
     try {
 
-      const payload = {
-        sources: {
-          embed: servers.map(s => s.embed)
-        }
-      };
+      await saveKVVideo(
+        slug,
+        ep,
+        language,
+        {
+          sources: {
+            embed: servers.map(s => s.embed)
+          }
+        },
+        env
+      );
 
-      await saveKVVideo(slug, ep, language, payload, env);
-
-      console.log("💾 KV GUARDADO:", slug, ep, language);
+      console.log("💾 KV GUARDADO");
 
     } catch (e) {
       console.log("❌ KV ERROR:", e);
@@ -74,9 +77,6 @@ export default defineEventHandler(async (event) => {
     };
   }
 
-  // ======================
-  // 🔥 4. VACÍO
-  // ======================
   return {
     success: true,
     source: "empty",
