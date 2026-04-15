@@ -6,44 +6,27 @@ import {
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
 
-// ======================
 const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
 
-// ======================
 function uniqueServers(list: any[]) {
   const seen = new Set();
-  const result = [];
 
-  for (const s of list) {
-    if (!s?.embed) continue;
+  return list.filter(s => {
+    if (!s?.embed) return false;
 
     const clean = s.embed.split("?")[0];
 
-    if (!seen.has(clean)) {
-      seen.add(clean);
-      result.push(s);
-    }
-  }
+    if (seen.has(clean)) return false;
 
-  return result;
+    seen.add(clean);
+    return true;
+  });
 }
 
-// ======================
-function isGoodHLS(url: string) {
-  return (
-    url.includes(".m3u8") &&
-    !url.includes("mp4upload") &&
-    !url.includes("mega") &&
-    !url.includes("1fichier")
-  );
-}
-
-// ======================
 function isZilla(url: string) {
   return url.includes("zilla-networks");
 }
 
-// ======================
 export async function getAllServers({ slug, number, title, env }: any) {
 
   const variants = [
@@ -51,12 +34,11 @@ export async function getAllServers({ slug, number, title, env }: any) {
     ...resolveSlugVariants(title || "")
   ];
 
-  let latino: any[] = [];
-  let sub: any[] = [];
+  let av1: any[] = [];
   let jk: any[] = [];
 
   // =====================
-  // 🔥 SCRAPER AV1
+  // 🟣 AV1
   // =====================
   for (const v of variants) {
 
@@ -67,32 +49,20 @@ export async function getAllServers({ slug, number, title, env }: any) {
 
     for (const s of scraped) {
 
-      const u = s.embed || "";
+      if (!isZilla(s.embed)) continue;
 
-      // 🟣 SOLO ZILLA
-      if (!isZilla(u)) continue;
-
-      // 🔥 DUPLICAR LIMPIO (NO HAY OTRA FORMA)
-      latino.push({
+      av1.push({
         name: "Z",
         type: "embed",
-        embed: u,
-        lang: "latino"
-      });
-
-      sub.push({
-        name: "Z",
-        type: "embed",
-        embed: u,
-        lang: "sub"
+        embed: s.embed
       });
     }
 
-    if (latino.length >= 2) break;
+    if (av1.length >= 2) break;
   }
 
   // =====================
-  // 🔥 JKANIME (SIEMPRE)
+  // 🟢 JK NORMAL
   // =====================
   for (const v of variants) {
 
@@ -109,15 +79,10 @@ export async function getAllServers({ slug, number, title, env }: any) {
 
     for (const s of servers) {
 
-      const u = s.embed || "";
-
-      if (!isGoodHLS(u)) continue;
-
       jk.push({
         name: "K",
         type: "hls",
-        embed: `${PROXY}${encodeURIComponent(u)}`,
-        lang: "sub"
+        embed: `${PROXY}${encodeURIComponent(s.embed)}`
       });
     }
 
@@ -125,12 +90,45 @@ export async function getAllServers({ slug, number, title, env }: any) {
   }
 
   // =====================
-  // 🔥 RESULTADO FINAL
+  // 🔥 RESULTADO
   // =====================
-
-  return uniqueServers([
-    ...latino, // 🥇 ZILLA
-    ...sub,    // 🥇 ZILLA
-    ...jk      // 🥈 JK HLS
+  const final = uniqueServers([
+    ...av1,
+    ...jk
   ]).slice(0, 6);
+
+  // =====================
+  // 🚨 SENSOR ANTI-VACÍO
+  // =====================
+  if (!final.length) {
+
+    console.log("⚠️ VACÍO → FORZANDO JK");
+
+    for (const v of variants) {
+
+      let servers = await getJKAnimeServers(v, number);
+
+      if (!servers.length) {
+        const realSlug = await findJKAnimeSlug(v, env);
+        if (realSlug) {
+          servers = await getJKAnimeServers(realSlug, number);
+        }
+      }
+
+      if (!servers.length) continue;
+
+      const forced = servers.map(s => ({
+        name: "K",
+        type: "hls",
+        embed: `${PROXY}${encodeURIComponent(s.embed)}`
+      }));
+
+      if (forced.length) {
+        console.log("🔥 JK FORZADO OK");
+        return forced.slice(0, 5);
+      }
+    }
+  }
+
+  return final;
 }
