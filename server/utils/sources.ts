@@ -3,23 +3,14 @@ import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
 // ======================
-// 🔥 FILTROS REALES
+// 🔥 HELPERS
 // ======================
 function isZilla(url: string) {
   return url.includes("zilla-networks");
 }
 
-function isGoodHLS(url: string) {
-  return (
-    url.includes(".m3u8") &&
-    !url.includes("mp4upload") &&
-    !url.includes("mega") &&
-    !url.includes("1fichier")
-  );
-}
-
 // ======================
-// 🔥 SCRAPER AV1 LIMPIO (SOLO ZILLA)
+// 🔥 SCRAPER AV1 (ZILLA)
 // ======================
 export async function scrapePage(url: string) {
 
@@ -34,7 +25,6 @@ export async function scrapePage(url: string) {
 
     for (const u of urls) {
 
-      // 🔥 SOLO ZILLA (LO IMPORTANTE)
       if (!isZilla(u)) continue;
 
       servers.push({
@@ -43,7 +33,6 @@ export async function scrapePage(url: string) {
       });
     }
 
-    // 🔥 UNIQUE
     const unique = new Map();
 
     for (const s of servers) {
@@ -60,7 +49,7 @@ export async function scrapePage(url: string) {
 }
 
 // ======================
-// 🔥 JKANIME (SOLO HLS REAL)
+// 🔥 JKANIME (FIX REAL)
 // ======================
 export async function getJKAnimeServers(slug: string, number: number) {
 
@@ -87,8 +76,8 @@ export async function getJKAnimeServers(slug: string, number: number) {
         const resolved = await resolveServer(clean);
         if (!resolved) continue;
 
-        // 🔥 SOLO HLS REAL
-        if (!isGoodHLS(resolved)) continue;
+        // 🔥 SOLO HLS (SIN FILTROS ROTOS)
+        if (!resolved.includes(".m3u8")) continue;
 
         servers.push({
           name: "jkanime",
@@ -98,7 +87,6 @@ export async function getJKAnimeServers(slug: string, number: number) {
       } catch {}
     }
 
-    // 🔥 UNIQUE
     const unique = new Map();
 
     for (const s of servers) {
@@ -108,45 +96,6 @@ export async function getJKAnimeServers(slug: string, number: number) {
     }
 
     return Array.from(unique.values());
-
-  } catch {
-    return [];
-  }
-}
-
-// ======================
-// 🔥 ANIMEFLV (OPCIONAL)
-// ======================
-export async function getAnimeFLVServers(slug: string, number: number) {
-
-  try {
-
-    const data = await getEpisode({ anime: slug, episode: number });
-
-    if (!data?.servers) return [];
-
-    const servers: any[] = [];
-
-    for (const s of data.servers) {
-
-      try {
-
-        const resolved = await resolveServer(s.url);
-
-        if (!resolved) continue;
-
-        // 🔥 SOLO HLS
-        if (!isGoodHLS(resolved)) continue;
-
-        servers.push({
-          name: "animeflv",
-          embed: resolved
-        });
-
-      } catch {}
-    }
-
-    return servers;
 
   } catch {
     return [];
