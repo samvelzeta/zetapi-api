@@ -43,7 +43,13 @@ export default defineEventHandler(async (event) => {
 
   if (servers.length) {
 
-    await saveCache(slug, Number(number), language, servers);
+    await saveCache(
+  slug,
+  Number(number),
+  language,
+  servers,
+  event.context.cloudflare?.env
+);
 
     return {
       success: true,
