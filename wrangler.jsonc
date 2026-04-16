@@ -5,14 +5,20 @@
   "main": "dist/server/index.mjs",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+
   "assets": {
     "binding": "ASSETS",
     "directory": "dist/public"
   },
+
   "kv_namespaces": [
     {
-      "binding": "CACHE",
-      "id": "71b0ad99c91d4922ae25c437a8e57279"
+      "binding": "ANIME_CACHE",
+      "id": "942f398550cd41aea35066507073c61a"
+    },
+    {
+      "binding": "SLUG_CACHE",
+      "id": "809e82a4a4ba4a7595a7f9928b0971e0"
     }
   ]
 }
