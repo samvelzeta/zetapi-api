@@ -11,13 +11,13 @@ export default defineEventHandler(async (event) => {
   const language = lang === "latino" ? "latino" : "sub";
   const ep = Number(number);
 
-  // 🔥 FIX REAL → ENV SEGURO
+  // 🔥 ENV SEGURO (FIX REAL KV)
   const env =
     event.context.cloudflare?.env ||
     (globalThis as any);
 
   // ======================
-  // 🔥 DEBUG (PUEDES BORRAR LUEGO)
+  // 🔥 DEBUG (BORRAR LUEGO SI QUIERES)
   // ======================
   console.log("ENV OK:", !!env);
   console.log("KV OK:", !!env?.ANIME_CACHE);
@@ -25,25 +25,31 @@ export default defineEventHandler(async (event) => {
   // ======================
   // 🔥 1. INTENTAR KV
   // ======================
-  const cached = await getKVVideo(slug, ep, language, env);
+  try {
 
-  if (cached?.sources) {
+    const cached = await getKVVideo(slug, ep, language, env);
 
-    const servers = [
-      ...(cached.sources.hls || []),
-      ...(cached.sources.mp4 || []),
-      ...(cached.sources.embed || [])
-    ].map((u: string) => ({ embed: u }));
+    if (cached?.sources) {
 
-    if (servers.length) {
-      console.log("⚡ SERVIDO DESDE KV");
+      const servers = [
+        ...(cached.sources.hls || []),
+        ...(cached.sources.mp4 || []),
+        ...(cached.sources.embed || [])
+      ].map((u: string) => ({ embed: u }));
 
-      return {
-        success: true,
-        source: "kv",
-        data: { slug, number: ep, servers }
-      };
+      if (servers.length) {
+        console.log("⚡ SERVIDO DESDE KV");
+
+        return {
+          success: true,
+          source: "kv",
+          data: { slug, number: ep, servers }
+        };
+      }
     }
+
+  } catch (e) {
+    console.log("❌ KV READ ERROR:", e);
   }
 
   // ======================
@@ -82,7 +88,7 @@ export default defineEventHandler(async (event) => {
       console.log("💾 KV GUARDADO:", `${slug}:${ep}:${language}`);
 
     } catch (e) {
-      console.log("❌ KV ERROR:", e);
+      console.log("❌ KV SAVE ERROR:", e);
     }
 
     return {
