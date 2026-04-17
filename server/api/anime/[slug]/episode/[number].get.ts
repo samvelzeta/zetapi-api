@@ -11,10 +11,19 @@ export default defineEventHandler(async (event) => {
   const language = lang === "latino" ? "latino" : "sub";
   const ep = Number(number);
 
-  const env = event.context.cloudflare?.env;
+  // 🔥 FIX REAL → ENV SEGURO
+  const env =
+    event.context.cloudflare?.env ||
+    (globalThis as any);
 
   // ======================
-  // 🔥 KV
+  // 🔥 DEBUG (PUEDES BORRAR LUEGO)
+  // ======================
+  console.log("ENV OK:", !!env);
+  console.log("KV OK:", !!env?.ANIME_CACHE);
+
+  // ======================
+  // 🔥 1. INTENTAR KV
   // ======================
   const cached = await getKVVideo(slug, ep, language, env);
 
@@ -27,6 +36,8 @@ export default defineEventHandler(async (event) => {
     ].map((u: string) => ({ embed: u }));
 
     if (servers.length) {
+      console.log("⚡ SERVIDO DESDE KV");
+
       return {
         success: true,
         source: "kv",
@@ -36,7 +47,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // ======================
-  // 🔥 SCRAPER
+  // 🔥 2. SCRAPER
   // ======================
   const servers = await getAllServers({
     slug,
@@ -45,26 +56,30 @@ export default defineEventHandler(async (event) => {
     env
   });
 
+  console.log("SCRAPER SERVERS:", servers.length);
+
   // ======================
-  // 🔥 GUARDAR KV
+  // 🔥 3. GUARDAR EN KV
   // ======================
   if (servers.length) {
 
     try {
 
+      const payload = {
+        sources: {
+          embed: servers.map(s => s.embed)
+        }
+      };
+
       await saveKVVideo(
         slug,
         ep,
         language,
-        {
-          sources: {
-            embed: servers.map(s => s.embed)
-          }
-        },
+        payload,
         env
       );
 
-      console.log("💾 KV GUARDADO");
+      console.log("💾 KV GUARDADO:", `${slug}:${ep}:${language}`);
 
     } catch (e) {
       console.log("❌ KV ERROR:", e);
@@ -76,6 +91,11 @@ export default defineEventHandler(async (event) => {
       data: { slug, number: ep, servers }
     };
   }
+
+  // ======================
+  // 🔥 4. VACÍO
+  // ======================
+  console.log("⚠️ SIN SERVERS");
 
   return {
     success: true,
