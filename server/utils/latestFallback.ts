@@ -98,6 +98,37 @@ async function scrapeSource (source: string, urls: string[]): Promise<LatestEpis
   return merged;
 }
 
+async function extractCoverFromPage (url: string): Promise<string | undefined> {
+  const html = await fetchHtml(url, { minLength: 80, retries: 1, timeoutMs: 7000 });
+  if (!html) return undefined;
+
+  const og = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
+    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1]
+    || html.match(/<img[^>]+class=["'][^"']*(?:cover|poster)[^"']*["'][^>]+src=["']([^"']+)["']/i)?.[1];
+
+  if (!og) return undefined;
+
+  try {
+    return new URL(og, url).toString();
+  }
+  catch {
+    return og;
+  }
+}
+
+async function hydrateMissingCovers (episodes: LatestEpisode[]): Promise<LatestEpisode[]> {
+  const jobs = await Promise.allSettled(
+    episodes.map(async (ep) => {
+      if (ep.cover) return ep;
+      const cover = await extractCoverFromPage(ep.url);
+      return { ...ep, cover };
+    })
+  );
+
+  return jobs
+    .filter(r => r.status === "fulfilled")
+    .map((r: any) => r.value);
+}
 function keepOnlyLatestPerAnime (episodes: LatestEpisode[]): LatestEpisode[] {
   const map = new Map<string, LatestEpisode>();
 
@@ -130,7 +161,8 @@ export async function getLatestFallbackBundle (): Promise<LatestFallbackBundle> 
     if (!dedupByUrl.has(key)) dedupByUrl.set(key, ep);
   }
 
-  const normalized = keepOnlyLatestPerAnime(Array.from(dedupByUrl.values())).slice(0, 60);
+  const normalizedBase = keepOnlyLatestPerAnime(Array.from(dedupByUrl.values())).slice(0, 60);
+  const normalized = await hydrateMissingCovers(normalizedBase);
 
   const sourceDetails: SourceDetail[] = [
     { source: "latanime", extracted: latanime.length, keptAfterNormalize: normalized.filter(x => x.source === "latanime").length },

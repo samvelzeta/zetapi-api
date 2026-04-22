@@ -66,18 +66,31 @@ async function normalizeOutput (servers: any[]) {
           };
         }
 
-        // resto: intentar solo directos
-        if (!isDirectPlayable(candidate)) return null;
-
-        const type = detectServerType(candidate);
         const sourceLang = s.sourceLang === "lat" ? "lat" : "sub";
 
-        return {
-          name: `generic-${sourceLang}`,
-          type,
-          lang: sourceLang,
-          embed: proxify(candidate)
-        };
+        // resto: intentar directos primero
+        if (isDirectPlayable(candidate)) {
+          const type = detectServerType(candidate);
+
+          return {
+            name: `generic-${sourceLang}`,
+            type,
+            lang: sourceLang,
+            embed: proxify(candidate)
+          };
+        }
+
+        // si no se pudo resolver directo, conservar embed para no perder server
+        if (original) {
+          return {
+            name: `generic-${sourceLang}`,
+            type: "embed",
+            lang: sourceLang,
+            embed: original
+          };
+        }
+
+        return null;
       })
   );
 
