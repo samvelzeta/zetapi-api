@@ -65,7 +65,8 @@ function parseLatestFromHtml (html: string, base: string, source: string): Lates
       || block.replace(/<[^>]+>/g, " ")
     );
 
-    const img = block.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1];
+    const img = block.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/i)?.[1]
+      || block.match(/<img[^>]+srcset=["']([^"']+)["']/i)?.[1]?.split(",")?.[0]?.trim()?.split(" ")?.[0];
     const episode = cleanText(url.match(/(?:episodio|episode|capitulo)[/-]?(\d+)/i)?.[1] || "");
 
     if (!title || !episode) continue;

@@ -38,25 +38,42 @@ function isDirectPlayable (url: string): boolean {
   return type === "hls" || type === "mp4";
 }
 
+function isZilla (url: string) {
+  return url.includes("zilla-networks");
+}
+
 function proxify (url: string): string {
   if (url.includes(PROXY)) return url;
   return `${PROXY}${encodeURIComponent(url)}`;
 }
 
-async function normalizeDirectOutput (servers: any[], label = "Dub") {
+async function normalizeOutput (servers: any[]) {
   const resolved = await Promise.allSettled(
     servers
       .filter(s => s?.embed)
       .map(async (s) => {
-        const finalUrl = await resolveServer(s.embed);
-        if (!finalUrl || !isDirectPlayable(finalUrl)) return null;
+        const original = String(s.embed || "");
+        const finalUrl = await resolveServer(original);
+        const candidate = finalUrl || original;
 
-        const type = detectServerType(finalUrl);
+        // 🔥 prioridad AV1 zilla: nunca perder estos servers
+        if (isZilla(original) || isZilla(candidate)) {
+          return {
+            name: "Z",
+            type: "embed",
+            embed: original
+          };
+        }
+
+        // solo directos para resto
+        if (!isDirectPlayable(candidate)) return null;
+
+        const type = detectServerType(candidate);
 
         return {
-          name: label,
+          name: s.name || "Dub",
           type,
-          embed: proxify(finalUrl)
+          embed: proxify(candidate)
         };
       })
   );
@@ -67,10 +84,6 @@ async function normalizeDirectOutput (servers: any[], label = "Dub") {
     .filter(Boolean);
 
   return uniqueServers(cleaned);
-}
-
-function isZilla (url: string) {
-  return url.includes("zilla-networks");
 }
 
 async function collectAV1 (variants: string[], number: number) {
@@ -86,13 +99,12 @@ async function collectAV1 (variants: string[], number: number) {
       if (!isZilla(s.embed)) continue;
 
       av1.push({
-        name: "AV1",
-        type: "hls",
+        name: "Z",
+        type: "embed",
         embed: s.embed
       });
     }
 
-    // AV1 principal: máximo 2 servers como pediste
     if (av1.length >= 2) break;
   }
 
@@ -116,7 +128,7 @@ async function collectJK (variants: string[], number: number, env: any) {
 
     for (const s of servers) {
       jk.push({
-        name: "JK",
+        name: "K",
         type: "hls",
         embed: s.embed
       });
@@ -144,10 +156,10 @@ export async function getAllServers ({ slug, number, title, env, language }: any
   const jk = jkResult.status === "fulfilled" ? jkResult.value : [];
   const latino = latinoResult.status === "fulfilled" ? latinoResult.value : [];
 
-  // Ejecutado en paralelo, pero ordenado para priorizar AV1 al inicio.
+  // AV1 siempre primero, luego resto
   const ordered = language === "latino" ? [...av1, ...latino, ...jk] : [...av1, ...jk, ...latino];
 
-  const normalized = await normalizeDirectOutput(ordered, "Dub");
+  const normalized = await normalizeOutput(ordered);
 
   if (normalized.length) {
     return normalized.slice(0, 14);
