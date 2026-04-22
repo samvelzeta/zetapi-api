@@ -1,5 +1,5 @@
 import { getLatest } from "animeflv-scraper";
-import { getLatestFallbackEpisodes } from "../../utils/latestFallback";
+import { getLatestFallbackBundle } from "../../utils/latestFallback";
 
 export default defineEventHandler(async (event) => {
   // ðŸ”¥ CORS FIX
@@ -13,17 +13,18 @@ export default defineEventHandler(async (event) => {
 
   // Fallback si animeflv-scraper devuelve vacío
   if (!latest || latest.length === 0) {
-    const fallback = await getLatestFallbackEpisodes();
+    const fallback = await getLatestFallbackBundle();
 
-    if (!fallback.length) {
+    if (!fallback.data.length) {
       throw createError({ statusCode: 404, message: "No hay episodios recientes" });
     }
 
     return {
       success: true,
       source: "fallback-latino",
-      total: fallback.length,
-      data: fallback
+      total: fallback.data.length,
+      sourceDetails: fallback.sourceDetails,
+      data: fallback.data
     };
   }
 
