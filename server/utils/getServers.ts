@@ -128,18 +128,16 @@ async function normalizeOutput (servers: any[]) {
 }
 
 async function collectAV1 (variants: string[], number: number) {
-  // priorizar pocos candidatos de alto valor para bajar latencia
-  const topVariants = variants.slice(0, 10);
-  const urls = topVariants.map(v => `https://animeav1.com/media/${v}/${number}`);
-
-  const pages = await Promise.allSettled(urls.map(url => scrapePage(url)));
-
   const av1: any[] = [];
 
-  for (const p of pages) {
-    if (p.status !== "fulfilled" || !p.value?.length) continue;
+  // lógica estilo main: barrido progresivo hasta encontrar 2 zilla
+  for (const v of variants.slice(0, 30)) {
+    const url = `https://animeav1.com/media/${v}/${number}`;
+    const scraped = await scrapePage(url);
 
-    for (const s of p.value) {
+    if (!scraped.length) continue;
+
+    for (const s of scraped) {
       if (!isZilla(s.embed)) continue;
 
       av1.push({
@@ -149,9 +147,13 @@ async function collectAV1 (variants: string[], number: number) {
         embed: s.embed
       });
     }
+
+    const unique = uniqueServers(av1);
+    if (unique.length >= 2) {
+      return unique.slice(0, 2);
+    }
   }
 
-  // traer todos los zilla encontrados, normalmente 1-2
   return uniqueServers(av1).slice(0, 2);
 }
 
