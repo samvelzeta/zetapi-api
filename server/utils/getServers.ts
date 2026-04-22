@@ -56,23 +56,26 @@ async function normalizeOutput (servers: any[]) {
         const finalUrl = await resolveServer(original);
         const candidate = finalUrl || original;
 
-        // 🔥 prioridad AV1 zilla: nunca perder estos servers
+        // Zilla va primero y se conserva aunque no sea directo
         if (isZilla(original) || isZilla(candidate)) {
           return {
             name: "Z",
             type: "embed",
+            lang: "mixed",
             embed: original
           };
         }
 
-        // solo directos para resto
+        // resto: intentar solo directos
         if (!isDirectPlayable(candidate)) return null;
 
         const type = detectServerType(candidate);
+        const sourceLang = s.sourceLang === "lat" ? "lat" : "sub";
 
         return {
-          name: s.name || "Dub",
+          name: `generic-${sourceLang}`,
           type,
+          lang: sourceLang,
           embed: proxify(candidate)
         };
       })
@@ -101,6 +104,7 @@ async function collectAV1 (variants: string[], number: number) {
       av1.push({
         name: "Z",
         type: "embed",
+        sourceLang: "mixed",
         embed: s.embed
       });
     }
@@ -128,13 +132,14 @@ async function collectJK (variants: string[], number: number, env: any) {
 
     for (const s of servers) {
       jk.push({
-        name: "K",
+        name: "generic-sub",
+        sourceLang: "sub",
         type: "hls",
         embed: s.embed
       });
     }
 
-    if (jk.length >= 6) break;
+    if (jk.length >= 8) break;
   }
 
   return jk;
@@ -154,15 +159,16 @@ export async function getAllServers ({ slug, number, title, env, language }: any
 
   const av1 = av1Result.status === "fulfilled" ? av1Result.value : [];
   const jk = jkResult.status === "fulfilled" ? jkResult.value : [];
-  const latino = latinoResult.status === "fulfilled" ? latinoResult.value : [];
+  const latinoRaw = latinoResult.status === "fulfilled" ? latinoResult.value : [];
+  const latino = latinoRaw.map((s: any) => ({ ...s, name: "generic-lat", sourceLang: "lat" }));
 
-  // AV1 siempre primero, luego resto
+  // Siempre scraping combinado: primero Zilla AV1, luego sub/lat según preferencia
   const ordered = language === "latino" ? [...av1, ...latino, ...jk] : [...av1, ...jk, ...latino];
 
   const normalized = await normalizeOutput(ordered);
 
   if (normalized.length) {
-    return normalized.slice(0, 14);
+    return normalized.slice(0, 20);
   }
 
   return [];
