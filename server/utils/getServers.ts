@@ -47,17 +47,27 @@ function proxify (url: string): string {
   return `${PROXY}${encodeURIComponent(url)}`;
 }
 
+async function withTimeout<T> (promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: any;
+
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+
+  const result = await Promise.race([promise, timeoutPromise]);
+  clearTimeout(timer);
+  return result as T;
+}
+
 async function normalizeOutput (servers: any[]) {
   const resolved = await Promise.allSettled(
     servers
       .filter(s => s?.embed)
       .map(async (s) => {
         const original = String(s.embed || "");
-        const finalUrl = await resolveServer(original);
-        const candidate = finalUrl || original;
 
-        // Zilla va primero y se conserva aunque no sea directo
-        if (isZilla(original) || isZilla(candidate)) {
+        // Zilla: conservar instantáneamente (sin resolver)
+        if (isZilla(original)) {
           return {
             name: "Z",
             type: "embed",
@@ -68,7 +78,21 @@ async function normalizeOutput (servers: any[]) {
 
         const sourceLang = s.sourceLang === "lat" ? "lat" : "sub";
 
-        // resto: intentar directos primero
+        // si ya es directo, no resolver para ahorrar tiempo
+        if (isDirectPlayable(original)) {
+          const type = detectServerType(original);
+          return {
+            name: `generic-${sourceLang}`,
+            type,
+            lang: sourceLang,
+            embed: proxify(original)
+          };
+        }
+
+        // solo aquí intentar resolver
+        const finalUrl = await resolveServer(original);
+        const candidate = finalUrl || original;
+
         if (isDirectPlayable(candidate)) {
           const type = detectServerType(candidate);
 
@@ -80,7 +104,7 @@ async function normalizeOutput (servers: any[]) {
           };
         }
 
-        // si no se pudo resolver directo, conservar embed para no perder server
+        // mantener embed para no perder server
         if (original) {
           return {
             name: `generic-${sourceLang}`,
@@ -103,15 +127,18 @@ async function normalizeOutput (servers: any[]) {
 }
 
 async function collectAV1 (variants: string[], number: number) {
+  // priorizar pocos candidatos de alto valor para bajar latencia
+  const topVariants = variants.slice(0, 10);
+  const urls = topVariants.map(v => `https://animeav1.com/media/${v}/${number}`);
+
+  const pages = await Promise.allSettled(urls.map(url => scrapePage(url)));
+
   const av1: any[] = [];
 
-  for (const v of variants) {
-    const url = `https://animeav1.com/media/${v}/${number}`;
-    const scraped = await scrapePage(url);
+  for (const p of pages) {
+    if (p.status !== "fulfilled" || !p.value?.length) continue;
 
-    if (!scraped.length) continue;
-
-    for (const s of scraped) {
+    for (const s of p.value) {
       if (!isZilla(s.embed)) continue;
 
       av1.push({
@@ -121,17 +148,17 @@ async function collectAV1 (variants: string[], number: number) {
         embed: s.embed
       });
     }
-
-    if (av1.length >= 2) break;
   }
 
-  return av1;
+  // traer todos los zilla encontrados, normalmente 1-2
+  return uniqueServers(av1).slice(0, 2);
 }
 
 async function collectJK (variants: string[], number: number, env: any) {
   const jk: any[] = [];
+  const topVariants = variants.slice(0, 12);
 
-  for (const v of variants) {
+  for (const v of topVariants) {
     let servers = await getJKAnimeServers(v, number);
 
     if (!servers.length) {
@@ -160,29 +187,29 @@ async function collectJK (variants: string[], number: number, env: any) {
 
 export async function getAllServers ({ slug, number, title, env, language }: any) {
   const variants = Array.from(new Set([
+    slug,
+    title || "",
     ...resolveSlugVariants(slug),
     ...resolveSlugVariants(title || "")
-  ])).slice(0, 60);
+  ])).filter(Boolean).slice(0, 60);
 
-  const [av1Result, jkResult, latinoResult] = await Promise.allSettled([
-    collectAV1(variants, number),
-    collectJK(variants, number, env),
-    getLatinoProvidersServers(slug, number, variants)
+  // AV1 rápido + timeout más amplio; fuentes secundarias con timeout más corto
+  const [av1, jk, latinoRaw] = await Promise.all([
+    withTimeout(collectAV1(variants, number), 9000, [] as any[]),
+    withTimeout(collectJK(variants, number, env), 7000, [] as any[]),
+    withTimeout(getLatinoProvidersServers(slug, number, variants), 7000, [] as any[])
   ]);
 
-  const av1 = av1Result.status === "fulfilled" ? av1Result.value : [];
-  const jk = jkResult.status === "fulfilled" ? jkResult.value : [];
-  const latinoRaw = latinoResult.status === "fulfilled" ? latinoResult.value : [];
   const latino = latinoRaw.map((s: any) => ({ ...s, name: "generic-lat", sourceLang: "lat" }));
 
-  // Siempre scraping combinado: primero Zilla AV1, luego sub/lat según preferencia
+  // AV1 primero siempre
   const ordered = language === "latino" ? [...av1, ...latino, ...jk] : [...av1, ...jk, ...latino];
 
-  const normalized = await normalizeOutput(ordered);
+  const normalized = await withTimeout(normalizeOutput(ordered), 9000, av1);
 
   if (normalized.length) {
     return normalized.slice(0, 20);
   }
 
-  return [];
+  return av1;
 }
