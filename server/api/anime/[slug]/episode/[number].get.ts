@@ -2,7 +2,6 @@ import { getAllServers } from "../../../../utils/getServers";
 import { getKVVideo, saveKVVideo } from "../../../../utils/kv";
 
 export default defineEventHandler(async (event) => {
-
   setHeader(event, "Access-Control-Allow-Origin", "*");
 
   const { slug, number } = getRouterParams(event);
@@ -12,9 +11,9 @@ export default defineEventHandler(async (event) => {
   const ep = Number(number);
 
   // 🔥 ENV SEGURO (FIX REAL KV)
-  const env =
-    event.context.cloudflare?.env ||
-    (globalThis as any);
+  const env
+    = event.context.cloudflare?.env
+      || (globalThis as any);
 
   // ======================
   // 🔥 DEBUG (BORRAR LUEGO SI QUIERES)
@@ -26,11 +25,9 @@ export default defineEventHandler(async (event) => {
   // 🔥 1. INTENTAR KV
   // ======================
   try {
-
     const cached = await getKVVideo(slug, ep, language, env);
 
     if (cached?.sources) {
-
       const servers = [
         ...(cached.sources.hls || []),
         ...(cached.sources.mp4 || []),
@@ -47,8 +44,8 @@ export default defineEventHandler(async (event) => {
         };
       }
     }
-
-  } catch (e) {
+  }
+  catch (e) {
     console.log("❌ KV READ ERROR:", e);
   }
 
@@ -59,7 +56,8 @@ export default defineEventHandler(async (event) => {
     slug,
     number: ep,
     title: slug,
-    env
+    env,
+    language
   });
 
   console.log("SCRAPER SERVERS:", servers.length);
@@ -68,9 +66,7 @@ export default defineEventHandler(async (event) => {
   // 🔥 3. GUARDAR EN KV
   // ======================
   if (servers.length) {
-
     try {
-
       const payload = {
         sources: {
           embed: servers.map(s => s.embed)
@@ -86,8 +82,8 @@ export default defineEventHandler(async (event) => {
       );
 
       console.log("💾 KV GUARDADO:", `${slug}:${ep}:${language}`);
-
-    } catch (e) {
+    }
+    catch (e) {
       console.log("❌ KV SAVE ERROR:", e);
     }
 

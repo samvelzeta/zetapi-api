@@ -1,8 +1,7 @@
 // ==============================
 // 🔥 HEADERS PRO (ANTI BLOQUEO REAL)
 // ==============================
-export function getHeaders(url: string) {
-
+export function getHeaders (url: string) {
   const origin = new URL(url).origin;
 
   const userAgents = [
@@ -16,35 +15,77 @@ export function getHeaders(url: string) {
 
   return {
     "User-Agent": ua,
-    "Accept": "*/*",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
     "Connection": "keep-alive",
     "Referer": origin,
-    "Origin": origin
+    "Origin": origin,
+    "DNT": "1"
   };
+}
+
+type FetchHtmlOptions = {
+  minLength?: number;
+  retries?: number;
+  timeoutMs?: number;
+};
+
+async function sleep (ms: number) {
+  await new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ==============================
 // 🔥 FETCH HTML ROBUSTO
 // ==============================
-export async function fetchHtml(url: string): Promise<string | null> {
+export async function fetchHtml (url: string, opts: FetchHtmlOptions = {}): Promise<string | null> {
+  const {
+    minLength = 120,
+    retries = 2,
+    timeoutMs = 9000
+  } = opts;
 
-  try {
+  for (let i = 0; i <= retries; i++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
 
-    const res = await fetch(url, {
-      headers: getHeaders(url)
-    });
+    try {
+      const res = await fetch(url, {
+        headers: getHeaders(url),
+        redirect: "follow",
+        signal: ctrl.signal
+      });
 
-    if (!res.ok) return null;
+      if (!res.ok) {
+        clearTimeout(timer);
+        if (i < retries) {
+          await sleep(250 * (i + 1));
+          continue;
+        }
+        return null;
+      }
 
-    const text = await res.text();
+      const text = await res.text();
+      clearTimeout(timer);
 
-    // 🔥 evitar bloqueos / respuestas vacías
-    if (!text || text.length < 500) return null;
+      if (!text || text.length < minLength) {
+        if (i < retries) {
+          await sleep(250 * (i + 1));
+          continue;
+        }
+        return null;
+      }
 
-    return text;
-
-  } catch {
-    return null;
+      return text;
+    }
+    catch {
+      clearTimeout(timer);
+      if (i < retries) {
+        await sleep(250 * (i + 1));
+        continue;
+      }
+      return null;
+    }
   }
+
+  return null;
 }
