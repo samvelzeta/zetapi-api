@@ -130,8 +130,8 @@ async function normalizeOutput (servers: any[]) {
 async function collectAV1 (variants: string[], number: number) {
   const av1: any[] = [];
 
-  // lógica estilo main: barrido progresivo hasta encontrar 2 zilla
-  for (const v of variants.slice(0, 30)) {
+  // lógica igual a main: recorrer variantes hasta completar 2 zilla
+  for (const v of variants) {
     const url = `https://animeav1.com/media/${v}/${number}`;
     const scraped = await scrapePage(url);
 
@@ -148,10 +148,7 @@ async function collectAV1 (variants: string[], number: number) {
       });
     }
 
-    const unique = uniqueServers(av1);
-    if (unique.length >= 2) {
-      return unique.slice(0, 2);
-    }
+    if (av1.length >= 2) break;
   }
 
   return uniqueServers(av1).slice(0, 2);
@@ -198,7 +195,7 @@ export async function getAllServers ({ slug, number, title, env, language }: any
 
   // AV1 rápido + timeout más amplio; fuentes secundarias con timeout más corto
   const [av1, jk, latinoRaw] = await Promise.all([
-    withTimeout(collectAV1(variants, number), 9000, [] as any[]),
+    withTimeout(collectAV1(variants, number), 20000, [] as any[]),
     withTimeout(collectJK(variants, number, env), 7000, [] as any[]),
     withTimeout(getLatinoProvidersServers(slug, number, variants), 7000, [] as any[])
   ]);
