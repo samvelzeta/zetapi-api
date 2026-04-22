@@ -185,6 +185,36 @@ async function collectJK (variants: string[], number: number, env: any) {
   return jk;
 }
 
+async function collectJKDeep (variants: string[], number: number, env: any) {
+  const jk: any[] = [];
+
+  for (const v of variants.slice(0, 40)) {
+    let servers = await getJKAnimeServers(v, number);
+
+    if (!servers.length) {
+      const realSlug = await findJKAnimeSlug(v, env);
+      if (realSlug) {
+        servers = await getJKAnimeServers(realSlug, number);
+      }
+    }
+
+    if (!servers.length) continue;
+
+    for (const s of servers) {
+      jk.push({
+        name: "generic-sub",
+        sourceLang: "sub",
+        type: "hls",
+        embed: s.embed
+      });
+    }
+
+    if (jk.length >= 12) break;
+  }
+
+  return jk;
+}
+
 export async function getAllServers ({ slug, number, title, env, language }: any) {
   const variants = Array.from(new Set([
     slug,
@@ -205,7 +235,22 @@ export async function getAllServers ({ slug, number, title, env, language }: any
   // AV1 primero siempre
   const ordered = language === "latino" ? [...av1, ...latino, ...jk] : [...av1, ...jk, ...latino];
 
-  const normalized = await withTimeout(normalizeOutput(ordered), 9000, av1);
+  let normalized = await withTimeout(normalizeOutput(ordered), 9000, av1);
+
+  const onlyZ = normalized.length > 0 && normalized.every((s: any) => String(s.name || "").toUpperCase() === "Z");
+
+  // fallback agresivo: si no hay resultados o solo Z, buscar más profundo en JK/latino
+  if (!normalized.length || onlyZ) {
+    const [jkDeep, latinoDeepRaw] = await Promise.all([
+      withTimeout(collectJKDeep(variants, number, env), 15000, [] as any[]),
+      withTimeout(getLatinoProvidersServers(slug, number, variants), 15000, [] as any[])
+    ]);
+
+    const latinoDeep = latinoDeepRaw.map((s: any) => ({ ...s, name: "generic-lat", sourceLang: "lat" }));
+
+    const merged = [...normalized, ...jkDeep, ...latinoDeep];
+    normalized = await withTimeout(normalizeOutput(merged), 12000, normalized);
+  }
 
   if (normalized.length) {
     return normalized.slice(0, 20);
