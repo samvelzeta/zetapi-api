@@ -5,9 +5,10 @@ export default defineEventHandler(async (event) => {
   setHeader(event, "Access-Control-Allow-Origin", "*");
 
   const { slug, number } = getRouterParams(event);
-  const { lang } = getQuery(event);
+  const { lang, force } = getQuery(event) as { lang?: string, force?: string };
 
   const language = lang === "latino" ? "latino" : "sub";
+  const forceRefresh = force === "1" || force === "true";
   const ep = Number(number);
 
   // 🔥 ENV SEGURO (FIX REAL KV)
@@ -24,29 +25,33 @@ export default defineEventHandler(async (event) => {
   // ======================
   // 🔥 1. INTENTAR KV
   // ======================
-  try {
-    const cached = await getKVVideo(slug, ep, language, env);
+  if (!forceRefresh) {
+    try {
+      const cached = await getKVVideo(slug, ep, language, env);
 
-    if (cached?.sources) {
-      const servers = [
-        ...(cached.sources.hls || []),
-        ...(cached.sources.mp4 || []),
-        ...(cached.sources.embed || [])
-      ].map((u: string) => ({ embed: u }));
+      if (cached?.sources) {
+        const servers = [
+          ...(cached.sources.hls || []),
+          ...(cached.sources.mp4 || []),
+          ...(cached.sources.embed || [])
+        ].map((u: string) => ({ embed: u }));
 
-      if (servers.length) {
-        console.log("⚡ SERVIDO DESDE KV");
+        if (servers.length) {
+          console.log("⚡ SERVIDO DESDE KV");
 
-        return {
-          success: true,
-          source: "kv",
-          data: { slug, number: ep, servers }
-        };
+          return {
+            success: true,
+            source: "kv",
+            data: { slug, number: ep, servers }
+          };
+        }
       }
     }
-  }
-  catch (e) {
-    console.log("❌ KV READ ERROR:", e);
+    catch (e) {
+      console.log("❌ KV READ ERROR:", e);
+    }
+  } else {
+    console.log("🧪 FORCE=1 → saltando KV y rescrapeando");
   }
 
   // ======================
@@ -89,7 +94,7 @@ export default defineEventHandler(async (event) => {
 
     return {
       success: true,
-      source: "scraper",
+      source: forceRefresh ? "scraper-forced" : "scraper",
       data: { slug, number: ep, servers }
     };
   }
