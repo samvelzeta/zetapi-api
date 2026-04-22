@@ -17,7 +17,8 @@ function uniqueServers (list: any[]) {
   return list.filter((s) => {
     if (!s?.embed) return false;
 
-    const clean = s.embed.split("?")[0];
+    const isZ = String(s.name || "").toLowerCase() === "z" || isZilla(String(s.embed));
+    const clean = isZ ? s.embed : s.embed.split("?")[0];
 
     if (seen.has(clean)) return false;
 
