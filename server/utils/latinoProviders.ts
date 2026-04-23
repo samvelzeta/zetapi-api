@@ -17,6 +17,21 @@ type ProviderResult = {
 
 const VIDEO_REGEX = /https?:\/\/[^\s"'<>]+(?:\.m3u8|\.mp4)(?:\?[^\s"'<>]*)?/gi;
 const LINK_REGEX = /href=["']([^"']+)["']/gi;
+const STREAM_HINTS = [
+  ".m3u8",
+  ".mp4",
+  "ok.ru",
+  "okru",
+  "streamtape",
+  "filemoon",
+  "voe",
+  "dood",
+  "streamwish",
+  "vidhide",
+  "uqload",
+  "embed",
+  "player"
+];
 
 function normalizeText (v: string): string {
   return String(v || "")
@@ -64,6 +79,107 @@ async function latinoFetchHtml (url: string, env?: any): Promise<string | null> 
     retries: 1,
     timeoutMs: 7000
   });
+}
+
+function looksLikeStreamUrl (url: string): boolean {
+  const lower = String(url || "").toLowerCase();
+  return STREAM_HINTS.some(h => lower.includes(h));
+}
+
+function isQuotaError (error: any): boolean {
+  const msg = String(error?.message || error || "").toLowerCase();
+  return msg.includes("daily limit exceeded")
+    || msg.includes("quota")
+    || msg.includes("browser")
+    || msg.includes("failed to launch");
+}
+
+async function extractWithBrowser (targetUrl: string, env?: any): Promise<string[]> {
+  if (!env?.BROWSER) return [];
+
+  let browser: any;
+  try {
+    const puppeteerModule: any = await import("@cloudflare/puppeteer");
+    const puppeteer = puppeteerModule.default || puppeteerModule;
+    browser = await puppeteer.launch(env.BROWSER);
+    const page = await browser.newPage();
+    const found = new Set<string>();
+
+    await page.setRequestInterception(true);
+    page.on("request", (req: any) => {
+      const reqUrl = String(req.url() || "");
+      const type = String(req.resourceType() || "");
+      const blockedByType = ["image", "font", "stylesheet", "media"].includes(type);
+      const blockedByDomain = /doubleclick|google-analytics|googletagmanager|facebook|hotjar|taboola|outbrain|ads/i.test(reqUrl);
+
+      if (blockedByType || blockedByDomain) {
+        req.abort();
+        return;
+      }
+
+      if (looksLikeStreamUrl(reqUrl)) {
+        found.add(reqUrl);
+      }
+      req.continue();
+    });
+
+    await page.goto(targetUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: 9000
+    });
+
+    const domUrls = await page.evaluate(() => {
+      const out = new Set<string>();
+      const add = (v: string | null | undefined) => {
+        if (!v) return;
+        if (v.startsWith("http") || v.startsWith("//") || v.startsWith("/")) out.add(v);
+      };
+
+      document.querySelectorAll("iframe").forEach(el => add((el as HTMLIFrameElement).src));
+      document.querySelectorAll("a,button,[data-src],[data-player],[onclick]").forEach((el) => {
+        const node = el as HTMLElement;
+        add(node.getAttribute("href") || "");
+        add(node.getAttribute("data-src") || "");
+        add(node.getAttribute("data-player") || "");
+        const onClick = node.getAttribute("onclick") || "";
+        const match = onClick.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+        match.forEach(v => add(v));
+      });
+
+      return Array.from(out);
+    });
+
+    for (const u of domUrls || []) {
+      try {
+        const abs = new URL(u, targetUrl).toString();
+        if (looksLikeStreamUrl(abs)) found.add(abs);
+      }
+      catch {
+        continue;
+      }
+    }
+
+    const list = Array.from(found);
+    if (list.length) {
+      await browser.close();
+      return list.slice(0, 25);
+    }
+
+    await browser.close();
+    return [];
+  }
+  catch (error) {
+    if (browser) {
+      try {
+        await browser.close();
+      }
+      catch {
+        // noop
+      }
+    }
+    if (isQuotaError(error)) return [];
+    return [];
+  }
 }
 
 function extractCandidates (html: string, base: string): string[] {
@@ -174,7 +290,6 @@ async function discoverEpisodeUrlsFromSearch (
   variants: string[],
   env?: any
 ): Promise<string[]> {
-  const normalizedSlug = normalizeText(slug);
   const queries = Array.from(new Set([slug, ...variants]))
     .map(v => normalizeText(v))
     .filter(Boolean)
@@ -194,7 +309,7 @@ async function discoverEpisodeUrlsFromSearch (
         const nHref = normalizeText(href);
 
         if (!nHref.includes(String(episode))) continue;
-        if (!nHref.includes(normalizedSlug) && !queries.some(x => nHref.includes(x))) continue;
+        if (!queries.some(x => nHref.includes(x)) && !nHref.includes("episodio")) continue;
         out.add(href);
       }
     }
@@ -204,13 +319,18 @@ async function discoverEpisodeUrlsFromSearch (
 }
 
 async function scrapeProviderParallel (name: string, urls: string[], slug: string, episode: number, variants: string[], env?: any): Promise<ProviderResult> {
+  const browserSeeds = await Promise.allSettled(urls.slice(0, 3).map(url => extractWithBrowser(url, env)));
+  const browserExtracted = browserSeeds
+    .filter(r => r.status === "fulfilled")
+    .flatMap((r: any) => r.value || []);
+
   const jobs = await Promise.allSettled(urls.map(url => deepExtract(url, env)));
 
   const extracted = jobs
     .filter(r => r.status === "fulfilled")
     .flatMap((r: any) => r.value || []);
 
-  let dedup = Array.from(new Set(extracted));
+  let dedup = Array.from(new Set([...browserExtracted, ...extracted]));
 
   // Si la ruta directa falla, buscar enlaces por el search interno del proveedor.
   if (!dedup.length) {
@@ -229,8 +349,8 @@ async function scrapeProviderParallel (name: string, urls: string[], slug: strin
 
   return {
     name,
-    triedUrls: urls.length,
-    extracted: extracted.length,
+    triedUrls: urls.length + Math.min(urls.length, 3),
+    extracted: extracted.length + browserExtracted.length,
     resolvedDirect: dedup.length,
     servers
   };
