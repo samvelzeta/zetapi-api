@@ -1,5 +1,6 @@
 import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
+import { detectServerType } from "./serverTypes";
 
 export type RawServer = {
   name: string;
@@ -246,6 +247,39 @@ function dedupeServers (servers: RawServer[]) {
   return Array.from(map.values());
 }
 
+function scoreServerUrl (url: string): number {
+  const lower = String(url || "").toLowerCase();
+  const type = detectServerType(lower);
+
+  if (type === "hls" || lower.includes(".m3u8")) return 100;
+  if (type === "mp4" || lower.includes(".mp4")) return 90;
+  if (lower.includes("ok.ru") || lower.includes("okru")) return 80;
+  if (lower.includes("streamtape")) return 70;
+  if (lower.includes("dood")) return 40;
+  if (lower.includes("embed") || lower.includes("player")) return 25;
+  return 10;
+}
+
+async function prioritizeAndResolve (servers: RawServer[]): Promise<RawServer[]> {
+  const resolved = await Promise.allSettled(
+    servers.map(async (s) => {
+      const finalUrl = await resolveServer(s.embed);
+      return {
+        ...s,
+        embed: finalUrl || s.embed
+      };
+    })
+  );
+
+  const cleaned = resolved
+    .filter(r => r.status === "fulfilled")
+    .map((r: any) => r.value as RawServer)
+    .filter(Boolean);
+
+  return dedupeServers(cleaned)
+    .sort((a, b) => scoreServerUrl(b.embed) - scoreServerUrl(a.embed));
+}
+
 export async function getLatinoProvidersServers (slug: string, episode: number, variants: string[], env?: any): Promise<RawServer[]> {
   const { latanime, latinoanime, animelatinohd } = buildProviderUrls(slug, episode, variants);
 
@@ -255,11 +289,14 @@ export async function getLatinoProvidersServers (slug: string, episode: number, 
     scrapeProviderParallel("animelatinohd", animelatinohd, slug, episode, variants, env)
   ]);
 
-  return dedupeServers([
+  const merged = dedupeServers([
     ...a.servers,
     ...b.servers,
     ...c.servers
-  ]).slice(0, 30);
+  ]);
+
+  const prioritized = await prioritizeAndResolve(merged.slice(0, 50));
+  return prioritized.slice(0, 30);
 }
 
 export async function getLatinoProvidersDebug (slug: string, episode: number, variants: string[], env?: any) {
@@ -276,10 +313,11 @@ export async function getLatinoProvidersDebug (slug: string, episode: number, va
     ...b.servers,
     ...c.servers
   ]);
+  const prioritized = await prioritizeAndResolve(merged.slice(0, 50));
 
   return {
     providers: [a, b, c],
-    total: merged.length,
-    sample: merged.slice(0, 15)
+    total: prioritized.length,
+    sample: prioritized.slice(0, 15)
   };
 }
