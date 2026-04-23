@@ -130,8 +130,8 @@ async function normalizeOutput (servers: any[]) {
 async function collectAV1 (variants: string[], number: number) {
   const av1: any[] = [];
 
-  // 1) FAST PASS: probar top variantes en paralelo
-  const fastVariants = variants.slice(0, 10);
+  // 1) FAST PASS: probar top variantes en paralelo con ventana corta
+  const fastVariants = variants.slice(0, 8);
   const fastUrls = fastVariants.map(v => `https://animeav1.com/media/${v}/${number}`);
   const fastPages = await Promise.allSettled(fastUrls.map(url => scrapePage(url)));
 
@@ -152,32 +152,38 @@ async function collectAV1 (variants: string[], number: number) {
 
   let unique = uniqueServers(av1);
   if (unique.length >= 2) {
-    return unique.slice(0, 2);
+    return unique.slice(0, 3);
   }
 
-  // 2) DEEP PASS (estilo main): seguir progresivo hasta completar 2
-  for (const v of variants.slice(10, 40)) {
-    const url = `https://animeav1.com/media/${v}/${number}`;
-    const scraped = await scrapePage(url);
+  // 2) DEEP PASS por lotes (rápido, no secuencial)
+  const deepVariants = variants.slice(8, 36);
+  const batchSize = 4;
 
-    if (!scraped.length) continue;
+  for (let i = 0; i < deepVariants.length; i += batchSize) {
+    const batch = deepVariants.slice(i, i + batchSize);
+    const batchUrls = batch.map(v => `https://animeav1.com/media/${v}/${number}`);
+    const batchPages = await Promise.allSettled(batchUrls.map(url => scrapePage(url)));
 
-    for (const s of scraped) {
-      if (!isZilla(s.embed)) continue;
+    for (const p of batchPages) {
+      if (p.status !== "fulfilled" || !p.value?.length) continue;
 
-      av1.push({
-        name: "Z",
-        type: "embed",
-        sourceLang: "mixed",
-        embed: s.embed
-      });
+      for (const s of p.value) {
+        if (!isZilla(s.embed)) continue;
+
+        av1.push({
+          name: "Z",
+          type: "embed",
+          sourceLang: "mixed",
+          embed: s.embed
+        });
+      }
     }
 
     unique = uniqueServers(av1);
-    if (unique.length >= 2) break;
+    if (unique.length >= 3) break;
   }
 
-  return unique.slice(0, 2);
+  return unique.slice(0, 3);
 }
 
 async function collectJK (variants: string[], number: number, env: any) {
@@ -251,7 +257,7 @@ export async function getAllServers ({ slug, number, title, env, language }: any
 
   // AV1 rápido + timeout más amplio; fuentes secundarias con timeout más corto
   const [av1, jk, latinoRaw] = await Promise.all([
-    withTimeout(collectAV1(variants, number), 20000, [] as any[]),
+    withTimeout(collectAV1(variants, number), 8000, [] as any[]),
     withTimeout(collectJK(variants, number, env), 7000, [] as any[]),
     withTimeout(getLatinoProvidersServers(slug, number, variants), 7000, [] as any[])
   ]);
@@ -283,4 +289,15 @@ export async function getAllServers ({ slug, number, title, env, language }: any
   }
 
   return av1;
+}
+
+export async function getAV1ServersFast ({ slug, number, title }: any) {
+  const variants = Array.from(new Set([
+    slug,
+    title || "",
+    ...resolveSlugVariants(slug),
+    ...resolveSlugVariants(title || "")
+  ])).filter(Boolean).slice(0, 20);
+
+  return withTimeout(collectAV1(variants, number), 4500, [] as any[]);
 }

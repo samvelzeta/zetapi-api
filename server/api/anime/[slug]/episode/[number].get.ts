@@ -1,14 +1,15 @@
-import { getAllServers } from "../../../../utils/getServers";
+import { getAV1ServersFast, getAllServers } from "../../../../utils/getServers";
 import { getKVVideo, saveKVVideo } from "../../../../utils/kv";
 
 export default defineEventHandler(async (event) => {
   setHeader(event, "Access-Control-Allow-Origin", "*");
 
   const { slug, number } = getRouterParams(event);
-  const { lang, force } = getQuery(event) as { lang?: string, force?: string };
+  const { lang, force, progressive } = getQuery(event) as { lang?: string, force?: string, progressive?: string };
 
   const language = lang === "latino" ? "latino" : "sub";
   const forceRefresh = force === "1" || force === "true";
+  const progressiveMode = progressive !== "0" && progressive !== "false";
   const ep = Number(number);
 
   // 🔥 ENV SEGURO (FIX REAL KV)
@@ -19,8 +20,8 @@ export default defineEventHandler(async (event) => {
   // ======================
   // 🔥 DEBUG (BORRAR LUEGO SI QUIERES)
   // ======================
-  console.log("ENV OK:", !!env);
-  console.log("KV OK:", !!env?.ANIME_CACHE);
+  console.info("ENV OK:", !!env);
+  console.info("KV OK:", !!env?.ANIME_CACHE);
 
   // ======================
   // 🔥 1. INTENTAR KV
@@ -37,7 +38,7 @@ export default defineEventHandler(async (event) => {
         ].map((u: string) => ({ embed: u }));
 
         if (servers.length) {
-          console.log("⚡ SERVIDO DESDE KV");
+          console.info("⚡ SERVIDO DESDE KV");
 
           return {
             success: true,
@@ -48,50 +49,86 @@ export default defineEventHandler(async (event) => {
       }
     }
     catch (e) {
-      console.log("❌ KV READ ERROR:", e);
+      console.error("❌ KV READ ERROR:", e);
     }
-  } else {
-    console.log("🧪 FORCE=1 → saltando KV y rescrapeando");
+  }
+  else {
+    console.info("🧪 FORCE=1 → saltando KV y rescrapeando");
+  }
+
+  const fullScrapeAndPersist = async () => {
+    const fullServers = await getAllServers({
+      slug,
+      number: ep,
+      title: slug,
+      env,
+      language
+    });
+
+    console.info("SCRAPER SERVERS:", fullServers.length);
+
+    if (fullServers.length) {
+      try {
+        const payload = {
+          sources: {
+            embed: fullServers.map(s => s.embed)
+          }
+        };
+
+        await saveKVVideo(
+          slug,
+          ep,
+          language,
+          payload,
+          env
+        );
+
+        console.info("💾 KV GUARDADO:", `${slug}:${ep}:${language}`);
+      }
+      catch (e) {
+        console.error("❌ KV SAVE ERROR:", e);
+      }
+    }
+
+    return fullServers;
+  };
+
+  // ======================
+  // 🔥 2. SCRAPER (MODO PROGRESIVO)
+  // ======================
+  if (progressiveMode) {
+    const av1Servers = await getAV1ServersFast({
+      slug,
+      number: ep,
+      title: slug
+    });
+
+    console.info("AV1 FAST SERVERS:", av1Servers.length);
+
+    if (av1Servers.length) {
+      const waitUntilFn = event.context.cloudflare?.context?.waitUntil;
+      if (typeof waitUntilFn === "function") {
+        waitUntilFn(fullScrapeAndPersist());
+      }
+      else {
+        // fallback seguro: disparar sin bloquear si waitUntil no existe
+        void fullScrapeAndPersist();
+      }
+
+      return {
+        success: true,
+        source: forceRefresh ? "scraper-av1-fast-forced" : "scraper-av1-fast",
+        data: { slug, number: ep, servers: av1Servers }
+      };
+    }
   }
 
   // ======================
-  // 🔥 2. SCRAPER
+  // 🔥 3. SCRAPER COMPLETO (SYNC)
   // ======================
-  const servers = await getAllServers({
-    slug,
-    number: ep,
-    title: slug,
-    env,
-    language
-  });
+  const servers = await fullScrapeAndPersist();
 
-  console.log("SCRAPER SERVERS:", servers.length);
-
-  // ======================
-  // 🔥 3. GUARDAR EN KV
-  // ======================
   if (servers.length) {
-    try {
-      const payload = {
-        sources: {
-          embed: servers.map(s => s.embed)
-        }
-      };
-
-      await saveKVVideo(
-        slug,
-        ep,
-        language,
-        payload,
-        env
-      );
-
-      console.log("💾 KV GUARDADO:", `${slug}:${ep}:${language}`);
-    }
-    catch (e) {
-      console.log("❌ KV SAVE ERROR:", e);
-    }
-
     return {
       success: true,
       source: forceRefresh ? "scraper-forced" : "scraper",
@@ -102,7 +139,7 @@ export default defineEventHandler(async (event) => {
   // ======================
   // 🔥 4. VACÍO
   // ======================
-  console.log("⚠️ SIN SERVERS");
+  console.warn("⚠️ SIN SERVERS");
 
   return {
     success: true,

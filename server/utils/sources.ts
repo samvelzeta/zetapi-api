@@ -13,7 +13,11 @@ function isZilla (url: string) {
 // ======================
 export async function scrapePage (url: string) {
   try {
-    const html = await fetchHtml(url);
+    const html = await fetchHtml(url, {
+      timeoutMs: 3500,
+      retries: 0,
+      minLength: 80
+    });
     if (!html) return [];
 
     const urls = html.match(/https?:\/\/[^"' ]+/g) || [];
@@ -76,7 +80,9 @@ export async function getJKAnimeServers (slug: string, number: number) {
           embed: resolved
         });
       }
-      catch {}
+      catch {
+        continue;
+      }
     }
 
     const unique = new Map();
