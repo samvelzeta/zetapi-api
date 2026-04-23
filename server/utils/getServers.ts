@@ -55,7 +55,8 @@ async function withTimeout<T> (promise: Promise<T>, ms: number, fallback: T): Pr
     timer = setTimeout(() => resolve(fallback), ms);
   });
 
-  const result = await Promise.race([promise, timeoutPromise]);
+  const safePromise = promise.catch(() => fallback);
+  const result = await Promise.race([safePromise, timeoutPromise]);
   clearTimeout(timer);
   return result as T;
 }
