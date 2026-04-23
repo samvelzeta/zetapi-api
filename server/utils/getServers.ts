@@ -130,8 +130,33 @@ async function normalizeOutput (servers: any[]) {
 async function collectAV1 (variants: string[], number: number) {
   const av1: any[] = [];
 
-  // lógica igual a main: recorrer variantes hasta completar 2 zilla
-  for (const v of variants) {
+  // 1) FAST PASS: probar top variantes en paralelo
+  const fastVariants = variants.slice(0, 10);
+  const fastUrls = fastVariants.map(v => `https://animeav1.com/media/${v}/${number}`);
+  const fastPages = await Promise.allSettled(fastUrls.map(url => scrapePage(url)));
+
+  for (const p of fastPages) {
+    if (p.status !== "fulfilled" || !p.value?.length) continue;
+
+    for (const s of p.value) {
+      if (!isZilla(s.embed)) continue;
+
+      av1.push({
+        name: "Z",
+        type: "embed",
+        sourceLang: "mixed",
+        embed: s.embed
+      });
+    }
+  }
+
+  let unique = uniqueServers(av1);
+  if (unique.length >= 2) {
+    return unique.slice(0, 2);
+  }
+
+  // 2) DEEP PASS (estilo main): seguir progresivo hasta completar 2
+  for (const v of variants.slice(10, 40)) {
     const url = `https://animeav1.com/media/${v}/${number}`;
     const scraped = await scrapePage(url);
 
@@ -148,10 +173,11 @@ async function collectAV1 (variants: string[], number: number) {
       });
     }
 
-    if (av1.length >= 2) break;
+    unique = uniqueServers(av1);
+    if (unique.length >= 2) break;
   }
 
-  return uniqueServers(av1).slice(0, 2);
+  return unique.slice(0, 2);
 }
 
 async function collectJK (variants: string[], number: number, env: any) {
