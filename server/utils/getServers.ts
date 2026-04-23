@@ -5,6 +5,10 @@ import {
 
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
+    if (isZilla(s.embed)) {
+      return true;
+    }
+
 import { detectServerType } from "./serverTypes";
 import { getLatinoProvidersServers } from "./latinoProviders";
 import { resolveServer } from "./resolver";
