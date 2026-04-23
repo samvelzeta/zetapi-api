@@ -260,7 +260,7 @@ export async function getAllServers ({ slug, number, title, env, language }: any
   const [av1, jk, latinoRaw] = await Promise.all([
     withTimeout(collectAV1(variants, number), 8000, [] as any[]),
     withTimeout(collectJK(variants, number, env), 7000, [] as any[]),
-    withTimeout(getLatinoProvidersServers(slug, number, variants), 7000, [] as any[])
+    withTimeout(getLatinoProvidersServers(slug, number, variants, env), 7000, [] as any[])
   ]);
 
   const latino = latinoRaw.map((s: any) => ({ ...s, name: "generic-lat", sourceLang: "lat" }));
@@ -276,7 +276,7 @@ export async function getAllServers ({ slug, number, title, env, language }: any
   if (!normalized.length || onlyZ) {
     const [jkDeep, latinoDeepRaw] = await Promise.all([
       withTimeout(collectJKDeep(variants, number, env), 15000, [] as any[]),
-      withTimeout(getLatinoProvidersServers(slug, number, variants), 15000, [] as any[])
+      withTimeout(getLatinoProvidersServers(slug, number, variants, env), 15000, [] as any[])
     ]);
 
     const latinoDeep = latinoDeepRaw.map((s: any) => ({ ...s, name: "generic-lat", sourceLang: "lat" }));

@@ -15,6 +15,16 @@ type ProviderResult = {
 };
 
 const VIDEO_REGEX = /https?:\/\/[^\s"'<>]+(?:\.m3u8|\.mp4)(?:\?[^\s"'<>]*)?/gi;
+const LINK_REGEX = /href=["']([^"']+)["']/gi;
+
+function normalizeText (v: string): string {
+  return String(v || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
 function absolutize (url: string, base: string): string {
   try {
@@ -23,6 +33,36 @@ function absolutize (url: string, base: string): string {
   catch {
     return url;
   }
+}
+
+function buildLatinoProxyUrl (url: string, env?: any): string | null {
+  const raw = String(env?.LATINO_FETCH_PROXY || "").trim();
+  if (!raw) return null;
+
+  if (raw.includes("{url}")) {
+    return raw.replace("{url}", encodeURIComponent(url));
+  }
+
+  return `${raw}${encodeURIComponent(url)}`;
+}
+
+async function latinoFetchHtml (url: string, env?: any): Promise<string | null> {
+  const direct = await fetchHtml(url, {
+    minLength: 60,
+    retries: 2,
+    timeoutMs: 5500
+  });
+
+  if (direct) return direct;
+
+  const proxyUrl = buildLatinoProxyUrl(url, env);
+  if (!proxyUrl) return null;
+
+  return fetchHtml(proxyUrl, {
+    minLength: 40,
+    retries: 1,
+    timeoutMs: 7000
+  });
 }
 
 function extractCandidates (html: string, base: string): string[] {
@@ -48,8 +88,8 @@ function extractCandidates (html: string, base: string): string[] {
   return Array.from(out);
 }
 
-async function deepExtract (url: string): Promise<string[]> {
-  const html = await fetchHtml(url, { minLength: 80 });
+async function deepExtract (url: string, env?: any): Promise<string[]> {
+  const html = await latinoFetchHtml(url, env);
   if (!html) return [];
 
   const first = extractCandidates(html, url);
@@ -69,7 +109,7 @@ async function deepExtract (url: string): Promise<string[]> {
 
   const nested = await Promise.allSettled(
     embeds.map(async (u) => {
-      const nestedHtml = await fetchHtml(u, { minLength: 80 });
+      const nestedHtml = await latinoFetchHtml(u, env);
       if (!nestedHtml) return [] as string[];
       return extractCandidates(nestedHtml, u).filter(v => v.includes(".m3u8") || v.includes(".mp4"));
     })
@@ -105,14 +145,84 @@ function buildProviderUrls (slug: string, episode: number, variants: string[]) {
   };
 }
 
-async function scrapeProviderParallel (name: string, urls: string[]): Promise<ProviderResult> {
-  const jobs = await Promise.allSettled(urls.map(url => deepExtract(url)));
+function providerSearchUrls (name: string, q: string): string[] {
+  if (name === "latanime") {
+    return [
+      `https://latanime.org/?s=${encodeURIComponent(q)}`,
+      `https://latanime.org/buscar/${encodeURIComponent(q)}`
+    ];
+  }
+
+  if (name === "latinoanime") {
+    return [
+      `https://latinoanime.net/?s=${encodeURIComponent(q)}`,
+      `https://latinoanime.net/buscar/${encodeURIComponent(q)}`
+    ];
+  }
+
+  return [
+    `https://www.animelatinohd.com/?s=${encodeURIComponent(q)}`,
+    `https://www.animelatinohd.com/buscar/${encodeURIComponent(q)}`
+  ];
+}
+
+async function discoverEpisodeUrlsFromSearch (
+  name: string,
+  slug: string,
+  episode: number,
+  variants: string[],
+  env?: any
+): Promise<string[]> {
+  const normalizedSlug = normalizeText(slug);
+  const queries = Array.from(new Set([slug, ...variants]))
+    .map(v => normalizeText(v))
+    .filter(Boolean)
+    .slice(0, 8);
+
+  const out = new Set<string>();
+
+  for (const q of queries) {
+    const searchPages = providerSearchUrls(name, q);
+    const htmlPages = await Promise.allSettled(searchPages.map(u => latinoFetchHtml(u, env)));
+
+    for (const page of htmlPages) {
+      if (page.status !== "fulfilled" || !page.value) continue;
+
+      for (const m of page.value.matchAll(LINK_REGEX)) {
+        const href = absolutize(m[1], searchPages[0]);
+        const nHref = normalizeText(href);
+
+        if (!nHref.includes(String(episode))) continue;
+        if (!nHref.includes(normalizedSlug) && !queries.some(x => nHref.includes(x))) continue;
+        out.add(href);
+      }
+    }
+  }
+
+  return Array.from(out).slice(0, 20);
+}
+
+async function scrapeProviderParallel (name: string, urls: string[], slug: string, episode: number, variants: string[], env?: any): Promise<ProviderResult> {
+  const jobs = await Promise.allSettled(urls.map(url => deepExtract(url, env)));
 
   const extracted = jobs
     .filter(r => r.status === "fulfilled")
     .flatMap((r: any) => r.value || []);
 
-  const dedup = Array.from(new Set(extracted));
+  let dedup = Array.from(new Set(extracted));
+
+  // Si la ruta directa falla, buscar enlaces por el search interno del proveedor.
+  if (!dedup.length) {
+    const discoveredUrls = await discoverEpisodeUrlsFromSearch(name, slug, episode, variants, env);
+    if (discoveredUrls.length) {
+      const searchJobs = await Promise.allSettled(discoveredUrls.map(url => deepExtract(url, env)));
+      const searchExtracted = searchJobs
+        .filter(r => r.status === "fulfilled")
+        .flatMap((r: any) => r.value || []);
+
+      dedup = Array.from(new Set(searchExtracted));
+    }
+  }
 
   const servers = dedup.map(embed => ({ name, embed }));
 
@@ -136,13 +246,13 @@ function dedupeServers (servers: RawServer[]) {
   return Array.from(map.values());
 }
 
-export async function getLatinoProvidersServers (slug: string, episode: number, variants: string[]): Promise<RawServer[]> {
+export async function getLatinoProvidersServers (slug: string, episode: number, variants: string[], env?: any): Promise<RawServer[]> {
   const { latanime, latinoanime, animelatinohd } = buildProviderUrls(slug, episode, variants);
 
   const [a, b, c] = await Promise.all([
-    scrapeProviderParallel("latanime", latanime),
-    scrapeProviderParallel("latinoanime", latinoanime),
-    scrapeProviderParallel("animelatinohd", animelatinohd)
+    scrapeProviderParallel("latanime", latanime, slug, episode, variants, env),
+    scrapeProviderParallel("latinoanime", latinoanime, slug, episode, variants, env),
+    scrapeProviderParallel("animelatinohd", animelatinohd, slug, episode, variants, env)
   ]);
 
   return dedupeServers([
@@ -152,13 +262,13 @@ export async function getLatinoProvidersServers (slug: string, episode: number, 
   ]).slice(0, 30);
 }
 
-export async function getLatinoProvidersDebug (slug: string, episode: number, variants: string[]) {
+export async function getLatinoProvidersDebug (slug: string, episode: number, variants: string[], env?: any) {
   const { latanime, latinoanime, animelatinohd } = buildProviderUrls(slug, episode, variants);
 
   const [a, b, c] = await Promise.all([
-    scrapeProviderParallel("latanime", latanime),
-    scrapeProviderParallel("latinoanime", latinoanime),
-    scrapeProviderParallel("animelatinohd", animelatinohd)
+    scrapeProviderParallel("latanime", latanime, slug, episode, variants, env),
+    scrapeProviderParallel("latinoanime", latinoanime, slug, episode, variants, env),
+    scrapeProviderParallel("animelatinohd", animelatinohd, slug, episode, variants, env)
   ]);
 
   const merged = dedupeServers([

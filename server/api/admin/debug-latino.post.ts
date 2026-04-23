@@ -24,7 +24,8 @@ export default defineEventHandler(async (event) => {
   }
 
   const variants = resolveSlugVariants(slug);
-  const debug = await getLatinoProvidersDebug(slug, episode, variants);
+  const env = event.context.cloudflare?.env || (globalThis as any);
+  const debug = await getLatinoProvidersDebug(slug, episode, variants, env);
 
   return {
     success: true,
