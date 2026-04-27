@@ -1,4 +1,4 @@
-import { scrapeSeekeEpisode, generateCacheKey } from '../../../utils/seekeScraper';
+import { scrapeSeekeEpisode, generateCacheKey } from '../../utils/seekeScraper';
 import { getAllServers } from '../../../utils/getServers';
 
 interface EpisodeResponse {
