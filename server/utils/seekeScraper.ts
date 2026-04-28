@@ -1,36 +1,44 @@
-// server/utils/seekeScraper.ts
-
 import { fetchHtml } from "./fetcher";
 
+interface SeekeScrapeResult {
+  episode: number;
+  embed: string;
+  url: string;
+  status: 'success' | 'failed';
+  error?: string;
+}
+
 // ==============================
-// 🔥 GENERADOR DE KEY KV (OPCIONAL)
+// 🔥 EXTRAER M3U8 (MEJORADO)
 // ==============================
-export function generateCacheKey(url: string, ep: number) {
-  return `seeke:${url}:${ep}`;
+function extractM3U8(html: string): string | null {
+
+  const matches = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
+
+  if (!matches || !matches.length) return null;
+
+  return matches[0];
 }
 
 // ==============================
 // 🔥 SCRAPER PRINCIPAL
 // ==============================
-export async function scrapeSeekeEpisode(baseUrl: string, episodeNumber: number) {
+export async function scrapeSeekeEpisode(
+  baseUrl: string,
+  episodeNumber: number
+): Promise<SeekeScrapeResult> {
 
   const episodeUrl = `${baseUrl}/${episodeNumber}`;
-
-  console.log("🔍 SEEKE URL:", episodeUrl);
+  console.log(`🔍 SEEKE: ${episodeUrl}`);
 
   try {
 
     let html: string | null = null;
 
     // ==============================
-    // 🔥 1. INTENTO CON TU FETCHER PRO
+    // 🔥 1. FETCHER PRO (TUYO)
     // ==============================
-    try {
-      html = await fetchHtml(episodeUrl);
-      console.log("🌐 fetchHtml usado");
-    } catch (e) {
-      console.log("⚠️ fetchHtml falló");
-    }
+    html = await fetchHtml(episodeUrl);
 
     // ==============================
     // 🔁 2. RETRY DESKTOP
@@ -39,15 +47,11 @@ export async function scrapeSeekeEpisode(baseUrl: string, episodeNumber: number)
       console.log("🔁 Retry desktop");
 
       const res = await fetch(episodeUrl, {
-        method: "GET",
         headers: {
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-          "Accept":
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          "Accept-Language": "es-ES,es;q=0.9",
+          "Accept": "*/*",
           "Referer": baseUrl,
-          "Connection": "keep-alive"
         },
         redirect: "follow"
       });
@@ -64,12 +68,11 @@ export async function scrapeSeekeEpisode(baseUrl: string, episodeNumber: number)
       console.log("🔁 Retry mobile");
 
       const res = await fetch(episodeUrl, {
-        method: "GET",
         headers: {
           "User-Agent":
-            "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36",
+            "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36",
           "Accept": "*/*",
-          "Referer": baseUrl
+          "Referer": baseUrl,
         },
         redirect: "follow"
       });
@@ -80,28 +83,24 @@ export async function scrapeSeekeEpisode(baseUrl: string, episodeNumber: number)
     }
 
     // ==============================
-    // ❌ SI TODO FALLA
+    // ❌ BLOQUEADO
     // ==============================
-    if (!html || html.length < 200) {
-      console.log("❌ HTML vacío o bloqueado");
-
+    if (!html || html.length < 300) {
       return {
         episode: episodeNumber,
         embed: "",
         url: episodeUrl,
         status: "failed",
-        error: "403 o respuesta vacía"
+        error: "403 o vacío"
       };
     }
 
     // ==============================
-    // 🔥 EXTRAER TODOS LOS M3U8
+    // 🔥 EXTRAER VIDEO
     // ==============================
-    const matches = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g) || [];
+    const m3u8 = extractM3U8(html);
 
-    if (!matches.length) {
-      console.log("❌ No se encontró m3u8");
-
+    if (!m3u8) {
       return {
         episode: episodeNumber,
         embed: "",
@@ -111,27 +110,35 @@ export async function scrapeSeekeEpisode(baseUrl: string, episodeNumber: number)
       };
     }
 
-    const video = matches[0];
-
-    console.log("🎬 VIDEO ENCONTRADO:", video);
+    console.log("🎬 M3U8:", m3u8);
 
     return {
       episode: episodeNumber,
-      embed: video,
+      embed: m3u8,
       url: episodeUrl,
       status: "success"
     };
 
-  } catch (error) {
-
-    console.log("❌ ERROR SEEKE:", error);
+  } catch (err) {
 
     return {
       episode: episodeNumber,
       embed: "",
       url: episodeUrl,
       status: "failed",
-      error: String(error)
+      error: String(err)
     };
   }
+}
+
+// ==============================
+// 🔥 CACHE KEY
+// ==============================
+export async function generateCacheKey(
+  baseUrl: string,
+  episode: number
+): Promise<string> {
+
+  const hash = btoa(baseUrl).slice(0, 12);
+  return `seeke:${hash}:${episode}`;
 }
