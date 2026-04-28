@@ -4,20 +4,75 @@ interface SeekeScrapeResult {
   episode: number;
   embed: string;
   url: string;
-  status: 'success' | 'failed';
+  status: "success" | "failed";
   error?: string;
 }
 
 // ==============================
-// 🔥 EXTRAER M3U8 (MEJORADO)
+// 🔥 USER AGENTS
+// ==============================
+function getRandomUserAgent(): string {
+  const agents = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 Mobile Safari/604.1"
+  ];
+  return agents[Math.floor(Math.random() * agents.length)];
+}
+
+// ==============================
+// 🔥 HEADERS
+// ==============================
+function getHeaders(baseUrl: string): HeadersInit {
+  const origin = new URL(baseUrl).origin;
+
+  return {
+    "User-Agent": getRandomUserAgent(),
+    "Accept": "*/*",
+    "Referer": origin,
+    "Origin": origin,
+    "Connection": "keep-alive"
+  };
+}
+
+// ==============================
+// 🔥 EXTRACTORES (MULTI MÉTODO)
 // ==============================
 function extractM3U8(html: string): string | null {
 
-  const matches = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
+  const methods = [
+    /https?:\/\/[^"' ]+\.m3u8[^"' ]*/i,
+    /src\s*=\s*["']?(https?[^"'<>\s]*\.m3u8)/i,
+    /["']?(https?[^"'<>\s]*\.m3u8)[^"'<>\s]*["']?/i
+  ];
 
-  if (!matches || !matches.length) return null;
+  for (const regex of methods) {
+    const match = html.match(regex);
+    if (match) {
+      const clean = match[0].split(/[\?#"'<>]/)[0];
+      return clean;
+    }
+  }
 
-  return matches[0];
+  return null;
+}
+
+// ==============================
+// 🔥 VALIDAR M3U8
+// ==============================
+async function validateM3U8(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, {
+      method: "HEAD",
+      headers: {
+        "User-Agent": getRandomUserAgent()
+      }
+    });
+
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 // ==============================
@@ -38,7 +93,12 @@ export async function scrapeSeekeEpisode(
     // ==============================
     // 🔥 1. FETCHER PRO (TUYO)
     // ==============================
-    html = await fetchHtml(episodeUrl);
+    try {
+      html = await fetchHtml(episodeUrl);
+      console.log("🌐 fetchHtml OK");
+    } catch {
+      console.log("⚠️ fetchHtml falló");
+    }
 
     // ==============================
     // 🔁 2. RETRY DESKTOP
@@ -47,12 +107,7 @@ export async function scrapeSeekeEpisode(
       console.log("🔁 Retry desktop");
 
       const res = await fetch(episodeUrl, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-          "Accept": "*/*",
-          "Referer": baseUrl,
-        },
+        headers: getHeaders(baseUrl),
         redirect: "follow"
       });
 
@@ -69,10 +124,9 @@ export async function scrapeSeekeEpisode(
 
       const res = await fetch(episodeUrl, {
         headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36",
+          "User-Agent": getRandomUserAgent(),
           "Accept": "*/*",
-          "Referer": baseUrl,
+          "Referer": baseUrl
         },
         redirect: "follow"
       });
@@ -83,7 +137,7 @@ export async function scrapeSeekeEpisode(
     }
 
     // ==============================
-    // ❌ BLOQUEADO
+    // ❌ BLOQUEO
     // ==============================
     if (!html || html.length < 300) {
       return {
@@ -91,12 +145,12 @@ export async function scrapeSeekeEpisode(
         embed: "",
         url: episodeUrl,
         status: "failed",
-        error: "403 o vacío"
+        error: "403 o HTML vacío"
       };
     }
 
     // ==============================
-    // 🔥 EXTRAER VIDEO
+    // 🔥 EXTRAER M3U8
     // ==============================
     const m3u8 = extractM3U8(html);
 
@@ -106,11 +160,26 @@ export async function scrapeSeekeEpisode(
         embed: "",
         url: episodeUrl,
         status: "failed",
-        error: "No m3u8 encontrado"
+        error: "No se encontró m3u8"
       };
     }
 
-    console.log("🎬 M3U8:", m3u8);
+    // ==============================
+    // 🔥 VALIDAR VIDEO
+    // ==============================
+    const valid = await validateM3U8(m3u8);
+
+    if (!valid) {
+      return {
+        episode: episodeNumber,
+        embed: "",
+        url: episodeUrl,
+        status: "failed",
+        error: "m3u8 inválido"
+      };
+    }
+
+    console.log("🎬 VIDEO OK:", m3u8);
 
     return {
       episode: episodeNumber,
@@ -132,7 +201,7 @@ export async function scrapeSeekeEpisode(
 }
 
 // ==============================
-// 🔥 CACHE KEY
+// 🔥 CACHE KEY (IMPORTANTE)
 // ==============================
 export async function generateCacheKey(
   baseUrl: string,
@@ -140,5 +209,7 @@ export async function generateCacheKey(
 ): Promise<string> {
 
   const hash = btoa(baseUrl).slice(0, 12);
-  return `seeke:${hash}:${episode}`;
+
+  // 🔥 version nueva → evita cache corrupto
+  return `seeke:v2:${hash}:${episode}`;
 }
