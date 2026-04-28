@@ -1,13 +1,18 @@
 import { scrapeSeekeEpisode, generateCacheKey } from '../../../utils/seekeScraper';
 import { getAllServers } from '../../../utils/getServers';
 
+let LAST_UPDATE_ID = 0;
+
 const TELEGRAM_TOKEN = "8767809201:AAHhCa63uxL5yIMolv5CxMsgdgrPQOBuJgY";
 const CHAT_ID = "1749255245";
 
-async function telegramRequest(url: string, ep: number) {
+// ==============================
+// 🔥 TELEGRAM REQUEST (CORRECTO)
+// ==============================
+async function telegramRequest(url: string, ep: number): Promise<string | null> {
   try {
 
-    // 🔥 1. ENVIAR MENSAJE
+    // 🔥 enviar comando al bot
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -17,33 +22,51 @@ async function telegramRequest(url: string, ep: number) {
       })
     });
 
-    // 🔥 2. ESPERAR RESPUESTA
+    // 🔥 esperar respuesta real
     await new Promise(r => setTimeout(r, 2000));
 
-    // 🔥 3. LEER RESPUESTA
-    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates`);
+    // 🔥 leer SOLO mensajes nuevos
+    const res = await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates?offset=${LAST_UPDATE_ID + 1}`
+    );
+
     const data = await res.json();
 
-    const last = data.result?.pop();
-    const text = last?.message?.text || "";
+    if (!data.result?.length) return null;
+
+    const last = data.result[data.result.length - 1];
+
+    LAST_UPDATE_ID = last.update_id;
+
+    const text = last.message?.text || "";
 
     if (text.startsWith("OK|")) {
-      const parts = text.split("|");
-      return parts[2];
+      return text.split("|")[2];
     }
 
     return null;
 
-  } catch {
+  } catch (e) {
+    console.log("❌ TELEGRAM ERROR:", e);
     return null;
   }
 }
 
+// ==============================
+// 🔥 MAIN HANDLER
+// ==============================
 export default defineEventHandler(async (event) => {
   try {
 
     const query = getQuery(event);
     const { url, ep, slug } = query;
+
+    if (!url || !ep) {
+      return {
+        ok: false,
+        error: "Missing params"
+      };
+    }
 
     const episodeNumber = parseInt(ep as string, 10);
     const baseUrl = decodeURIComponent(url as string);
@@ -51,14 +74,17 @@ export default defineEventHandler(async (event) => {
     console.log(`🎬 ${baseUrl} EP ${episodeNumber}`);
 
     // =====================
-    // 🔥 CACHE
+    // 🔥 CACHE KV
     // =====================
-    let cacheKey = await generateCacheKey(baseUrl, episodeNumber);
-    const env = event.context.cloudflare?.env;
+    const cacheKey = await generateCacheKey(baseUrl, episodeNumber);
+    const env = event.context.cloudflare?.env || (globalThis as any);
 
     if (env?.ANIME_CACHE) {
       const cached = await env.ANIME_CACHE.get(cacheKey);
-      if (cached) return JSON.parse(cached);
+      if (cached) {
+        console.log("⚡ CACHE HIT");
+        return JSON.parse(cached);
+      }
     }
 
     // =====================
@@ -67,22 +93,32 @@ export default defineEventHandler(async (event) => {
     const seeke = await scrapeSeekeEpisode(baseUrl, episodeNumber);
 
     if (seeke.status === "success" && seeke.embed) {
-      return {
+
+      console.log("✅ SEEKE OK");
+
+      const res = {
         ok: true,
         episode: episodeNumber,
         embed: seeke.embed,
         source: "seeke"
       };
+
+      if (env?.ANIME_CACHE) {
+        await env.ANIME_CACHE.put(cacheKey, JSON.stringify(res));
+      }
+
+      return res;
     }
 
     console.log("❌ SEEKE FALLÓ");
 
     // =====================
-    // 🔥 TELEGRAM BOT
+    // 🤖 TELEGRAM BOT
     // =====================
     const botVideo = await telegramRequest(baseUrl, episodeNumber);
 
     if (botVideo) {
+
       console.log("🤖 BOT OK");
 
       const res = {
@@ -105,6 +141,7 @@ export default defineEventHandler(async (event) => {
     // 🔥 FALLBACK
     // =====================
     if (slug) {
+
       const servers = await getAllServers({
         slug,
         number: episodeNumber,
