@@ -1,17 +1,17 @@
 import { scrapeSeekeEpisode, generateCacheKey } from '../../utils/seekeScraper';
 
-const TELEGRAM_TOKEN = "TU_TOKEN";
+const TELEGRAM_TOKEN = "8767809201:AAHhCa63uxL5yIMolv5CxMsgdgrPQOBuJgY";
 const CHAT_ID = "1749255245";
 
 // ==============================
-// 🔥 TELEGRAM REQUEST (MEJORADO)
+// 🔥 TELEGRAM REQUEST (SEGURO)
 // ==============================
 async function telegramRequest(url: string, ep: number): Promise<string | null> {
   try {
 
-    const requestId = Date.now(); // 🔥 identificador único
+    const requestId = Date.now().toString();
 
-    // enviar comando
+    // 1. enviar mensaje al bot
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -21,27 +21,34 @@ async function telegramRequest(url: string, ep: number): Promise<string | null> 
       })
     });
 
-    // esperar respuesta
+    // 2. esperar respuesta
     await new Promise(r => setTimeout(r, 2000));
 
-    // leer updates
+    // 3. leer updates
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates`);
     const data = await res.json();
 
     if (!data.result?.length) return null;
 
-    // buscar la respuesta correcta
+    // 4. buscar EXACTAMENTE la respuesta correcta
     for (let i = data.result.length - 1; i >= 0; i--) {
       const text = data.result[i]?.message?.text || "";
 
-      if (text.includes(`|${ep}|`) && text.startsWith("OK|")) {
-        return text.split("|")[2];
+      const parts = text.split("|");
+
+      if (
+        parts[0] === "OK" &&
+        parts[1] === ep.toString() &&
+        parts[3] === requestId
+      ) {
+        return parts[2];
       }
     }
 
     return null;
 
-  } catch {
+  } catch (e) {
+    console.log("❌ TELEGRAM ERROR", e);
     return null;
   }
 }
@@ -56,7 +63,7 @@ export default defineEventHandler(async (event) => {
     const { url, ep } = query;
 
     if (!url || !ep) {
-      return { ok: false };
+      return { ok: false, error: "Missing params" };
     }
 
     const episodeNumber = parseInt(ep as string, 10);
@@ -65,17 +72,13 @@ export default defineEventHandler(async (event) => {
     const cacheKey = await generateCacheKey(baseUrl, episodeNumber);
     const env = event.context.cloudflare?.env;
 
-    // =====================
     // CACHE
-    // =====================
     if (env?.ANIME_CACHE) {
       const cached = await env.ANIME_CACHE.get(cacheKey);
       if (cached) return JSON.parse(cached);
     }
 
-    // =====================
-    // SEEKE (primero)
-    // =====================
+    // SEEKE
     const seeke = await scrapeSeekeEpisode(baseUrl, episodeNumber);
 
     if (seeke.status === "success" && seeke.embed) {
@@ -87,9 +90,7 @@ export default defineEventHandler(async (event) => {
       };
     }
 
-    // =====================
-    // TELEGRAM BOT
-    // =====================
+    // BOT
     const botVideo = await telegramRequest(baseUrl, episodeNumber);
 
     if (botVideo) {
@@ -108,9 +109,9 @@ export default defineEventHandler(async (event) => {
       return res;
     }
 
-    return { ok: false };
+    return { ok: false, error: "No se pudo obtener el episodio" };
 
   } catch {
-    return { ok: false };
+    return { ok: false, error: "Server error" };
   }
 });
