@@ -1,15 +1,15 @@
 import { scrapeSeekeEpisode } from '../../utils/seekeScraper';
 import { getAllServers } from '../../utils/getServers';
 
-// Mantén actualizada esta URL con la que te dé el túnel en Termux
+// URL del túnel de Termux (Actualizada)
 const BOT_URL = "https://converter-assisted-assistant-obj.trycloudflare.com"; 
 
 function cleanUrl(input: string) {
   if (!input) return "";
   let clean = decodeURIComponent(input);
-  // Limpieza profunda: quitamos palotes (|), números de episodio al final y espacios
+  // Limpiamos el separador "|" y espacios sobrantes
   clean = clean.split('|')[0].trim();
-  clean = clean.replace(/\/\d+$/, "");
+  // Quitamos barras finales para evitar URLs inválidas
   clean = clean.replace(/\/+$/, "");
   return clean;
 }
@@ -18,7 +18,7 @@ function generateSafeKey(url: string, ep: number) {
   const base = url
     .replace(/^https?:\/\//, "")
     .replace(/[^\w]/g, "_");
-  // Corregido: añadidos backticks para que sea un template string válido
+  // CORREGIDO: Se agregaron las comillas invertidas (backticks) para el template string
   return ${base}_${ep};
 }
 
@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
     const env = event.context.cloudflare?.env || (globalThis as any);
     const cacheKey = generateSafeKey(baseUrl, episodeNumber);
 
-    // 1. INTENTO CON CACHE
+    // 1. CACHE
     if (env?.ANIME_CACHE) {
       const cached = await env.ANIME_CACHE.get(cacheKey);
       if (cached) {
@@ -52,7 +52,7 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // 2. INTENTO CON SEEKE
+    // 2. SCRAPER INTERNO (SEEKE)
     const seeke = await scrapeSeekeEpisode(baseUrl, episodeNumber);
     if (seeke.status === "success" && isValidVideo(seeke.embed)) {
       const res = { ok: true, episode: episodeNumber, embed: seeke.embed, source: "seeke" };
@@ -60,7 +60,7 @@ export default defineEventHandler(async (event) => {
       return res;
     }
 
-    // 3. INTENTO CON BOT (TERMUX)
+    // 3. BOT EXTERNO (TERMUX)
     let data: any = null;
     try {
       const botRes = await fetch(BOT_URL, {
@@ -72,7 +72,7 @@ export default defineEventHandler(async (event) => {
       const text = await botRes.text();
       data = JSON.parse(text);
     } catch (e) {
-      console.log("❌ BOT CONNECTION ERROR", e);
+      console.log("❌ BOT ERROR:", e);
     }
 
     if (data && data.ok && isValidVideo(data.embed)) {
@@ -81,7 +81,7 @@ export default defineEventHandler(async (event) => {
       return res;
     }
 
-    // 4. FALLBACK (Último recurso)
+    // 4. FALLBACK
     if (slug) {
       const servers = await getAllServers({ slug, number: episodeNumber, title: slug, env });
       if (servers?.length && isValidVideo(servers[0].embed)) {
@@ -91,7 +91,6 @@ export default defineEventHandler(async (event) => {
 
     return { ok: false };
   } catch (err) {
-    console.log("💥 ERROR CRÍTICO", err);
     return { ok: false };
   }
 });
