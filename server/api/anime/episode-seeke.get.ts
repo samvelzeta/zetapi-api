@@ -1,18 +1,33 @@
-import { scrapeSeekeEpisode, generateCacheKey } from '../../utils/seekeScraper';
+import { scrapeSeekeEpisode } from '../../utils/seekeScraper';
 import { getAllServers } from '../../utils/getServers';
 
 const BOT_URL = "https://porter-stops-households-events.trycloudflare.com";
 
 // ==============================
-// 🔥 LIMPIAR URL (FIX CRÍTICO)
+// 🔥 LIMPIAR URL
 // ==============================
 function cleanUrl(input: string) {
   let clean = decodeURIComponent(input);
-
-  // elimina /numero al final (ej: /5)
   clean = clean.replace(/\/\d+$/, "");
-
   return clean;
+}
+
+// ==============================
+// 🔥 CACHE KEY SEGURO (FIX REAL)
+// ==============================
+function generateSafeKey(url: string, ep: number) {
+  const base = url
+    .replace(/^https?:\/\//, "")
+    .replace(/[^\w]/g, "_");
+
+  return `${base}_${ep}`;
+}
+
+// ==============================
+// 🔥 VALIDAR VIDEO REAL
+// ==============================
+function isValidVideo(url: string) {
+  return typeof url === "string" && url.includes(".m3u8");
 }
 
 export default defineEventHandler(async (event) => {
@@ -33,24 +48,33 @@ export default defineEventHandler(async (event) => {
     const env = event.context.cloudflare?.env || (globalThis as any);
 
     // =====================
-    // CACHE
+    // 🔥 CACHE
     // =====================
-    const cacheKey = await generateCacheKey(baseUrl, episodeNumber);
+    const cacheKey = generateSafeKey(baseUrl, episodeNumber);
 
     if (env?.ANIME_CACHE) {
       const cached = await env.ANIME_CACHE.get(cacheKey);
+
       if (cached) {
-        console.log("⚡ CACHE HIT");
-        return JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+
+        // 👉 evitar cache corrupto
+        if (parsed?.embed && isValidVideo(parsed.embed)) {
+          console.log("⚡ CACHE HIT");
+          return parsed;
+        } else {
+          console.log("⚠️ CACHE CORRUPTO IGNORADO");
+        }
       }
     }
 
     // =====================
-    // SEEKE
+    // 🔥 SEEKE
     // =====================
     const seeke = await scrapeSeekeEpisode(baseUrl, episodeNumber);
 
-    if (seeke.status === "success" && seeke.embed) {
+    if (seeke.status === "success" && isValidVideo(seeke.embed)) {
+
       console.log("✅ SEEKE OK");
 
       const res = {
@@ -70,10 +94,10 @@ export default defineEventHandler(async (event) => {
     console.log("❌ SEEKE FALLÓ → usando bot");
 
     // =====================
-    // 🤖 BOT LOCAL (ROBUSTO)
+    // 🤖 BOT
     // =====================
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 12000);
 
     let data: any = null;
 
@@ -98,7 +122,7 @@ export default defineEventHandler(async (event) => {
       try {
         data = JSON.parse(text);
       } catch {
-        console.log("❌ JSON inválido del bot");
+        console.log("❌ JSON inválido");
       }
 
     } catch (e) {
@@ -107,15 +131,22 @@ export default defineEventHandler(async (event) => {
 
     clearTimeout(timeout);
 
-    if (data && data.embed) {
+    if (data && isValidVideo(data.embed)) {
 
       console.log("🤖 BOT OK");
 
+      const res = {
+        ok: true,
+        episode: episodeNumber,
+        embed: data.embed,
+        source: "bot"
+      };
+
       if (env?.ANIME_CACHE) {
-        await env.ANIME_CACHE.put(cacheKey, JSON.stringify(data));
+        await env.ANIME_CACHE.put(cacheKey, JSON.stringify(res));
       }
 
-      return data;
+      return res;
     }
 
     console.log("❌ BOT FALLÓ → fallback");
@@ -124,6 +155,7 @@ export default defineEventHandler(async (event) => {
     // 🔥 FALLBACK
     // =====================
     if (slug) {
+
       const servers = await getAllServers({
         slug,
         number: episodeNumber,
@@ -131,7 +163,10 @@ export default defineEventHandler(async (event) => {
         env
       });
 
-      if (servers?.length) {
+      if (servers?.length && isValidVideo(servers[0].embed)) {
+
+        console.log("🆘 FALLBACK OK");
+
         return {
           ok: true,
           episode: episodeNumber,
