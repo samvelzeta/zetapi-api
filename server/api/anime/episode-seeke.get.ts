@@ -1,11 +1,16 @@
 import { scrapeSeekeEpisode } from '../../utils/seekeScraper';
 import { getAllServers } from '../../utils/getServers';
 
-const BOT_URL = "https://due-arabia-recipient-genome.trycloudflare.com"; // 👈 CAMBIAR
+// Mantén actualizada esta URL con la que te dé el túnel en Termux
+const BOT_URL = "https://converter-assisted-assistant-obj.trycloudflare.com"; 
 
 function cleanUrl(input: string) {
+  if (!input) return "";
   let clean = decodeURIComponent(input);
+  // Limpieza profunda: quitamos palotes (|), números de episodio al final y espacios
+  clean = clean.split('|')[0].trim();
   clean = clean.replace(/\/\d+$/, "");
+  clean = clean.replace(/\/+$/, "");
   return clean;
 }
 
@@ -13,8 +18,8 @@ function generateSafeKey(url: string, ep: number) {
   const base = url
     .replace(/^https?:\/\//, "")
     .replace(/[^\w]/g, "_");
-
-  return `${base}_${ep}`;
+  // Corregido: añadidos backticks para que sea un template string válido
+  return ${base}_${ep};
 }
 
 function isValidVideo(url: string) {
@@ -23,7 +28,6 @@ function isValidVideo(url: string) {
 
 export default defineEventHandler(async (event) => {
   try {
-
     const query = getQuery(event);
     const { url, ep, slug } = query;
 
@@ -34,111 +38,60 @@ export default defineEventHandler(async (event) => {
     const episodeNumber = parseInt(ep as string, 10);
     const baseUrl = cleanUrl(url as string);
 
-    console.log("🎬", baseUrl, episodeNumber);
-
     const env = event.context.cloudflare?.env || (globalThis as any);
     const cacheKey = generateSafeKey(baseUrl, episodeNumber);
 
-    // CACHE
+    // 1. INTENTO CON CACHE
     if (env?.ANIME_CACHE) {
       const cached = await env.ANIME_CACHE.get(cacheKey);
-
       if (cached) {
         const parsed = JSON.parse(cached);
         if (parsed?.embed && isValidVideo(parsed.embed)) {
-          console.log("⚡ CACHE HIT");
           return parsed;
         }
       }
     }
 
-    // SEEKE
+    // 2. INTENTO CON SEEKE
     const seeke = await scrapeSeekeEpisode(baseUrl, episodeNumber);
-
     if (seeke.status === "success" && isValidVideo(seeke.embed)) {
-
-      const res = {
-        ok: true,
-        episode: episodeNumber,
-        embed: seeke.embed,
-        source: "seeke"
-      };
-
-      if (env?.ANIME_CACHE) {
-        await env.ANIME_CACHE.put(cacheKey, JSON.stringify(res));
-      }
-
+      const res = { ok: true, episode: episodeNumber, embed: seeke.embed, source: "seeke" };
+      if (env?.ANIME_CACHE) await env.ANIME_CACHE.put(cacheKey, JSON.stringify(res));
       return res;
     }
 
-    console.log("❌ SEEKE FALLÓ → BOT");
-
-    // BOT
+    // 3. INTENTO CON BOT (TERMUX)
     let data: any = null;
-
     try {
       const botRes = await fetch(BOT_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          url: baseUrl,
-          ep: episodeNumber
-        })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: baseUrl, ep: episodeNumber })
       });
 
       const text = await botRes.text();
-      console.log("📦 BOT:", text);
-
-      try {
-        data = JSON.parse(text);
-      } catch {}
+      data = JSON.parse(text);
     } catch (e) {
-      console.log("❌ BOT ERROR", e);
+      console.log("❌ BOT CONNECTION ERROR", e);
     }
 
-    if (data && isValidVideo(data.embed)) {
-
-      const res = {
-        ok: true,
-        episode: episodeNumber,
-        embed: data.embed,
-        source: "bot"
-      };
-
-      if (env?.ANIME_CACHE) {
-        await env.ANIME_CACHE.put(cacheKey, JSON.stringify(res));
-      }
-
+    if (data && data.ok && isValidVideo(data.embed)) {
+      const res = { ok: true, episode: episodeNumber, embed: data.embed, source: "bot" };
+      if (env?.ANIME_CACHE) await env.ANIME_CACHE.put(cacheKey, JSON.stringify(res));
       return res;
     }
 
-    console.log("❌ BOT FALLÓ → FALLBACK");
-
-    // FALLBACK
+    // 4. FALLBACK (Último recurso)
     if (slug) {
-      const servers = await getAllServers({
-        slug,
-        number: episodeNumber,
-        title: slug,
-        env
-      });
-
+      const servers = await getAllServers({ slug, number: episodeNumber, title: slug, env });
       if (servers?.length && isValidVideo(servers[0].embed)) {
-        return {
-          ok: true,
-          episode: episodeNumber,
-          embed: servers[0].embed,
-          source: "fallback"
-        };
+        return { ok: true, episode: episodeNumber, embed: servers[0].embed, source: "fallback" };
       }
     }
 
     return { ok: false };
-
   } catch (err) {
-    console.log("💥 ERROR", err);
+    console.log("💥 ERROR CRÍTICO", err);
     return { ok: false };
   }
 });
