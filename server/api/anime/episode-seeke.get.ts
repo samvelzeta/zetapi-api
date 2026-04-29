@@ -61,7 +61,7 @@ export default defineEventHandler(async (event) => {
     // BOT LOCAL (CON TIMEOUT)
     // =====================
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000); // 8s
+    const timeout = setTimeout(() => controller.abort(), 16000); // 8s
 
     let botRes;
 
