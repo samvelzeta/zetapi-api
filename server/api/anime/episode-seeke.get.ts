@@ -1,7 +1,7 @@
 import { scrapeSeekeEpisode, generateCacheKey } from '../../utils/seekeScraper';
 import { getAllServers } from '../../utils/getServers';
 
-const BOT_URL = "https://ferrari-exploring-bulk-win.trycloudflare.com";
+const BOT_URL = "https://porter-stops-households-events.trycloudflare.com";
 
 export default defineEventHandler(async (event) => {
   try {
