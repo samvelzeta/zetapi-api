@@ -1,15 +1,15 @@
 import { scrapeSeekeEpisode } from '../../utils/seekeScraper';
 import { getAllServers } from '../../utils/getServers';
 
-// URL del túnel de Termux (Actualizada)
+// URL del túnel (Asegúrate de que coincida con el de Termux)
 const BOT_URL = "https://converter-assisted-assistant-obj.trycloudflare.com"; 
 
 function cleanUrl(input: string) {
   if (!input) return "";
   let clean = decodeURIComponent(input);
-  // Limpiamos el separador "|" y espacios sobrantes
+  // Limpiamos el separador "|" y espacios
   clean = clean.split('|')[0].trim();
-  // Quitamos barras finales para evitar URLs inválidas
+  // Quitamos barras finales
   clean = clean.replace(/\/+$/, "");
   return clean;
 }
@@ -18,8 +18,8 @@ function generateSafeKey(url: string, ep: number) {
   const base = url
     .replace(/^https?:\/\//, "")
     .replace(/[^\w]/g, "_");
-  // CORREGIDO: Se agregaron las comillas invertidas (backticks) para el template string
-  return ${base}_${ep};
+  // CORRECCIÓN AQUÍ: Se usan backticks (``) para que sea un template string
+  return `${base}_${ep}`;
 }
 
 function isValidVideo(url: string) {
@@ -47,6 +47,7 @@ export default defineEventHandler(async (event) => {
       if (cached) {
         const parsed = JSON.parse(cached);
         if (parsed?.embed && isValidVideo(parsed.embed)) {
+          console.log("⚡️ CACHE HIT");
           return parsed;
         }
       }
@@ -60,7 +61,9 @@ export default defineEventHandler(async (event) => {
       return res;
     }
 
-    // 3. BOT EXTERNO (TERMUX)
+    console.log("❌ SEEKE FALLÓ → LLAMANDO AL BOT");
+
+    // 3. BOT EXTERNO (TERMUX EN BELLO)
     let data: any = null;
     try {
       const botRes = await fetch(BOT_URL, {
@@ -91,6 +94,7 @@ export default defineEventHandler(async (event) => {
 
     return { ok: false };
   } catch (err) {
+    console.log("💥 ERROR:", err);
     return { ok: false };
   }
 });
