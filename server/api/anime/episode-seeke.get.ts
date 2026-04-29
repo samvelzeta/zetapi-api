@@ -1,5 +1,5 @@
-import { scrapeSeekeEpisode, generateCacheKey } from '../../../utils/seekeScraper';
-import { getAllServers } from '../../../utils/getServers';
+import { scrapeSeekeEpisode, generateCacheKey } from '../../utils/seekeScraper';
+import { getAllServers } from '../../utils/getServers';
 
 let LAST_UPDATE_ID = 0;
 
