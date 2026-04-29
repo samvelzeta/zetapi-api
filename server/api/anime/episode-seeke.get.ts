@@ -3,6 +3,18 @@ import { getAllServers } from '../../utils/getServers';
 
 const BOT_URL = "https://porter-stops-households-events.trycloudflare.com";
 
+// ==============================
+// 🔥 LIMPIAR URL (FIX CRÍTICO)
+// ==============================
+function cleanUrl(input: string) {
+  let clean = decodeURIComponent(input);
+
+  // elimina /numero al final (ej: /5)
+  clean = clean.replace(/\/\d+$/, "");
+
+  return clean;
+}
+
 export default defineEventHandler(async (event) => {
   try {
 
@@ -14,9 +26,9 @@ export default defineEventHandler(async (event) => {
     }
 
     const episodeNumber = parseInt(ep as string, 10);
-    const baseUrl = decodeURIComponent(url as string);
+    const baseUrl = cleanUrl(url as string);
 
-    console.log(`🎬 ${baseUrl} EP ${episodeNumber}`);
+    console.log(`🎬 REQUEST: ${baseUrl} EP ${episodeNumber}`);
 
     const env = event.context.cloudflare?.env || (globalThis as any);
 
@@ -58,15 +70,15 @@ export default defineEventHandler(async (event) => {
     console.log("❌ SEEKE FALLÓ → usando bot");
 
     // =====================
-    // BOT LOCAL (CON TIMEOUT)
+    // 🤖 BOT LOCAL (ROBUSTO)
     // =====================
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 16000); // 8s
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
-    let botRes;
+    let data: any = null;
 
     try {
-      botRes = await fetch(BOT_URL, {
+      const botRes = await fetch(BOT_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -77,32 +89,39 @@ export default defineEventHandler(async (event) => {
         }),
         signal: controller.signal
       });
+
+      console.log("📡 BOT STATUS:", botRes.status);
+
+      const text = await botRes.text();
+      console.log("📦 BOT RAW:", text);
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        console.log("❌ JSON inválido del bot");
+      }
+
     } catch (e) {
-      console.log("❌ BOT NO RESPONDE");
-      botRes = null;
+      console.log("❌ BOT ERROR:", e);
     }
 
     clearTimeout(timeout);
 
-    if (botRes && botRes.ok) {
-      const data = await botRes.json();
+    if (data && data.embed) {
 
-      if (data.ok && data.embed) {
+      console.log("🤖 BOT OK");
 
-        console.log("🤖 BOT OK");
-
-        if (env?.ANIME_CACHE) {
-          await env.ANIME_CACHE.put(cacheKey, JSON.stringify(data));
-        }
-
-        return data;
+      if (env?.ANIME_CACHE) {
+        await env.ANIME_CACHE.put(cacheKey, JSON.stringify(data));
       }
+
+      return data;
     }
 
     console.log("❌ BOT FALLÓ → fallback");
 
     // =====================
-    // FALLBACK
+    // 🔥 FALLBACK
     // =====================
     if (slug) {
       const servers = await getAllServers({
@@ -122,10 +141,21 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    return { ok: false, error: "no sources" };
+    return {
+      ok: false,
+      error: "no sources",
+      debug: {
+        url: baseUrl,
+        ep: episodeNumber
+      }
+    };
 
   } catch (err) {
     console.log("💥 ERROR GLOBAL", err);
-    return { ok: false, error: "server error" };
+
+    return {
+      ok: false,
+      error: "server error"
+    };
   }
 });
