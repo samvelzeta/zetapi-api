@@ -1,53 +1,47 @@
 import { scrapeSeekeEpisode, generateCacheKey } from '../../utils/seekeScraper';
-import { getAllServers } from '../../utils/getServers';
 
-let LAST_UPDATE_ID = 0;
-
-const TELEGRAM_TOKEN = "8767809201:AAHhCa63uxL5yIMolv5CxMsgdgrPQOBuJgY";
+const TELEGRAM_TOKEN = "TU_TOKEN";
 const CHAT_ID = "1749255245";
 
 // ==============================
-// 🔥 TELEGRAM REQUEST (CORRECTO)
+// 🔥 TELEGRAM REQUEST (MEJORADO)
 // ==============================
 async function telegramRequest(url: string, ep: number): Promise<string | null> {
   try {
 
-    // 🔥 enviar comando al bot
+    const requestId = Date.now(); // 🔥 identificador único
+
+    // enviar comando
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         chat_id: CHAT_ID,
-        text: `API|${url}|${ep}`
+        text: `API|${url}|${ep}|${requestId}`
       })
     });
 
-    // 🔥 esperar respuesta real
+    // esperar respuesta
     await new Promise(r => setTimeout(r, 2000));
 
-    // 🔥 leer SOLO mensajes nuevos
-    const res = await fetch(
-      `https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates?offset=${LAST_UPDATE_ID + 1}`
-    );
-
+    // leer updates
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates`);
     const data = await res.json();
 
     if (!data.result?.length) return null;
 
-    const last = data.result[data.result.length - 1];
+    // buscar la respuesta correcta
+    for (let i = data.result.length - 1; i >= 0; i--) {
+      const text = data.result[i]?.message?.text || "";
 
-    LAST_UPDATE_ID = last.update_id;
-
-    const text = last.message?.text || "";
-
-    if (text.startsWith("OK|")) {
-      return text.split("|")[2];
+      if (text.includes(`|${ep}|`) && text.startsWith("OK|")) {
+        return text.split("|")[2];
+      }
     }
 
     return null;
 
-  } catch (e) {
-    console.log("❌ TELEGRAM ERROR:", e);
+  } catch {
     return null;
   }
 }
@@ -59,67 +53,46 @@ export default defineEventHandler(async (event) => {
   try {
 
     const query = getQuery(event);
-    const { url, ep, slug } = query;
+    const { url, ep } = query;
 
     if (!url || !ep) {
-      return {
-        ok: false,
-        error: "Missing params"
-      };
+      return { ok: false };
     }
 
     const episodeNumber = parseInt(ep as string, 10);
     const baseUrl = decodeURIComponent(url as string);
 
-    console.log(`🎬 ${baseUrl} EP ${episodeNumber}`);
-
-    // =====================
-    // 🔥 CACHE KV
-    // =====================
     const cacheKey = await generateCacheKey(baseUrl, episodeNumber);
-    const env = event.context.cloudflare?.env || (globalThis as any);
+    const env = event.context.cloudflare?.env;
 
+    // =====================
+    // CACHE
+    // =====================
     if (env?.ANIME_CACHE) {
       const cached = await env.ANIME_CACHE.get(cacheKey);
-      if (cached) {
-        console.log("⚡ CACHE HIT");
-        return JSON.parse(cached);
-      }
+      if (cached) return JSON.parse(cached);
     }
 
     // =====================
-    // 🔥 SEEKE
+    // SEEKE (primero)
     // =====================
     const seeke = await scrapeSeekeEpisode(baseUrl, episodeNumber);
 
     if (seeke.status === "success" && seeke.embed) {
-
-      console.log("✅ SEEKE OK");
-
-      const res = {
+      return {
         ok: true,
         episode: episodeNumber,
         embed: seeke.embed,
         source: "seeke"
       };
-
-      if (env?.ANIME_CACHE) {
-        await env.ANIME_CACHE.put(cacheKey, JSON.stringify(res));
-      }
-
-      return res;
     }
 
-    console.log("❌ SEEKE FALLÓ");
-
     // =====================
-    // 🤖 TELEGRAM BOT
+    // TELEGRAM BOT
     // =====================
     const botVideo = await telegramRequest(baseUrl, episodeNumber);
 
     if (botVideo) {
-
-      console.log("🤖 BOT OK");
 
       const res = {
         ok: true,
@@ -135,39 +108,9 @@ export default defineEventHandler(async (event) => {
       return res;
     }
 
-    console.log("❌ BOT FALLÓ");
+    return { ok: false };
 
-    // =====================
-    // 🔥 FALLBACK
-    // =====================
-    if (slug) {
-
-      const servers = await getAllServers({
-        slug,
-        number: episodeNumber,
-        title: slug,
-        env
-      });
-
-      if (servers?.length) {
-        return {
-          ok: true,
-          episode: episodeNumber,
-          embed: servers[0].embed,
-          source: "fallback"
-        };
-      }
-    }
-
-    return {
-      ok: false,
-      error: "No se pudo obtener el episodio"
-    };
-
-  } catch (err) {
-    return {
-      ok: false,
-      error: "Server error"
-    };
+  } catch {
+    return { ok: false };
   }
 });
