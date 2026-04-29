@@ -1,6 +1,6 @@
 import { scrapeSeekeEpisode, generateCacheKey } from '../../utils/seekeScraper';
 
-const TELEGRAM_TOKEN = "TU_TOKEN_AQUI";
+const TELEGRAM_TOKEN = "8767809201:AAHhCa63uxL5yIMolv5CxMsgdgrPQOBuJgY";
 const CHAT_ID = "1749255245";
 
 // ==============================
