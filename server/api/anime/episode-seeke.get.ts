@@ -1,5 +1,5 @@
-import { scrapeSeekeEpisode, generateCacheKey } from '../../../utils/seekeScraper';
-import { getAllServers } from '../../../utils/getServers';
+import { scrapeSeekeEpisode, generateCacheKey } from '../../utils/seekeScraper';
+import { getAllServers } from '../../utils/getServers';
 
 const TELEGRAM_TOKEN = "8767809201:AAHhCa63uxL5yIMolv5CxMsgdgrPQOBuJgY";
 const CHAT_ID = "-1003993096263"; // 👈 TU GRUPO
