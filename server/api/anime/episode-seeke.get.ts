@@ -1,15 +1,23 @@
 import { scrapeSeekeEpisode, generateCacheKey } from '../../utils/seekeScraper';
 
-const TELEGRAM_TOKEN = "8767809201:AAHhCa63uxL5yIMolv5CxMsgdgrPQOBuJgY";
+const TELEGRAM_TOKEN = "TU_TOKEN_AQUI";
 const CHAT_ID = "1749255245";
 
 // ==============================
-// 🔥 TELEGRAM REQUEST (SEGURO)
+// 🔥 LIMPIAR URL (IMPORTANTE)
+// ==============================
+function cleanUrl(rawUrl: string): string {
+  return rawUrl.split("|")[0];
+}
+
+// ==============================
+// 🔥 TELEGRAM REQUEST (SIN REQ)
 // ==============================
 async function telegramRequest(url: string, ep: number): Promise<string | null> {
   try {
 
-    const requestId = Date.now().toString();
+    // limpiar URL por si viene corrupta del frontend
+    const clean = cleanUrl(url);
 
     // 1. enviar mensaje al bot
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
@@ -17,7 +25,7 @@ async function telegramRequest(url: string, ep: number): Promise<string | null> 
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         chat_id: CHAT_ID,
-        text: `API|${url}|${ep}|${requestId}`
+        text: `API|${clean}|${ep}`
       })
     });
 
@@ -30,7 +38,7 @@ async function telegramRequest(url: string, ep: number): Promise<string | null> 
 
     if (!data.result?.length) return null;
 
-    // 4. buscar EXACTAMENTE la respuesta correcta
+    // 4. buscar última respuesta válida
     for (let i = data.result.length - 1; i >= 0; i--) {
       const text = data.result[i]?.message?.text || "";
 
@@ -38,8 +46,7 @@ async function telegramRequest(url: string, ep: number): Promise<string | null> 
 
       if (
         parts[0] === "OK" &&
-        parts[1] === ep.toString() &&
-        parts[3] === requestId
+        parts[1] === ep.toString()
       ) {
         return parts[2];
       }
@@ -67,18 +74,24 @@ export default defineEventHandler(async (event) => {
     }
 
     const episodeNumber = parseInt(ep as string, 10);
-    const baseUrl = decodeURIComponent(url as string);
+
+    // 🔥 limpiar URL SIEMPRE
+    const baseUrl = cleanUrl(decodeURIComponent(url as string));
 
     const cacheKey = await generateCacheKey(baseUrl, episodeNumber);
     const env = event.context.cloudflare?.env;
 
+    // =====================
     // CACHE
+    // =====================
     if (env?.ANIME_CACHE) {
       const cached = await env.ANIME_CACHE.get(cacheKey);
       if (cached) return JSON.parse(cached);
     }
 
+    // =====================
     // SEEKE
+    // =====================
     const seeke = await scrapeSeekeEpisode(baseUrl, episodeNumber);
 
     if (seeke.status === "success" && seeke.embed) {
@@ -90,7 +103,9 @@ export default defineEventHandler(async (event) => {
       };
     }
 
-    // BOT
+    // =====================
+    // TELEGRAM BOT
+    // =====================
     const botVideo = await telegramRequest(baseUrl, episodeNumber);
 
     if (botVideo) {
@@ -111,7 +126,7 @@ export default defineEventHandler(async (event) => {
 
     return { ok: false, error: "No se pudo obtener el episodio" };
 
-  } catch {
+  } catch (err) {
     return { ok: false, error: "Server error" };
   }
 });
