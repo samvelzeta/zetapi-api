@@ -1,7 +1,7 @@
 import { scrapeSeekeEpisode } from '../../utils/seekeScraper';
 import { getAllServers } from '../../utils/getServers';
 
-const BOT_URL = "https://whether-drove-optimum-makeup.trycloudflare.com"; // 👈 CAMBIAR
+const BOT_URL = "https://due-arabia-recipient-genome.trycloudflare.com"; // 👈 CAMBIAR
 
 function cleanUrl(input: string) {
   let clean = decodeURIComponent(input);
