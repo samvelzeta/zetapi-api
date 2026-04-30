@@ -1,8 +1,8 @@
 import { scrapeSeekeEpisode } from '../../utils/seekeScraper';
 import { getAllServers } from '../../utils/getServers';
 
-// URL del túnel (Asegúrate de que sea la de tu última captura)
-const BOT_URL = "https://converter-assisted-assistant-obj.trycloudflare.com"; 
+// 1. ELIMINAMOS la URL fija de aquí.
+// Usaremos una variable que se asigne dentro del handler.
 
 function cleanUrl(input: string) {
   if (!input) return "";
@@ -14,7 +14,6 @@ function cleanUrl(input: string) {
 
 function generateSafeKey(url: string, ep: number) {
   const base = url.replace(/^https?:\/\//, "").replace(/[^\w]/g, "_");
-  // CORREGIDO: Uso de backticks para evitar el error de compilación
   return `${base}_${ep}`;
 }
 
@@ -32,10 +31,15 @@ export default defineEventHandler(async (event) => {
     const episodeNumber = parseInt(ep as string, 10);
     const baseUrl = cleanUrl(url as string);
 
+    // 2. OBTENER LA VARIABLE DESDE CLOUDFLARE
     const env = event.context.cloudflare?.env || (globalThis as any);
+    
+    // Si la variable existe en Cloudflare, úsala. Si no, usa una por defecto para evitar errores.
+    const FINAL_BOT_URL = env.BOT_TUNNEL_URL || "https://tu-url-temporal.trycloudflare.com";
+
     const cacheKey = generateSafeKey(baseUrl, episodeNumber);
 
-    // 1. CACHE KV
+    // 1. CACHE KV (Igual que antes...)
     if (env?.ANIME_CACHE) {
       const cached = await env.ANIME_CACHE.get(cacheKey);
       if (cached) {
@@ -44,7 +48,7 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // 2. SCRAPER INTERNO
+    // 2. SCRAPER INTERNO (Igual que antes...)
     const seeke = await scrapeSeekeEpisode(baseUrl, episodeNumber);
     if (seeke.status === "success" && isValidVideo(seeke.embed)) {
       const res = { ok: true, episode: episodeNumber, embed: seeke.embed, source: "seeke" };
@@ -52,10 +56,10 @@ export default defineEventHandler(async (event) => {
       return res;
     }
 
-    // 3. LLAMADA AL BOT (TERMUX)
-    console.log("🛠️ Intentando obtener desde Bot en Bello...");
+    // 3. LLAMADA AL BOT (TERMUX) - AHORA USA FINAL_BOT_URL
+    console.log(`🛠️ Intentando conectar al túnel: ${FINAL_BOT_URL}`);
     try {
-      const botRes = await fetch(BOT_URL, {
+      const botRes = await fetch(FINAL_BOT_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: baseUrl, ep: episodeNumber }),
@@ -71,10 +75,10 @@ export default defineEventHandler(async (event) => {
         }
       }
     } catch (e) {
-      console.log("❌ Error en conexión con el bot");
+      console.log("❌ Error en conexión con el bot o túnel offline");
     }
 
-    // 4. FALLBACK FINAL
+    // 4. FALLBACK FINAL (Igual que antes...)
     if (slug) {
       const servers = await getAllServers({ slug, number: episodeNumber, title: slug, env });
       if (servers?.length && isValidVideo(servers[0].embed)) {
