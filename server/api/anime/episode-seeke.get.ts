@@ -2,7 +2,7 @@ import { scrapeSeekeEpisode } from '../../utils/seekeScraper';
 import { getAllServers } from '../../utils/getServers';
 
 // URL del túnel de Termux (Actualizada)
-const BOT_URL = "https://converter-assisted-assistant-obj.trycloudflare.com"; 
+const BOT_URL = "https://a23292-7f5b.c.jrnm.app"; 
 
 function cleanUrl(input: string) {
   if (!input) return "";
