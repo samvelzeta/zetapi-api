@@ -1,15 +1,10 @@
 import { scrapeSeekeEpisode } from '../../utils/seekeScraper';
 import { getAllServers } from '../../utils/getServers';
 
-// URL del bot en JustRunMyApp (Ya no es de Termux)
-const BOT_URL = "https://a23292-7f5b.c.jrnm.app"; 
-
 function cleanUrl(input: string) {
   if (!input) return "";
   let clean = decodeURIComponent(input);
-  // Limpiamos el separador "|" y espacios sobrantes
   clean = clean.split('|')[0].trim();
-  // Quitamos barras finales para evitar URLs inválidas
   clean = clean.replace(/\/+$/, "");
   return clean;
 }
@@ -18,8 +13,6 @@ function generateSafeKey(url: string, ep: number) {
   const base = url
     .replace(/^https?:\/\//, "")
     .replace(/[^\w]/g, "_");
-  
-  // ARREGLADO: Ahora usa backticks (``) para que el template string funcione correctamente
   return `${base}_${ep}`;
 }
 
@@ -39,8 +32,17 @@ export default defineEventHandler(async (event) => {
     const episodeNumber = parseInt(ep as string, 10);
     const baseUrl = cleanUrl(url as string);
 
-    // Ajuste para obtener el entorno de Cloudflare o global
-    const env = event.context.cloudflare?.env || (globalThis as any);
+    // 🛠️ CONFIGURACIÓN DE VARIABLES DE ENTORNO
+    // En Cloudflare Workers/Pages, las variables están en event.context.cloudflare.env
+    const env = event.context.cloudflare?.env || (process.env as any);
+    
+    // Leemos la variable 'BOT_TUNNEL_URL' que configuraste en Settings
+    const BOT_URL = env.BOT_TUNNEL_URL;
+
+    if (!BOT_URL) {
+      console.warn("⚠️ Advertencia: BOT_TUNNEL_URL no está definida en Cloudflare Settings.");
+    }
+
     const cacheKey = generateSafeKey(baseUrl, episodeNumber);
 
     // 1. REVISAR CACHÉ (KV)
@@ -62,21 +64,24 @@ export default defineEventHandler(async (event) => {
       return res;
     }
 
-    // 3. BOT EXTERNO (JustRunMyApp / Hosting)
+    // 3. BOT EXTERNO (JustRunMyApp)
     let data: any = null;
-    try {
-      const botRes = await fetch(BOT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: baseUrl, ep: episodeNumber })
-      });
+    if (BOT_URL) {
+      try {
+        console.log(`📡 Llamando al bot en: ${BOT_URL}`);
+        const botRes = await fetch(BOT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: baseUrl, ep: episodeNumber })
+        });
 
-      if (botRes.ok) {
-        const text = await botRes.text();
-        data = JSON.parse(text);
+        if (botRes.ok) {
+          const text = await botRes.text();
+          data = JSON.parse(text);
+        }
+      } catch (e) {
+        console.log("❌ BOT ERROR:", e);
       }
-    } catch (e) {
-      console.log("❌ BOT ERROR:", e);
     }
 
     if (data && data.ok && isValidVideo(data.embed)) {
