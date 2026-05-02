@@ -45,6 +45,7 @@
   },
   "packageManager": "pnpm@10.15.1",
   "dependencies": {
+    "@cloudflare/puppeteer": "^0.0.14",
     "animeflv-scraper": "^0.1.3"
   }
 }

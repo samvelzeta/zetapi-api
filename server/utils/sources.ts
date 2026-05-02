@@ -1,22 +1,23 @@
-import { getEpisode } from "animeflv-scraper";
 import { fetchHtml } from "./fetcher";
 import { resolveServer } from "./resolver";
 
 // ======================
 // 🔥 HELPERS
 // ======================
-function isZilla(url: string) {
+function isZilla (url: string) {
   return url.includes("zilla-networks");
 }
 
 // ======================
 // 🔥 SCRAPER AV1 (ZILLA)
 // ======================
-export async function scrapePage(url: string) {
-
+export async function scrapePage (url: string) {
   try {
-
-    const html = await fetchHtml(url);
+    const html = await fetchHtml(url, {
+      timeoutMs: 3500,
+      retries: 0,
+      minLength: 80
+    });
     if (!html) return [];
 
     const urls = html.match(/https?:\/\/[^"' ]+/g) || [];
@@ -24,7 +25,6 @@ export async function scrapePage(url: string) {
     const servers: any[] = [];
 
     for (const u of urls) {
-
       if (!isZilla(u)) continue;
 
       servers.push({
@@ -42,8 +42,8 @@ export async function scrapePage(url: string) {
     }
 
     return Array.from(unique.values());
-
-  } catch {
+  }
+  catch {
     return [];
   }
 }
@@ -51,10 +51,8 @@ export async function scrapePage(url: string) {
 // ======================
 // 🔥 JKANIME (FIX REAL)
 // ======================
-export async function getJKAnimeServers(slug: string, number: number) {
-
+export async function getJKAnimeServers (slug: string, number: number) {
   try {
-
     const url = `https://jkanime.net/${slug}/${number}/`;
     const html = await fetchHtml(url);
 
@@ -67,9 +65,7 @@ export async function getJKAnimeServers(slug: string, number: number) {
     ];
 
     for (const match of players) {
-
       try {
-
         const decoded = decodeURIComponent(match[1]);
         const clean = decoded.replace(/\\/g, "");
 
@@ -83,8 +79,10 @@ export async function getJKAnimeServers(slug: string, number: number) {
           name: "jkanime",
           embed: resolved
         });
-
-      } catch {}
+      }
+      catch {
+        continue;
+      }
     }
 
     const unique = new Map();
@@ -96,8 +94,8 @@ export async function getJKAnimeServers(slug: string, number: number) {
     }
 
     return Array.from(unique.values());
-
-  } catch {
+  }
+  catch {
     return [];
   }
 }
