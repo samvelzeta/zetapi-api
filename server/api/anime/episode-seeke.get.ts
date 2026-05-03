@@ -9,7 +9,6 @@ function cleanUrl(input: string) {
   return clean;
 }
 
-// Modificado: El caché ahora diferencia entre versiones (lat/jp)
 function generateSafeKey(url: string, ep: number, lang: string) {
   const base = url
     .replace(/^https?:\/\//, "")
@@ -24,7 +23,6 @@ function isValidVideo(url: string) {
 export default defineEventHandler(async (event) => {
   try {
     const query = getQuery(event);
-    // Extraemos 'lang' de la query (por defecto 'lat')
     const { url, ep, slug, lang = 'lat' } = query;
 
     if (!url || !ep) {
@@ -35,7 +33,7 @@ export default defineEventHandler(async (event) => {
     const baseUrl = cleanUrl(url as string);
     const env = event.context.cloudflare?.env || (globalThis as any);
     
-    // URL dinámica desde el panel de Cloudflare
+    // URL del bot en JustRunMyApp
     const BOT_URL = env.BOT_TUNNEL_URL || "https://a23784-9489.xs001.jrnm.app";
     const cacheKey = generateSafeKey(baseUrl, episodeNumber, lang as string);
 
@@ -52,7 +50,8 @@ export default defineEventHandler(async (event) => {
 
     let responseData: any = null;
 
-    // 2. SCRAPER INTERNO (Solo para Latino por eficiencia)
+    // 2. PRIORIDAD: JAPONÉS -> VA DIRECTO AL BOT PARA SOFT-SUBS
+    // Si es latino, intentamos Seeke primero para ahorrar recursos del VPS
     if (lang === 'lat') {
       const seeke = await scrapeSeekeEpisode(baseUrl, episodeNumber);
       if (seeke.status === "success" && isValidVideo(seeke.embed)) {
@@ -61,20 +60,28 @@ export default defineEventHandler(async (event) => {
           episode: episodeNumber, 
           embed: seeke.embed, 
           source: "seeke",
-          type: "hardsubs" 
+          type: "hardsubs",
+          subtitles: [] 
         };
       }
     }
 
-    // 3. BOT EXTERNO (JustRunMyApp) - Se activa si es Japonés o si Seeke falló
+    // 3. BOT EXTERNO (JustRunMyApp)
+    // Se activa si es Japonés O si el scraper de Latino falló
     if (!responseData) {
       try {
+        // Añadimos un AbortController para no dejar la petición de Cloudflare colgada infinitamente
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 seg máximo
+
         const botRes = await fetch(BOT_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // Enviamos 'lang' para activar el sensor de subtítulos en la VPS
-          body: JSON.stringify({ url: baseUrl, ep: episodeNumber, lang })
+          body: JSON.stringify({ url: baseUrl, ep: episodeNumber, lang }),
+          signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         if (botRes.ok) {
           const data = await botRes.json();
@@ -83,18 +90,19 @@ export default defineEventHandler(async (event) => {
               ok: true, 
               episode: episodeNumber, 
               embed: data.embed, 
-              subtitles: data.subtitles || [], // Array de subs si existen
-              type: data.type || "raw",
+              // Recibimos los subtítulos mapeados por el bot (data-url y data-text)
+              subtitles: data.subtitles || [], 
+              type: data.type || (lang === 'jp' ? "softsubs" : "hardsubs"),
               source: "vps_bot" 
             };
           }
         }
       } catch (e) {
-        console.log("❌ BOT ERROR:", e);
+        console.log("⚠️ VPS_BOT_TIMEOUT o ERROR:", e);
       }
     }
 
-    // 4. FALLBACK (Último recurso - mayormente para latino)
+    // 4. FALLBACK (Último recurso)
     if (!responseData && slug) {
       const servers = await getAllServers({ 
         slug: slug as string, 
@@ -109,22 +117,25 @@ export default defineEventHandler(async (event) => {
           episode: episodeNumber, 
           embed: servers[0].embed, 
           source: "fallback",
-          type: "hardsubs"
+          type: "hardsubs",
+          subtitles: []
         };
       }
     }
 
-    // GUARDAR EN CACHÉ SI TUVIMOS ÉXITO
+    // 5. GUARDAR EN CACHÉ Y RETORNAR
     if (responseData) {
       if (env?.ANIME_CACHE) {
+        // Cacheamos por 24 horas para no saturar el VPS con las mismas peticiones
         await env.ANIME_CACHE.put(cacheKey, JSON.stringify(responseData), { expirationTtl: 86400 });
       }
       return responseData;
     }
 
-    return { ok: false };
+    return { ok: false, error: "no_source_found" };
+
   } catch (err: any) {
-    console.error("💥 CRITICAL API ERROR:", err.message);
-    return { ok: false, error: "internal server error" };
+    console.error("💥 API ERROR:", err.message);
+    return { ok: false, error: "internal_server_error" };
   }
 });
