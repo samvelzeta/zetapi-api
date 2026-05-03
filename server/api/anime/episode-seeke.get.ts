@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     const baseUrl = cleanUrl(url as string);
 
     // 🔥 TU BOT REAL (CORRECTO)
-    const BOT_URL = "https://a23755-9810.e.jrnm.app";
+    const BOT_URL = "https://a23765-a2b6.b.jrnm.app";
 
     let responseData: any = null;
 
