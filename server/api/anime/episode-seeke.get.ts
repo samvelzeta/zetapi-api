@@ -15,7 +15,7 @@ function isValidVideo(url: string) {
 export default defineEventHandler(async (event) => {
   try {
     const query = getQuery(event);
-    const { url, ep, slug, lang = 'lat' } = query;
+    const { url, ep, slug } = query;
 
     if (!url || !ep) {
       return { ok: false, error: "missing params" };
@@ -24,17 +24,17 @@ export default defineEventHandler(async (event) => {
     const episodeNumber = parseInt(ep as string, 10);
     const baseUrl = cleanUrl(url as string);
 
-    // 🔥 TU BOT REAL (CORRECTO)
+    // 🔥 BOT VPS
     const BOT_URL = "https://a24785-ef25.xs001.jrnm.app/extraer";
 
     let responseData: any = null;
 
     // =========================
-    // 1. BOT VPS (PRIORIDAD TOTAL)
+    // 1. BOT VPS (PRIORIDAD)
     // =========================
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // ⚡ más rápido
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
       const botRes = await fetch(BOT_URL, {
         method: "POST",
@@ -53,13 +53,19 @@ export default defineEventHandler(async (event) => {
       if (botRes.ok) {
         const data = await botRes.json();
 
+        console.log("📦 BOT RESPONSE:", data);
+
         if (data && data.ok && isValidVideo(data.embed)) {
+
+          // 🔥 ARREGLO CLAVE (subtitles vs subtitulos)
+          const subs = data.subtitles || data.subtitulos || [];
+
           responseData = {
             ok: true,
             episode: episodeNumber,
             embed: data.embed,
-            subtitles: data.subtitles || [],
-            type: data.subtitles?.length ? "softsubs" : "hardsubs",
+            subtitles: subs,
+            type: subs.length ? "softsubs" : "hardsubs",
             source: "vps_bot"
           };
         }
@@ -70,25 +76,29 @@ export default defineEventHandler(async (event) => {
     }
 
     // =========================
-    // 2. FALLBACK (SI FALLA TODO)
+    // 2. FALLBACK
     // =========================
     if (!responseData && slug) {
-      const servers = await getAllServers({
-        slug: slug as string,
-        number: episodeNumber,
-        title: slug as string,
-        env: event.context.cloudflare?.env
-      });
+      try {
+        const servers = await getAllServers({
+          slug: slug as string,
+          number: episodeNumber,
+          title: slug as string,
+          env: event.context.cloudflare?.env
+        });
 
-      if (servers?.length && isValidVideo(servers[0].embed)) {
-        return {
-          ok: true,
-          episode: episodeNumber,
-          embed: servers[0].embed,
-          subtitles: [],
-          type: "hardsubs",
-          source: "fallback"
-        };
+        if (servers?.length && isValidVideo(servers[0].embed)) {
+          return {
+            ok: true,
+            episode: episodeNumber,
+            embed: servers[0].embed,
+            subtitles: [],
+            type: "hardsubs",
+            source: "fallback"
+          };
+        }
+      } catch (e) {
+        console.log("⚠️ FALLBACK ERROR:", e);
       }
     }
 
