@@ -11,14 +11,10 @@ export default defineEventHandler(async (event) => {
   const language = lang === "latino" ? "latino" : "sub";
   const ep = Number(number);
 
-  // 🔥 ENV SEGURO (FIX REAL KV)
   const env =
     event.context.cloudflare?.env ||
     (globalThis as any);
 
-  // ======================
-  // 🔥 DEBUG (BORRAR LUEGO SI QUIERES)
-  // ======================
   console.log("ENV OK:", !!env);
   console.log("KV OK:", !!env?.ANIME_CACHE);
 
@@ -43,7 +39,12 @@ export default defineEventHandler(async (event) => {
         return {
           success: true,
           source: "kv",
-          data: { slug, number: ep, servers }
+          data: {
+            slug,
+            number: ep,
+            servers,
+            subtitles: cached.subtitles || [] // 🔥 FIX
+          }
         };
       }
     }
@@ -53,7 +54,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // ======================
-  // 🔥 2. SCRAPER
+  // 🔥 2. SCRAPER SERVERS
   // ======================
   const servers = await getAllServers({
     slug,
@@ -65,6 +66,37 @@ export default defineEventHandler(async (event) => {
   console.log("SCRAPER SERVERS:", servers.length);
 
   // ======================
+  // 🔥 2.5 EXTRAER SUBTÍTULOS (BOT)
+  // ======================
+  let subtitles: any[] = [];
+
+  try {
+    const BOT_URL = "https://a24785-ef25.xs001.jrnm.app/extraer";
+
+    const res = await fetch(BOT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        url: `https://latino.solo-latino.com/es/detail/drama/${slug}`,
+        ep
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+
+      subtitles = data.subtitles || data.subtitulos || [];
+
+      console.log("🎯 SUBS DETECTADOS:", subtitles.length);
+    }
+
+  } catch (e) {
+    console.log("⚠️ SUBS BOT ERROR:", e);
+  }
+
+  // ======================
   // 🔥 3. GUARDAR EN KV
   // ======================
   if (servers.length) {
@@ -74,7 +106,8 @@ export default defineEventHandler(async (event) => {
       const payload = {
         sources: {
           embed: servers.map(s => s.embed)
-        }
+        },
+        subtitles // 🔥 FIX
       };
 
       await saveKVVideo(
@@ -94,7 +127,12 @@ export default defineEventHandler(async (event) => {
     return {
       success: true,
       source: "scraper",
-      data: { slug, number: ep, servers }
+      data: {
+        slug,
+        number: ep,
+        servers,
+        subtitles // 🔥 FIX FINAL
+      }
     };
   }
 
@@ -106,6 +144,11 @@ export default defineEventHandler(async (event) => {
   return {
     success: true,
     source: "empty",
-    data: { slug, number: ep, servers: [] }
+    data: {
+      slug,
+      number: ep,
+      servers: [],
+      subtitles: [] // 🔥 FIX
+    }
   };
 });
