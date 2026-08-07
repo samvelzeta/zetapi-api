@@ -1,127 +1,90 @@
-import { getAllServers } from "../../../../utils/getServers";
-import { getKVVideo, saveKVVideo } from "../../../../utils/kv";
+import { getAllServers, getSubtitles } from "../../../../utils/getServers";
 
 export default defineEventHandler(async (event) => {
-
+  // CORS básico
   setHeader(event, "Access-Control-Allow-Origin", "*");
+  if (event.method === "OPTIONS") return "";
 
   const { slug, number } = getRouterParams(event);
   const { lang } = getQuery(event);
 
-  const language = lang === "latino" ? "latino" : "sub";
-  const ep = Number(number);
-
-  const env =
-    event.context.cloudflare?.env ||
-    (globalThis as any);
-
-  console.log("ENV OK:", !!env);
-  console.log("KV OK:", !!env?.ANIME_CACHE);
-
-  // ======================
-  // 🔥 1. INTENTAR KV
-  // ======================
-  try {
-
-    const cached = await getKVVideo(slug, ep, language, env);
-
-    if (cached?.sources) {
-
-      const servers = [
-        ...(cached.sources.hls || []),
-        ...(cached.sources.mp4 || []),
-        ...(cached.sources.embed || [])
-      ].map((u: string) => ({ embed: u }));
-
-      if (servers.length) {
-        console.log("⚡ SERVIDO DESDE KV");
-
-        return {
-          success: true,
-          source: "kv",
-          data: {
-            slug,
-            number: ep,
-            servers,
-            subtitles: cached.subtitles || [] // 🔥 FIX
-          }
-        };
-      }
-    }
-
-  } catch (e) {
-    console.log("❌ KV READ ERROR:", e);
+  const episode = parseInt(number);
+  if (isNaN(episode)) {
+    throw createError({ statusCode: 400, message: "Número de episodio inválido" });
   }
 
-  // ======================
-  // 🔥 2. SCRAPER SERVERS
-  // ======================
+  // --- Intentar KV (si está disponible, si no, lo ignora) ---
+  let cached: any = null;
+  try {
+    const env = (event.context as any).cloudflare?.env;
+    if (env?.ANIME_CACHE) {
+      const key = `${slug}:${episode}:${lang || "sub"}`;
+      const raw = await env.ANIME_CACHE.get(key);
+      if (raw) cached = JSON.parse(raw);
+    }
+  } catch {
+    // sin KV
+  }
+
+  if (cached?.sources) {
+    const servers = [
+      ...(cached.sources.hls || []),
+      ...(cached.sources.mp4 || []),
+      ...(cached.sources.embed || []),
+    ].map((u: string) => ({ embed: u }));
+
+    if (servers.length) {
+      console.log("⚡ Servido desde KV");
+      return {
+        success: true,
+        source: "kv",
+        data: {
+          slug,
+          number: episode,
+          servers,
+          subtitles: cached.subtitles || [],
+        },
+      };
+    }
+  }
+
+  // --- Scraping ---
   const servers = await getAllServers({
     slug,
-    number: ep,
+    number: episode,
     title: slug,
-    env
   });
 
-  console.log("SCRAPER SERVERS:", servers.length);
+  console.log("🔍 Servers encontrados:", servers.length);
 
-  // ======================
-  // 🔥 2.5 EXTRAER SUBTÍTULOS (BOT)
-  // ======================
-  let subtitles: any[] = [];
-
+  // Subtítulos (solo JKAnime)
+  let subtitles: { lang: string; url: string }[] = [];
   try {
-    const BOT_URL = "https://a24785-ef25.xs001.jrnm.app/extraer";
-
-    const res = await fetch(BOT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        url: `https://latino.solo-latino.com/es/detail/drama/${slug}`,
-        ep
-      })
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-
-      subtitles = data.subtitles || data.subtitulos || [];
-
-      console.log("🎯 SUBS DETECTADOS:", subtitles.length);
-    }
-
+    subtitles = await getSubtitles(slug, episode);
+    console.log("🎯 Subtítulos:", subtitles.length);
   } catch (e) {
-    console.log("⚠️ SUBS BOT ERROR:", e);
+    console.log("⚠️ Error obteniendo subtítulos:", e);
   }
 
-  // ======================
-  // 🔥 3. GUARDAR EN KV
-  // ======================
+  // --- Guardar en KV (si existe) ---
   if (servers.length) {
-
     try {
-
-      const payload = {
-        sources: {
-          embed: servers.map(s => s.embed)
-        },
-        subtitles // 🔥 FIX
-      };
-
-      await saveKVVideo(
-        slug,
-        ep,
-        language,
-        payload,
-        env
-      );
-
-      console.log("💾 KV GUARDADO:", `${slug}:${ep}:${language}`);
-
-    } catch (e) {
-      console.log("❌ KV SAVE ERROR:", e);
+      const env = (event.context as any).cloudflare?.env;
+      if (env?.ANIME_CACHE) {
+        const key = `${slug}:${episode}:${lang || "sub"}`;
+        const payload = {
+          sources: {
+            embed: servers.map((s) => s.embed),
+          },
+          subtitles,
+        };
+        await env.ANIME_CACHE.put(key, JSON.stringify(payload), {
+          expirationTtl: 60 * 60 * 24 * 30, // 30 días
+        });
+        console.log("💾 KV guardado");
+      }
+    } catch {
+      // sin KV
     }
 
     return {
@@ -129,26 +92,22 @@ export default defineEventHandler(async (event) => {
       source: "scraper",
       data: {
         slug,
-        number: ep,
+        number: episode,
         servers,
-        subtitles // 🔥 FIX FINAL
-      }
+        subtitles,
+      },
     };
   }
 
-  // ======================
-  // 🔥 4. VACÍO
-  // ======================
-  console.log("⚠️ SIN SERVERS");
-
+  // --- Sin resultados ---
   return {
     success: true,
     source: "empty",
     data: {
       slug,
-      number: ep,
+      number: episode,
       servers: [],
-      subtitles: [] // 🔥 FIX
-    }
+      subtitles: [],
+    },
   };
 });
