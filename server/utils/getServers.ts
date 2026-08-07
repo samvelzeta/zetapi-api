@@ -1,56 +1,52 @@
 import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
-import { scrapePage } from "./sources"; // Zilla (animeav1) – si quieres conservarlo
+import { scrapePage } from "./sources"; // Zilla (opcional)
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
 
 const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
 
-// ----------------------------------------------------------
-// OBTENER TODOS LOS SERVIDORES (JKANIME + ZILLA OPCIONAL)
-// ----------------------------------------------------------
 export async function getAllServers({
   slug,
   number,
   title,
+  anilistId,
   env,
 }: {
   slug: string;
   number: number;
   title?: string;
+  anilistId?: number;
   env?: any;
 }) {
-  const variants = [
-    ...resolveSlugVariants(slug),
-    ...resolveSlugVariants(title || ""),
-  ];
+  // 1. Buscar el slug real de JKAnime usando toda la info disponible
+  const realSlug = await findJKAnimeSlug({ slug, title, anilistId }, env);
+  const targetSlug = realSlug || slug; // fallback al slug original
 
   const allServers: any[] = [];
 
-  // ========== JKANIME ==========
-  for (const v of variants) {
-    let jkServers = await getJKAnimeServers(v, number);
-
-    if (!jkServers.length) {
-      const realSlug = await findJKAnimeSlug(v, env);
-      if (realSlug) jkServers = await getJKAnimeServers(realSlug, number);
+  // 2. Obtener servidores de JKAnime
+  let jkServers = await getJKAnimeServers(targetSlug, number);
+  if (!jkServers.length) {
+    // Si con el slug exacto no encuentra, intentar con variantes
+    const variants = resolveSlugVariants(targetSlug);
+    for (const v of variants) {
+      jkServers = await getJKAnimeServers(v, number);
+      if (jkServers.length) break;
     }
-
-    for (const s of jkServers) {
-      const finalUrl =
-        s.type === "hls" ? `${PROXY}${encodeURIComponent(s.url)}` : s.url;
-      allServers.push({
-        name: s.name,
-        type: s.type === "hls" ? "hls" : "embed",
-        embed: finalUrl,
-      });
-    }
-
-    if (jkServers.length) break; // encontramos, dejamos de probar variantes
   }
 
-  // ========== ZILLA (animeav1) – opcional ==========
-  for (const v of variants) {
-    const av1url = `https://animeav1.com/media/${v}/${number}`;
+  for (const s of jkServers) {
+    const finalUrl = s.type === "hls" ? `${PROXY}${encodeURIComponent(s.url)}` : s.url;
+    allServers.push({
+      name: s.name,
+      type: s.type === "hls" ? "hls" : "embed",
+      embed: finalUrl,
+    });
+  }
+
+  // 3. Opcional: Zilla (animeav1)
+  try {
+    const av1url = `https://animeav1.com/media/${targetSlug}/${number}`;
     const av1Servers = await scrapePage(av1url);
     if (av1Servers.length) {
       allServers.push(
@@ -60,11 +56,10 @@ export async function getAllServers({
           embed: s.embed,
         }))
       );
-      break;
     }
-  }
+  } catch {}
 
-  // Eliminar duplicados
+  // Deduplicar
   const seen = new Set<string>();
   return allServers
     .filter((s) => {
@@ -77,9 +72,6 @@ export async function getAllServers({
     .slice(0, 10);
 }
 
-// ----------------------------------------------------------
-// SUBTÍTULOS UNIFICADOS (solo JKAnime)
-// ----------------------------------------------------------
 export async function getSubtitles(slug: string, episode: number) {
   return getJKAnimeSubtitles(slug, episode);
 }
