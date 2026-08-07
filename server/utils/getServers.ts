@@ -20,16 +20,15 @@ export async function getAllServers({
   const allServers: any[] = [];
   let latestEpisode: number | null = null;
 
-  // Obtener metadatos adicionales (títulos alternativos)
+  // Obtener títulos alternativos desde las APIs de metadatos
+  const searchTitle = title || slug; // slug puede servir como búsqueda inicial
   let extraTitles: string[] = [];
-  if (title) {
-    try {
-      const meta = await getAnimeMetadata(title);
-      extraTitles = meta.titles;
-    } catch {}
-  }
+  try {
+    const meta = await getAnimeMetadata(searchTitle);
+    extraTitles = meta.titles;
+  } catch {}
 
-  // Generar todas las variantes de slugs posibles
+  // Generar todas las variantes de slugs posibles (con los títulos obtenidos)
   const variants = resolveSlugVariants(slug, extraTitles);
 
   // ─── 1. ANIMEFLV ───
@@ -49,9 +48,14 @@ export async function getAllServers({
     }
   }
 
-  // ─── 2. JKANIME ─── (si no se encontró nada en AnimeFLV)
+  // ─── 2. JKANIME ─── (respaldo)
   if (allServers.length === 0) {
-    const jkSlug = await findJKAnimeSlug({ slug, title, anilistId }, env, extraTitles);
+    // Usamos la búsqueda fuzzy mejorada
+    const jkSlug = await findJKAnimeSlug(
+      { slug, title: searchTitle, anilistId },
+      env,
+      extraTitles
+    );
     const targetSlug = jkSlug || slug;
 
     const jkServers = await getJKAnimeServers(targetSlug, number);
