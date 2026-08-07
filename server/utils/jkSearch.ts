@@ -30,27 +30,54 @@ function levenshtein(a: string, b: string): number {
 function similarity(a: string, b: string): number {
   const dist = levenshtein(normalize(a), normalize(b));
   const maxLen = Math.max(a.length, b.length);
-  return 100 - (dist / maxLen) * 100;
+  return 1 - dist / maxLen; // valor entre 0 y 1
 }
 
-async function searchJKAnime(query: string, originalTitle: string, threshold = 75): Promise<string | null> {
+// Ponderación por tipo de título (mayor peso = más importante)
+const TITLE_WEIGHTS: Record<string, number> = {
+  romaji: 1.0,
+  english: 0.95,
+  native: 0.85,
+  synonym: 0.9,
+  default: 0.8,
+};
+
+/**
+ * Busca en JKAnime usando múltiples títulos y devuelve el mejor slug.
+ * - `titles` es un array de objetos { text, type }.
+ */
+async function searchJKAnimeWithTitles(
+  titles: { text: string; type: string }[],
+  threshold = 0.8
+): Promise<string | null> {
   let bestSlug: string | null = null;
   let bestScore = 0;
 
-  for (let page = 1; page <= 2; page++) {
-    const url = `https://jkanime.net/buscar/${encodeURIComponent(query)}/${page}/`;
-    const html = await fetchHtml(url);
-    if (!html) break;
+  // Probar cada título como query (máximo 2 páginas)
+  for (const { text, type } of titles) {
+    const query = normalize(text);
+    for (let page = 1; page <= 2; page++) {
+      const url = `https://jkanime.net/buscar/${encodeURIComponent(query)}/${page}/`;
+      const html = await fetchHtml(url);
+      if (!html) break;
 
-    const results = extractResults(html);
-    if (results.length === 0) break;
+      const results = extractResults(html);
+      if (results.length === 0) break;
 
-    for (const r of results) {
-      const score = similarity(originalTitle, r.title);
-      if (score > bestScore) {
-        bestScore = score;
-        bestSlug = r.slug;
-        if (score >= 95) return bestSlug;
+      for (const r of results) {
+        // Comparar el resultado contra TODOS los títulos (con peso) y quedarse con la mejor similitud
+        let maxSim = 0;
+        for (const t of titles) {
+          const sim = similarity(t.text, r.title);
+          const weighted = sim * (TITLE_WEIGHTS[t.type] || TITLE_WEIGHTS.default);
+          if (weighted > maxSim) maxSim = weighted;
+        }
+
+        if (maxSim > bestScore) {
+          bestScore = maxSim;
+          bestSlug = r.slug;
+          if (maxSim >= 0.95) return bestSlug; // casi perfecto, paramos
+        }
       }
     }
   }
@@ -75,61 +102,60 @@ export async function findJKAnimeSlug(
   env?: any,
   extraTitles?: string[]
 ): Promise<string | null> {
-  if (typeof input === "string") {
-    return findSlugByString(input, env, extraTitles);
+  // Si es string, lo tratamos como slug/título simple
+  const slug = typeof input === "string" ? input : input.slug;
+  const title = typeof input === "string" ? input : input.title;
+  const allTitlesRaw = [slug, title, ...(extraTitles || [])].filter(Boolean) as string[];
+
+  // Preparar array de objetos {text, type}
+  const titleObjects: { text: string; type: string }[] = allTitlesRaw.map(t => ({
+    text: t,
+    type: "default",
+  }));
+
+  // Intentar obtener metadatos si tenemos un título representativo
+  if (title) {
+    try {
+      const { titles } = await import("./metadata").then(m => m.getAnimeMetadata(title));
+      for (const t of titles) {
+        if (!titleObjects.some(o => o.text === t)) {
+          // Clasificar tipo según heurística (romaji, english, etc.)
+          const type = classifyTitleType(t);
+          titleObjects.push({ text: t, type });
+        }
+      }
+    } catch {}
   }
 
-  const { slug, title } = input;
-  const allTitles = [slug, title, ...(extraTitles || [])].filter(Boolean) as string[];
-
-  for (const t of allTitles) {
-    const found = await findSlugByString(t, env, allTitles);
-    if (found) return found;
-  }
-
-  return null;
-}
-
-async function findSlugByString(
-  input: string,
-  env?: any,
-  extraTitles?: string[]
-): Promise<string | null> {
-  const key = normalize(input);
-
-  if (slugCache.has(key)) return slugCache.get(key)!;
-
+  // Verificar caché (memoria + KV)
+  const cacheKey = normalize(slug || title || "");
+  if (slugCache.has(cacheKey)) return slugCache.get(cacheKey)!;
   if (env?.SLUG_CACHE) {
     try {
-      const cached = await env.SLUG_CACHE.get(key);
+      const cached = await env.SLUG_CACHE.get(cacheKey);
       if (cached) {
-        slugCache.set(key, cached);
+        slugCache.set(cacheKey, cached);
         return cached;
       }
     } catch {}
   }
 
-  const words = key.split(" ").filter(w => w.length > 1);
-  const queries = new Set<string>();
-  queries.add(key);
-  queries.add(words.join("-"));
-  queries.add(words.join(""));
-  for (let i = words.length; i > 1; i--) {
-    queries.add(words.slice(0, i).join(" "));
-    queries.add(words.slice(0, i).join("-"));
-  }
+  const best = await searchJKAnimeWithTitles(titleObjects, 0.8);
 
-  const found = await searchJKAnime(Array.from(queries).join(" "), key, 75);
-
-  if (found) {
-    slugCache.set(key, found);
+  if (best) {
+    slugCache.set(cacheKey, best);
     if (env?.SLUG_CACHE) {
-      try {
-        await env.SLUG_CACHE.put(key, found);
-      } catch {}
+      try { await env.SLUG_CACHE.put(cacheKey, best); } catch {}
     }
-    return found;
   }
 
-  return null;
+  return best;
+}
+
+function classifyTitleType(text: string): string {
+  // Heurística simple: si contiene caracteres japoneses → "native"
+  if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(text)) return "native";
+  // Si está en inglés probablemente sea "english"
+  if (/^[a-zA-Z0-9\s\-:]+$/.test(text)) return "english";
+  return "default";
 }
