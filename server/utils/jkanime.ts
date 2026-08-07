@@ -1,9 +1,9 @@
 import { fetchHtml } from "./fetcher";
 
 export interface JKServer {
-  name: string;   // ahora vacío; se rellena en getServers
+  name: string;
   url: string;
-  type: "iframe" | "mp4";
+  type: "iframe";
 }
 
 export interface JKSubtitle {
@@ -12,12 +12,9 @@ export interface JKSubtitle {
 }
 
 // ----------------------------------------------------------
-// EXTRAER SERVIDORES DE JKANIME (Magi, Desu, YourUpload, Mega)
+// EXTRAER MAGI/DESU (IFRAMES ORIGINALES)
 // ----------------------------------------------------------
-export async function getJKAnimeServers(
-  slug: string,
-  episode: number
-): Promise<JKServer[]> {
+export async function getJKAnimeServers(slug: string, episode: number): Promise<JKServer[]> {
   const url = `https://jkanime.net/${slug}/${episode}/`;
   const html = await fetchHtml(url);
   if (!html) return [];
@@ -25,7 +22,6 @@ export async function getJKAnimeServers(
   const servers: JKServer[] = [];
   const seen = new Set<string>();
 
-  // --- 1. MAGI y DESU (video[0] y video[1]) ---
   const videoMatches = html.matchAll(
     /video\[(\d+)\]\s*=\s*'<iframe[^>]+src="([^"]+)"/g
   );
@@ -33,52 +29,22 @@ export async function getJKAnimeServers(
     const idx = parseInt(match[1]);
     const iframeUrl = match[2];
     const name = idx === 0 ? "Desu" : idx === 1 ? "Magi" : `Server${idx}`;
-    // name temporal, lo sobrescribiremos luego
     const fullUrl = iframeUrl.startsWith("http")
       ? iframeUrl
       : `https://jkanime.net${iframeUrl}`;
     if (!seen.has(fullUrl)) {
       seen.add(fullUrl);
-      servers.push({ name: "" /* vacío */, url: fullUrl, type: "iframe" });
+      servers.push({ name, url: fullUrl, type: "iframe" });
     }
-  }
-
-  // --- 2. YOURUPLOAD y MEGA ---
-  const serversMatch = html.match(/var servers = (\[.*?\]);/s);
-  if (serversMatch) {
-    try {
-      const rawList = JSON.parse(serversMatch[1]);
-      for (const item of rawList) {
-        if (item.server !== "YourUpload" && item.server !== "Mega") continue;
-
-        if (item.server === "YourUpload") {
-          const playerIframe = `https://jkanime.net/jkplayer/c1?u=${encodeURIComponent(item.remote)}&s=yourupload`;
-          if (!seen.has(playerIframe)) {
-            seen.add(playerIframe);
-            servers.push({ name: "", url: playerIframe, type: "iframe" });
-          }
-        } else if (item.server === "Mega") {
-          let realUrl = "";
-          try { realUrl = atob(item.remote); } catch { realUrl = atob(item.remote + "=="); }
-          if (realUrl && realUrl.startsWith("http") && !seen.has(realUrl)) {
-            seen.add(realUrl);
-            servers.push({ name: "", url: realUrl, type: "mp4" });
-          }
-        }
-      }
-    } catch { /* ignorar errores de parseo */ }
   }
 
   return servers;
 }
 
 // ----------------------------------------------------------
-// SUBTÍTULOS (sin cambios)
+// SUBTÍTULOS EN ESPAÑOL
 // ----------------------------------------------------------
-export async function getJKAnimeSubtitles(
-  slug: string,
-  episode: number
-): Promise<JKSubtitle[]> {
+export async function getJKAnimeSubtitles(slug: string, episode: number): Promise<JKSubtitle[]> {
   const url = `https://jkanime.net/${slug}/${episode}/`;
   const html = await fetchHtml(url);
   if (!html) return [];
@@ -97,4 +63,39 @@ export async function getJKAnimeSubtitles(
     }
   }
   return subs;
+}
+
+// ----------------------------------------------------------
+// OBTENER ÚLTIMO EPISODIO (CONTANDO LI O PAGINATIONEPS)
+// ----------------------------------------------------------
+export async function getJKAnimeLatestEpisode(slug: string): Promise<number | null> {
+  const url = `https://jkanime.net/${slug}/`;
+  const html = await fetchHtml(url);
+  if (!html) return null;
+
+  // Método 1: contar elementos <li> en la lista de episodios
+  const lis = html.match(/<li[^>]*class="[^"]*episode-item[^"]*"/g);
+  if (lis) return lis.length;
+
+  // Método 2: usar paginationEps(numero)
+  const pagMatch = html.match(/paginationEps\((\d+)\)/);
+  if (pagMatch) return parseInt(pagMatch[1]);
+
+  // Método 3: AJAX a /ajax/episodes/ID/1
+  const idMatch = html.match(/anime_checks\('([^']+)',\s*'(\d+)'\)/);
+  if (idMatch) {
+    const animeId = idMatch[2];
+    const ajaxRes = await fetchHtml(`https://jkanime.net/ajax/episodes/${animeId}/1`, {
+      method: "POST",
+      body: "_token=dummy",
+    });
+    if (ajaxRes) {
+      try {
+        const data = JSON.parse(ajaxRes);
+        return data.data?.length || null;
+      } catch {}
+    }
+  }
+
+  return null;
 }
