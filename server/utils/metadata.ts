@@ -1,5 +1,5 @@
 export interface MetadataResult {
-  titles: string[]; // todas las variantes normalizadas
+  titles: string[];
 }
 
 async function fetchAniListTitles(title: string): Promise<string[]> {
