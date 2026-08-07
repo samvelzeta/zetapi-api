@@ -1,9 +1,9 @@
 import { fetchHtml } from "./fetcher";
 
 export interface JKServer {
-  name: string;
+  name: string;   // ahora vacío; se rellena en getServers
   url: string;
-  type: "iframe" | "mp4";   // iframe para Magi/Desu/YourUpload; mp4 solo para Mega
+  type: "iframe" | "mp4";
 }
 
 export interface JKSubtitle {
@@ -26,7 +26,6 @@ export async function getJKAnimeServers(
   const seen = new Set<string>();
 
   // --- 1. MAGI y DESU (video[0] y video[1]) ---
-  // Usamos los iframes originales que ya funcionan sin anuncios
   const videoMatches = html.matchAll(
     /video\[(\d+)\]\s*=\s*'<iframe[^>]+src="([^"]+)"/g
   );
@@ -34,18 +33,17 @@ export async function getJKAnimeServers(
     const idx = parseInt(match[1]);
     const iframeUrl = match[2];
     const name = idx === 0 ? "Desu" : idx === 1 ? "Magi" : `Server${idx}`;
-
+    // name temporal, lo sobrescribiremos luego
     const fullUrl = iframeUrl.startsWith("http")
       ? iframeUrl
       : `https://jkanime.net${iframeUrl}`;
-
     if (!seen.has(fullUrl)) {
       seen.add(fullUrl);
-      servers.push({ name, url: fullUrl, type: "iframe" });
+      servers.push({ name: "" /* vacío */, url: fullUrl, type: "iframe" });
     }
   }
 
-  // --- 2. YOURUPLOAD y MEGA (desde el array 'var servers') ---
+  // --- 2. YOURUPLOAD y MEGA ---
   const serversMatch = html.match(/var servers = (\[.*?\]);/s);
   if (serversMatch) {
     try {
@@ -54,19 +52,17 @@ export async function getJKAnimeServers(
         if (item.server !== "YourUpload" && item.server !== "Mega") continue;
 
         if (item.server === "YourUpload") {
-          // Usamos el reproductor interno de JKAnime para YourUpload (sin anuncios)
           const playerIframe = `https://jkanime.net/jkplayer/c1?u=${encodeURIComponent(item.remote)}&s=yourupload`;
           if (!seen.has(playerIframe)) {
             seen.add(playerIframe);
-            servers.push({ name: "YourUpload", url: playerIframe, type: "iframe" });
+            servers.push({ name: "", url: playerIframe, type: "iframe" });
           }
         } else if (item.server === "Mega") {
-          // Mega se puede usar como enlace directo
           let realUrl = "";
           try { realUrl = atob(item.remote); } catch { realUrl = atob(item.remote + "=="); }
           if (realUrl && realUrl.startsWith("http") && !seen.has(realUrl)) {
             seen.add(realUrl);
-            servers.push({ name: "Mega", url: realUrl, type: "mp4" });
+            servers.push({ name: "", url: realUrl, type: "mp4" });
           }
         }
       }
@@ -77,7 +73,7 @@ export async function getJKAnimeServers(
 }
 
 // ----------------------------------------------------------
-// SUBTÍTULOS EN ESPAÑOL (sin cambios)
+// SUBTÍTULOS (sin cambios)
 // ----------------------------------------------------------
 export async function getJKAnimeSubtitles(
   slug: string,
