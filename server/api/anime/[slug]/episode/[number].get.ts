@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: "Número de episodio inválido" });
   }
 
-  // KV Cache (opcional)
+  // KV Cache (opcional, lo dejamos preparado)
   let cached: any = null;
   try {
     const env = (event.context as any).cloudflare?.env;
@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
   const { servers, latestEpisode } = await getAllServers({
     slug,
     number: episode,
-    title: slug, // idealmente aquí pasarías el título real desde el frontend
+    title: slug, // si tu frontend puede enviar el título real, mejor
     anilistId: anilistId ? Number(anilistId) : undefined,
   });
 
@@ -54,7 +54,7 @@ export default defineEventHandler(async (event) => {
     console.log("⚠️ Error subtítulos:", e);
   }
 
-  // Guardar en KV
+  // Guardar en KV (si existe)
   if (servers.length) {
     try {
       const env = (event.context as any).cloudflare?.env;
