@@ -1,6 +1,5 @@
 import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
-import { scrapePage } from "./sources"; // Zilla (opcional)
-import { resolveSlugVariants } from "./slugResolver";
+import { scrapePage } from "./sources"; // Zilla (animeav1) – opcional
 import { findJKAnimeSlug } from "./jkSearch";
 
 const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
@@ -18,33 +17,24 @@ export async function getAllServers({
   anilistId?: number;
   env?: any;
 }) {
-  // 1. Buscar el slug real de JKAnime usando toda la info disponible
+  // 1. Buscar el slug real de JKAnime con toda la info disponible
   const realSlug = await findJKAnimeSlug({ slug, title, anilistId }, env);
-  const targetSlug = realSlug || slug; // fallback al slug original
+  const targetSlug = realSlug || slug;
 
   const allServers: any[] = [];
 
-  // 2. Obtener servidores de JKAnime
-  let jkServers = await getJKAnimeServers(targetSlug, number);
-  if (!jkServers.length) {
-    // Si con el slug exacto no encuentra, intentar con variantes
-    const variants = resolveSlugVariants(targetSlug);
-    for (const v of variants) {
-      jkServers = await getJKAnimeServers(v, number);
-      if (jkServers.length) break;
-    }
-  }
-
+  // 2. Obtener servidores de JKAnime (Magi, Desu, YourUpload, Mega)
+  const jkServers = await getJKAnimeServers(targetSlug, number);
   for (const s of jkServers) {
-    const finalUrl = s.type === "hls" ? `${PROXY}${encodeURIComponent(s.url)}` : s.url;
+    // Todos se envían como tipo 'embed' para que el frontend los maneje (iframes o enlaces directos)
     allServers.push({
       name: s.name,
-      type: s.type === "hls" ? "hls" : "embed",
-      embed: finalUrl,
+      type: "embed",
+      embed: s.url,
     });
   }
 
-  // 3. Opcional: Zilla (animeav1)
+  // 3. Zilla (animeav1) – opcional, puedes quitarlo si no lo usas
   try {
     const av1url = `https://animeav1.com/media/${targetSlug}/${number}`;
     const av1Servers = await scrapePage(av1url);
@@ -59,7 +49,7 @@ export async function getAllServers({
     }
   } catch {}
 
-  // Deduplicar
+  // Deduplicar y limitar
   const seen = new Set<string>();
   return allServers
     .filter((s) => {
