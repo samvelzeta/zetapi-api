@@ -1,18 +1,15 @@
 import { fetchHtml } from "./fetcher";
 
-const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
-
 export interface AnimeFLVServer {
   name: string;
   url: string;
-  type: "iframe" | "hls";
+  type: "iframe";
 }
 
 export async function getAnimeFLVServers(
   slug: string,
   episode: number
 ): Promise<{ servers: AnimeFLVServer[]; latestEpisode: number | null }> {
-  // Intentamos varias variantes de URL
   const urls = [
     `https://animeflv.or.at/anime/${slug}/episodio-${episode}/`,
     `https://animeflv.or.at/${slug}/episodio-${episode}/`,
@@ -38,20 +35,15 @@ export async function getAnimeFLVServers(
       if (!decoded || seen.has(decoded)) continue;
       seen.add(decoded);
 
-      // Envolver turbovidhls con proxy para evitar CORS/pantalla negra
-      const finalUrl = decoded.includes("turbovidhls.com")
-        ? `${PROXY}${encodeURIComponent(decoded)}`
-        : decoded;
-
       servers.push({
         name: label,
-        url: finalUrl,
-        type: decoded.includes("turbovidhls.com") ? "hls" : "iframe",
+        url: decoded,
+        type: "iframe",
       });
     } catch {}
   }
 
-  // Obtener último episodio desde la lista de episodios en la misma página
+  // Último episodio desde la lista de episodios en la misma página
   let latestEpisode: number | null = null;
   const epListMatch = html.match(
     /class="episodes-grid"[^>]*>([\s\S]*?)<\/div>/i
