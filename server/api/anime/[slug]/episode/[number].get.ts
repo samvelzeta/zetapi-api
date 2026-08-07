@@ -35,12 +35,7 @@ export default defineEventHandler(async (event) => {
       return {
         success: true,
         source: "kv",
-        data: {
-          slug,
-          number: episode,
-          servers,
-          subtitles: cached.subtitles || [],
-        },
+        data: { slug, number: episode, servers, subtitles: cached.subtitles || [] },
       };
     }
   }
@@ -49,7 +44,7 @@ export default defineEventHandler(async (event) => {
   const servers = await getAllServers({
     slug,
     number: episode,
-    title: slug, // podrías pasar el título real si lo tienes
+    title: slug,
     anilistId: anilistId ? Number(anilistId) : undefined,
   });
 
@@ -81,11 +76,6 @@ export default defineEventHandler(async (event) => {
   return {
     success: true,
     source: servers.length ? "scraper" : "empty",
-    data: {
-      slug,
-      number: episode,
-      servers,
-      subtitles,
-    },
+    data: { slug, number: episode, servers, subtitles },
   };
 });
