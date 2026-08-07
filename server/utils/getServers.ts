@@ -1,134 +1,85 @@
-import {
-  getJKAnimeServers,
-  scrapePage
-} from "./sources";
-
+import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
+import { scrapePage } from "./sources"; // Zilla (animeav1) – si quieres conservarlo
 import { resolveSlugVariants } from "./slugResolver";
 import { findJKAnimeSlug } from "./jkSearch";
 
 const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
 
-function uniqueServers(list: any[]) {
-  const seen = new Set();
-
-  return list.filter(s => {
-    if (!s?.embed) return false;
-
-    const clean = s.embed.split("?")[0];
-
-    if (seen.has(clean)) return false;
-
-    seen.add(clean);
-    return true;
-  });
-}
-
-function isZilla(url: string) {
-  return url.includes("zilla-networks");
-}
-
-export async function getAllServers({ slug, number, title, env }: any) {
-
+// ----------------------------------------------------------
+// OBTENER TODOS LOS SERVIDORES (JKANIME + ZILLA OPCIONAL)
+// ----------------------------------------------------------
+export async function getAllServers({
+  slug,
+  number,
+  title,
+  env,
+}: {
+  slug: string;
+  number: number;
+  title?: string;
+  env?: any;
+}) {
   const variants = [
     ...resolveSlugVariants(slug),
-    ...resolveSlugVariants(title || "")
+    ...resolveSlugVariants(title || ""),
   ];
 
-  let av1: any[] = [];
-  let jk: any[] = [];
+  const allServers: any[] = [];
 
-  // =====================
-  // 🟣 AV1
-  // =====================
+  // ========== JKANIME ==========
   for (const v of variants) {
+    let jkServers = await getJKAnimeServers(v, number);
 
-    const url = `https://animeav1.com/media/${v}/${number}`;
-    const scraped = await scrapePage(url);
-
-    if (!scraped.length) continue;
-
-    for (const s of scraped) {
-
-      if (!isZilla(s.embed)) continue;
-
-      av1.push({
-        name: "Z",
-        type: "embed",
-        embed: s.embed
-      });
-    }
-
-    if (av1.length >= 2) break;
-  }
-
-  // =====================
-  // 🟢 JK NORMAL
-  // =====================
-  for (const v of variants) {
-
-    let servers = await getJKAnimeServers(v, number);
-
-    if (!servers.length) {
+    if (!jkServers.length) {
       const realSlug = await findJKAnimeSlug(v, env);
-      if (realSlug) {
-        servers = await getJKAnimeServers(realSlug, number);
-      }
+      if (realSlug) jkServers = await getJKAnimeServers(realSlug, number);
     }
 
-    if (!servers.length) continue;
-
-    for (const s of servers) {
-
-      jk.push({
-        name: "K",
-        type: "hls",
-        embed: `${PROXY}${encodeURIComponent(s.embed)}`
+    for (const s of jkServers) {
+      const finalUrl =
+        s.type === "hls" ? `${PROXY}${encodeURIComponent(s.url)}` : s.url;
+      allServers.push({
+        name: s.name,
+        type: s.type === "hls" ? "hls" : "embed",
+        embed: finalUrl,
       });
     }
 
-    if (jk.length >= 2) break;
+    if (jkServers.length) break; // encontramos, dejamos de probar variantes
   }
 
-  // =====================
-  // 🔥 RESULTADO
-  // =====================
-  const final = uniqueServers([
-    ...av1,
-    ...jk
-  ]).slice(0, 6);
-
-  // =====================
-  // 🚨 SENSOR ANTI-VACÍO
-  // =====================
-  if (!final.length) {
-
-    console.log("⚠️ VACÍO → FORZANDO JK");
-
-    for (const v of variants) {
-
-      let servers = await getJKAnimeServers(v, number);
-
-      if (!servers.length) {
-        const realSlug = await findJKAnimeSlug(v, env);
-        if (realSlug) {
-          servers = await getJKAnimeServers(realSlug, number);
-        }
-      }
-
-      if (!servers.length) continue;
-
-      const forced = servers.map(s => ({
-        name: "K",
-        type: "hls",
-        embed: `${PROXY}${encodeURIComponent(s.embed)}`
-      }));
-
-      if (forced.length) {
-        console.log("🔥 JK FORZADO OK");
-        return forced.slice(0, 5);
-      }
+  // ========== ZILLA (animeav1) – opcional ==========
+  for (const v of variants) {
+    const av1url = `https://animeav1.com/media/${v}/${number}`;
+    const av1Servers = await scrapePage(av1url);
+    if (av1Servers.length) {
+      allServers.push(
+        ...av1Servers.map((s: any) => ({
+          name: "Z",
+          type: "embed",
+          embed: s.embed,
+        }))
+      );
+      break;
     }
   }
 
-  return final;
+  // Eliminar duplicados
+  const seen = new Set<string>();
+  return allServers
+    .filter((s) => {
+      if (!s.embed) return false;
+      const key = s.embed.split("?")[0];
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 10);
+}
+
+// ----------------------------------------------------------
+// SUBTÍTULOS UNIFICADOS (solo JKAnime)
+// ----------------------------------------------------------
+export async function getSubtitles(slug: string, episode: number) {
+  return getJKAnimeSubtitles(slug, episode);
 }
