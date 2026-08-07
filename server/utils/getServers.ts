@@ -1,6 +1,10 @@
 import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
-import { scrapePage } from "./sources"; // Zilla (opcional)
+import { getAnimeAV1Servers } from "./animeav1";
+import { getSoloLatinoServers } from "./sololatino";
+import { scrapePage } from "./sources"; // Zilla opcional (ya no se usará)
 import { findJKAnimeSlug } from "./jkSearch";
+
+const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
 
 export async function getAllServers({
   slug,
@@ -8,45 +12,84 @@ export async function getAllServers({
   title,
   anilistId,
   env,
+  lang,
+  season,
 }: {
   slug: string;
   number: number;
   title?: string;
   anilistId?: number;
   env?: any;
+  lang?: string;
+  season?: number;
 }) {
+  // Buscar slug real de JKAnime
   const realSlug = await findJKAnimeSlug({ slug, title, anilistId }, env);
   const targetSlug = realSlug || slug;
 
   const allServers: any[] = [];
 
-  // 1. Servidores JKAnime (Magi, Desu, YourUpload, Mega)
+  // ─── JKANIME (Magi, Desu, etc.) ───
   const jkServers = await getJKAnimeServers(targetSlug, number);
   for (const s of jkServers) {
     allServers.push({
-      // nombre vacío, se rellena después
       name: "",
-      type: "Externo",       // siempre "Externo"
+      type: "embed",
       embed: s.url,
+      lang: "sub", // JKAnime siempre es sub
     });
   }
 
-  // 2. Zilla (opcional)
+  // ─── ANIMEAV1 (Zilla, UPNShare) ───
   try {
-    const av1url = `https://animeav1.com/media/${targetSlug}/${number}`;
-    const av1Servers = await scrapePage(av1url);
-    if (av1Servers.length) {
-      for (const s of av1Servers) {
-        allServers.push({
-          name: "",
-          type: "Externo",
-          embed: s.embed,
-        });
-      }
+    const av1Servers = await getAnimeAV1Servers(targetSlug, number);
+    for (const s of av1Servers) {
+      allServers.push({
+        name: "",
+        type: "embed",
+        embed: s.url,
+        lang: "sub",
+      });
     }
   } catch {}
 
-  // Eliminar duplicados (mantiene el orden de inserción)
+  // ─── SOLOLATINO (Doblado) ───
+  if (lang === "dub" && season) {
+    try {
+      const soloServers = await getSoloLatinoServers(
+        targetSlug,
+        season,
+        number
+      );
+      for (const s of soloServers) {
+        allServers.push({
+          name: "",
+          type: "embed",
+          embed: s.url,
+          lang: "dub",
+        });
+      }
+    } catch {}
+  }
+
+  // ─── ZILLA (animeav1) antiguo – lo dejamos por si acaso, pero ya no se usa ───
+  // Si prefieres eliminarlo, borra el siguiente bloque.
+  try {
+    const av1url = `https://animeav1.com/media/${targetSlug}/${number}`;
+    const legacyAV1 = await scrapePage(av1url);
+    if (legacyAV1.length) {
+      allServers.push(
+        ...legacyAV1.map((s: any) => ({
+          name: "",
+          type: "embed",
+          embed: s.embed,
+          lang: "sub",
+        }))
+      );
+    }
+  } catch {}
+
+  // Deduplicar y asignar nombres genéricos
   const seen = new Set<string>();
   const unique = allServers.filter((s) => {
     if (!s.embed) return false;
@@ -56,10 +99,9 @@ export async function getAllServers({
     return true;
   });
 
-  // Asignar nombres genéricos: Servidor 1, Servidor 2, ...
-  return unique.slice(0, 10).map((s, i) => ({
+  return unique.slice(0, 15).map((s, i) => ({
     ...s,
-    name: `Servidor ${i + 1}`,
+    name: `Servidor ${i + 1}${s.lang === "dub" ? " (Dub)" : ""}`,
   }));
 }
 
