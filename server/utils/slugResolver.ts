@@ -19,15 +19,15 @@ export function resolveSlugVariants(input: string, extraTitles: string[] = []): 
     const joined = words.join("-");
     variants.add(joined);
 
-    // Quitar season y poner número solo
+    // Quitar "season X" y poner solo número
     const noSeason = base.replace(/\bseason\s*(\d+)\b/i, "$1").replace(/\s+/g, "-");
     variants.add(noSeason);
 
-    // TV + número
+    // Reemplazar "season X" por "tv-X"
     const withTV = base.replace(/\bseason\s*(\d+)\b/i, "tv-$1").replace(/\s+/g, "-");
     variants.add(withTV);
 
-    // Versiones cortas (2-3 palabras)
+    // Versiones cortas (2-4 palabras)
     for (let i = 2; i <= 4; i++) {
       if (words.length >= i) variants.add(words.slice(0, i).join("-"));
     }
@@ -38,7 +38,7 @@ export function resolveSlugVariants(input: string, extraTitles: string[] = []): 
       variants.add(joined + suf);
     }
 
-    // Sin caracteres
+    // Versión sin espacios
     variants.add(words.join(""));
   }
 
