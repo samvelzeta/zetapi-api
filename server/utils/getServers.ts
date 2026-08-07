@@ -1,6 +1,8 @@
-import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
+import { getJKAnimeServers, getJKAnimeSubtitles, getJKAnimeLatestEpisode } from "./jkanime";
 import { getAnimeFLVServers } from "./animeflv";
 import { findJKAnimeSlug } from "./jkSearch";
+import { getAnimeMetadata } from "./metadata";
+import { resolveSlugVariants } from "./slugResolver";
 
 export async function getAllServers({
   slug,
@@ -16,24 +18,41 @@ export async function getAllServers({
   env?: any;
 }) {
   const allServers: any[] = [];
+  let latestEpisode: number | null = null;
 
-  // ─── 1. ANIMEFLV (TurboVid, UPNShare, Mega, MP4Upload) ─── PRIORIDAD MÁXIMA
-  try {
-    const flvServers = await getAnimeFLVServers(slug, number);
-    for (const s of flvServers) {
-      allServers.push({
-        name: s.name,
-        type: "embed",
-        embed: s.url,
-        lang: "sub",
-      });
+  // Obtener metadatos adicionales (títulos alternativos)
+  let extraTitles: string[] = [];
+  if (title) {
+    try {
+      const meta = await getAnimeMetadata(title);
+      extraTitles = meta.titles;
+    } catch {}
+  }
+
+  // Generar todas las variantes de slugs posibles
+  const variants = resolveSlugVariants(slug, extraTitles);
+
+  // ─── 1. ANIMEFLV ───
+  for (const variant of variants) {
+    const { servers, latestEpisode: le } = await getAnimeFLVServers(variant, number);
+    if (servers.length) {
+      allServers.push(
+        ...servers.map(s => ({
+          name: s.name,
+          type: "embed",
+          embed: s.url,
+          lang: "sub",
+        }))
+      );
+      if (le) latestEpisode = le;
+      break;
     }
-  } catch {}
+  }
 
-  // ─── 2. JKANIME (Magi, Desu) ─── RESPALDO
+  // ─── 2. JKANIME ─── (si no se encontró nada en AnimeFLV)
   if (allServers.length === 0) {
-    const realSlug = await findJKAnimeSlug({ slug, title, anilistId }, env);
-    const targetSlug = realSlug || slug;
+    const jkSlug = await findJKAnimeSlug({ slug, title, anilistId }, env, extraTitles);
+    const targetSlug = jkSlug || slug;
 
     const jkServers = await getJKAnimeServers(targetSlug, number);
     for (const s of jkServers) {
@@ -44,6 +63,9 @@ export async function getAllServers({
         lang: "sub",
       });
     }
+
+    const jkLatest = await getJKAnimeLatestEpisode(targetSlug);
+    if (jkLatest) latestEpisode = jkLatest;
   }
 
   // Deduplicar
@@ -56,7 +78,10 @@ export async function getAllServers({
     return true;
   });
 
-  return unique.slice(0, 15);
+  return {
+    servers: unique.slice(0, 15),
+    latestEpisode,
+  };
 }
 
 export async function getSubtitles(slug: string, episode: number) {
