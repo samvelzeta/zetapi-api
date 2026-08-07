@@ -1,53 +1,66 @@
 import { fetchHtml } from "./fetcher";
 
+const PROXY = "https://zetapi-api.samvelzeta.workers.dev/proxy?url=";
+
 export interface AnimeFLVServer {
   name: string;
   url: string;
-  type: "iframe" | "embed";
+  type: "iframe" | "hls";
 }
 
-// ----------------------------------------------------------
-// EXTRAER SERVIDORES DE ANIMEFLV (TURBOVID, UPNShare, Mega, etc.)
-// ----------------------------------------------------------
 export async function getAnimeFLVServers(
   slug: string,
   episode: number
-): Promise<AnimeFLVServer[]> {
-  // Construir URL del episodio
-  // El slug en animeflv suele ser igual al título en minúsculas con guiones
-  const url = `https://animeflv.or.at/anime/${slug}/episodio-${episode}/`;
-  const html = await fetchHtml(url);
-  if (!html) return [];
+): Promise<{ servers: AnimeFLVServer[]; latestEpisode: number | null }> {
+  // Intentamos varias variantes de URL
+  const urls = [
+    `https://animeflv.or.at/anime/${slug}/episodio-${episode}/`,
+    `https://animeflv.or.at/${slug}/episodio-${episode}/`,
+  ];
+  let html: string | null = null;
+  for (const u of urls) {
+    html = await fetchHtml(u);
+    if (html) break;
+  }
+  if (!html) return { servers: [], latestEpisode: null };
 
-  // Buscar todos los botones con data-src (contienen URLs en Base64)
-  const buttonRegex = /<button[^>]*data-src="([^"]+)"[^>]*>([^<]*)<\/button>/gi;
   const servers: AnimeFLVServer[] = [];
   const seen = new Set<string>();
 
+  // Extraer servidores de los botones data-src
+  const buttonRegex = /<button[^>]*data-src="([^"]+)"[^>]*>([^<]*)<\/button>/gi;
   let match;
   while ((match = buttonRegex.exec(html)) !== null) {
-    const b64Url = match[1];
+    const b64 = match[1];
     const label = match[2].trim() || "Server";
-    
-    if (!b64Url) continue;
-
-    // Decodificar Base64 para obtener la URL real
-    let decodedUrl = "";
     try {
-      decodedUrl = atob(b64Url);
-    } catch {
-      continue;
-    }
+      const decoded = atob(b64);
+      if (!decoded || seen.has(decoded)) continue;
+      seen.add(decoded);
 
-    if (!decodedUrl || seen.has(decodedUrl)) continue;
-    seen.add(decodedUrl);
+      // Envolver turbovidhls con proxy para evitar CORS/pantalla negra
+      const finalUrl = decoded.includes("turbovidhls.com")
+        ? `${PROXY}${encodeURIComponent(decoded)}`
+        : decoded;
 
-    servers.push({
-      name: label,
-      url: decodedUrl,
-      type: "iframe",
-    });
+      servers.push({
+        name: label,
+        url: finalUrl,
+        type: decoded.includes("turbovidhls.com") ? "hls" : "iframe",
+      });
+    } catch {}
   }
 
-  return servers;
+  // Obtener último episodio desde la lista de episodios en la misma página
+  let latestEpisode: number | null = null;
+  const epListMatch = html.match(
+    /class="episodes-grid"[^>]*>([\s\S]*?)<\/div>/i
+  );
+  if (epListMatch) {
+    const numbers = [...epListMatch[1].matchAll(/>(\d+)<\//g)];
+    const nums = numbers.map(m => parseInt(m[1])).filter(n => !isNaN(n));
+    if (nums.length) latestEpisode = Math.max(...nums);
+  }
+
+  return { servers, latestEpisode };
 }
