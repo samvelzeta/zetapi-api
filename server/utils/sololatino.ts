@@ -6,53 +6,82 @@ export interface SoloLatinoServer {
   type: "iframe";
 }
 
-// ----------------------------------------------------------
-// EXTRAER SERVIDORES DE SOLOLATINO (VIP y otros iframes)
-// ----------------------------------------------------------
+/**
+ * Obtiene el token CSRF desde el meta tag de la página.
+ */
+function extractCsrfToken(html: string): string | null {
+  const match = html.match(
+    /<meta name="csrf-token" content="([^"]+)"/
+  );
+  return match ? match[1] : null;
+}
+
+/**
+ * Llama a la API interna de SoloLatino para obtener las URLs de los reproductores.
+ */
+async function fetchPlayerUrls(
+  slug: string,
+  season: number,
+  episode: number,
+  csrfToken: string
+): Promise<string[]> {
+  const apiUrl = "https://sololatino.net/api/player-url";
+  const payload = {
+    t: csrfToken, // El token CSRF se envía como "t"
+    // Otros parámetros que puedan ser necesarios según la página
+    // (pueden ser deducidos del HTML)
+  };
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-TOKEN": csrfToken,
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": `https://sololatino.net/serie/${slug}/temporada-${season}/episodio-${episode}`,
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) return [];
+    const data = await response.json();
+    // La respuesta puede ser un objeto simple o un array de servidores
+    if (Array.isArray(data)) {
+      return data
+        .filter((item: any) => item.url && item.type === "iframe")
+        .map((item: any) => item.url.replace(/\\\//g, "/"));
+    } else if (data.url) {
+      return [data.url.replace(/\\\//g, "/")];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 export async function getSoloLatinoServers(
   slug: string,
   season: number,
   episode: number
 ): Promise<SoloLatinoServer[]> {
-  const url = `https://sololatino.net/serie/${slug}/temporada-${season}/episodio-${episode}`;
-  const html = await fetchHtml(url);
+  const pageUrl = `https://sololatino.net/serie/${slug}/temporada-${season}/episodio-${episode}`;
+  const html = await fetchHtml(pageUrl);
   if (!html) return [];
 
+  const csrfToken = extractCsrfToken(html);
+  if (!csrfToken) return [];
+
+  const iframeUrls = await fetchPlayerUrls(slug, season, episode, csrfToken);
   const servers: SoloLatinoServer[] = [];
   const seen = new Set<string>();
 
-  // 1. Buscar iframes cuyo src contenga "player.pelisserieshoy.com"
-  const iframeRegex =
-    /<iframe[^>]+src="(https:\/\/player\.pelisserieshoy\.com\/f\/[^"]+)"/gi;
-  let match;
-  while ((match = iframeRegex.exec(html)) !== null) {
-    const iframeUrl = match[1];
-    if (!seen.has(iframeUrl)) {
-      seen.add(iframeUrl);
-      servers.push({ name: "", url: iframeUrl, type: "iframe" });
-    }
-  }
-
-  // 2. Buscar URLs de pelisserieshoy dentro de scripts (posibles VIP)
-  const scriptRegex =
-    /"url":"(https:\\\/\\\/player\.pelisserieshoy\.com\\\/f\\\/[^"]+)"/g;
-  while ((match = scriptRegex.exec(html)) !== null) {
-    let iframeUrl = match[1].replace(/\\\//g, "/");
-    if (!seen.has(iframeUrl)) {
-      seen.add(iframeUrl);
-      servers.push({ name: "", url: iframeUrl, type: "iframe" });
-    }
-  }
-
-  // 3. Buscar otros iframes genéricos de reproductores conocidos (opcional)
-  const genericIframes = html.matchAll(
-    /<iframe[^>]+src="(https:\/\/(?:player\.pelisserieshoy|embed69|pelisplay|streamtape|ok\.ru|dood|uqload)\.com\/[^"]+)"/gi
-  );
-  for (const m of genericIframes) {
-    const src = m[1];
-    if (!seen.has(src)) {
-      seen.add(src);
-      servers.push({ name: "", url: src, type: "iframe" });
+  for (const url of iframeUrls) {
+    if (!seen.has(url)) {
+      seen.add(url);
+      servers.push({ name: "", url, type: "iframe" });
     }
   }
 
