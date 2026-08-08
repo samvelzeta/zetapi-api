@@ -1,5 +1,4 @@
 import { getAllServers } from "../../../../utils/getServers";
-import { getJKAnimeSubtitles } from "../../../../utils/jkanime";
 
 export default defineEventHandler(async (event) => {
   setHeader(event, "Access-Control-Allow-Origin", "*");
@@ -28,21 +27,18 @@ export default defineEventHandler(async (event) => {
     return {
       success: true,
       source: "kv",
-      data: { slug, number: episode, servers: cached.servers, subtitles: cached.subtitles || [], latestEpisode: cached.latestEpisode || null }
+      data: { slug, number: episode, servers: cached.servers, subtitles: [], latestEpisode: cached.latestEpisode || null }
     };
   }
 
   const { servers, latestEpisode } = await getAllServers({
     slug,
     number: episode,
-    title: slug,
+    title: slug, // si tu frontend puede enviar el título real, mejor
     anilistId: anilistId ? Number(anilistId) : undefined,
   });
 
-  let subtitles: { lang: string; url: string }[] = [];
-  try {
-    subtitles = await getJKAnimeSubtitles(slug, episode);
-  } catch {}
+  console.log("🔍 Servers encontrados:", servers.length);
 
   // Guardar en KV
   if (servers.length) {
@@ -50,7 +46,7 @@ export default defineEventHandler(async (event) => {
       const env = (event.context as any).cloudflare?.env;
       if (env?.ANIME_CACHE) {
         const key = `${slug}:${episode}:${lang || "sub"}`;
-        await env.ANIME_CACHE.put(key, JSON.stringify({ servers, subtitles, latestEpisode }), { expirationTtl: 60 * 60 * 24 * 30 });
+        await env.ANIME_CACHE.put(key, JSON.stringify({ servers, subtitles: [], latestEpisode }), { expirationTtl: 60 * 60 * 24 * 30 });
       }
     } catch {}
   }
@@ -58,6 +54,6 @@ export default defineEventHandler(async (event) => {
   return {
     success: true,
     source: servers.length ? "scraper" : "empty",
-    data: { slug, number: episode, servers, subtitles, latestEpisode },
+    data: { slug, number: episode, servers, subtitles: [], latestEpisode },
   };
 });
