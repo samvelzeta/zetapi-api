@@ -1,8 +1,7 @@
-import { getJKAnimeServers, getJKAnimeSubtitles, getJKAnimeLatestEpisode } from "./jkanime";
+import { getJKAnimeServers, getJKAnimeLatestEpisode, findJKAnimeSlug } from "./jkanime";
 import { getAnimeFLVServers } from "./animeflv";
-import { findJKAnimeSlug } from "./jkSearch";
 import { getAnimeMetadata } from "./metadata";
-import { resolveSlugVariants } from "./slugResolver"; // Solo para AnimeFLV
+import { resolveSlugVariants } from "./slugResolver"; // solo para AnimeFLV
 
 export async function getAllServers({
   slug,
@@ -27,7 +26,7 @@ export async function getAllServers({
     extraTitles = meta.titles;
   } catch {}
 
-  // ─── 1. ANIMEFLV (aún con variantes de slug, hasta que implementemos su buscador) ───
+  // ─── 1. ANIMEFLV (con variantes de slug) ───
   const variants = resolveSlugVariants(slug, extraTitles);
   for (const variant of variants) {
     const { servers, latestEpisode: le } = await getAnimeFLVServers(variant, number);
@@ -43,24 +42,18 @@ export async function getAllServers({
     }
   }
 
-  // ─── 2. JKANIME (buscador mejorado) ───
+  // ─── 2. JKANIME (búsqueda por título real) ───
   if (allServers.length === 0) {
-    const jkSlug = await findJKAnimeSlug(
-      { slug, title: searchTitle, anilistId },
-      env,
-      extraTitles
-    );
+    const jkSlug = await findJKAnimeSlug(searchTitle, extraTitles);
     if (jkSlug) {
-      // Validar que el episodio existe (ya lo hace findJKAnimeSlug indirectamente)
       const jkServers = await getJKAnimeServers(jkSlug, number);
       if (jkServers.length) {
         allServers.push(...jkServers.map(s => ({
           name: s.name,
           type: "embed",
-          embed: s.url,
+          embed: s.embed,
           lang: "sub"
         })));
-
         const jkLatest = await getJKAnimeLatestEpisode(jkSlug);
         if (jkLatest) latestEpisode = jkLatest;
       }
@@ -81,8 +74,4 @@ export async function getAllServers({
     servers: unique.slice(0, 15),
     latestEpisode,
   };
-}
-
-export async function getSubtitles(slug: string, episode: number) {
-  return getJKAnimeSubtitles(slug, episode);
 }
