@@ -1,6 +1,6 @@
-import { getAnimeAV1Servers } from "./animeav1/servers";
-import { getJKAnimeServers } from "./jkanime/servers";
-import { getAnimeMetadata } from "./metadata";
+import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
+import { scrapePage } from "./sources"; // Zilla (opcional)
+import { findJKAnimeSlug } from "./jkSearch";
 
 export async function getAllServers({
   slug,
@@ -15,45 +15,40 @@ export async function getAllServers({
   anilistId?: number;
   env?: any;
 }) {
-  const searchTitle = title || slug;
-  const meta = await getAnimeMetadata(searchTitle);
+  const realSlug = await findJKAnimeSlug({ slug, title, anilistId }, env);
+  const targetSlug = realSlug || slug;
+
   const allServers: any[] = [];
 
-  // ─── 1. ANIMEAV1 ───
-  try {
-    const av1 = await getAnimeAV1Servers(
-      searchTitle,
-      meta.titles,
-      meta.malId,
-      number
-    );
-    allServers.push(...av1.map(s => ({
-      name: s.name,
-      type: "Externo",
-      embed: s.embed,
-      lang: "sub",
-    })));
-  } catch (e) { console.log("AV1 error:", e); }
+  // 1. Servidores JKAnime (Magi, Desu, YourUpload, Mega)
+  const jkServers = await getJKAnimeServers(targetSlug, number);
+  for (const s of jkServers) {
+    allServers.push({
+      // nombre vacío, se rellena después
+      name: "",
+      type: "Externo",       // siempre "Externo"
+      embed: s.url,
+    });
+  }
 
-  // ─── 2. JKANIME ───
+  // 2. Zilla (opcional)
   try {
-    const jk = await getJKAnimeServers(
-      searchTitle,
-      meta.titles,
-      meta.malId,
-      number
-    );
-    allServers.push(...jk.map(s => ({
-      name: s.name,
-      type: "Externo",
-      embed: s.embed,
-      lang: "sub",
-    })));
-  } catch (e) { console.log("JK error:", e); }
+    const av1url = `https://animeav1.com/media/${targetSlug}/${number}`;
+    const av1Servers = await scrapePage(av1url);
+    if (av1Servers.length) {
+      for (const s of av1Servers) {
+        allServers.push({
+          name: "",
+          type: "Externo",
+          embed: s.embed,
+        });
+      }
+    }
+  } catch {}
 
-  // Deduplicar (manteniendo orden: primero AV1, luego JK)
+  // Eliminar duplicados (mantiene el orden de inserción)
   const seen = new Set<string>();
-  const unique = allServers.filter(s => {
+  const unique = allServers.filter((s) => {
     if (!s.embed) return false;
     const key = s.embed.split("?")[0];
     if (seen.has(key)) return false;
@@ -61,12 +56,13 @@ export async function getAllServers({
     return true;
   });
 
-  // Asignar nombres genéricos: Servidor 1, Servidor 2...
-  return {
-    servers: unique.slice(0, 15).map((s, i) => ({
-      ...s,
-      name: `Servidor ${i + 1}`,
-    })),
-    latestEpisode: null,
-  };
+  // Asignar nombres genéricos: Servidor 1, Servidor 2, ...
+  return unique.slice(0, 10).map((s, i) => ({
+    ...s,
+    name: `Servidor ${i + 1}`,
+  }));
+}
+
+export async function getSubtitles(slug: string, episode: number) {
+  return getJKAnimeSubtitles(slug, episode);
 }
