@@ -2,6 +2,7 @@ import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
 import { scrapePage } from "./sources";
 import { findJKAnimeSlug } from "./jkSearch";
 import { getAnimeMetadata } from "./metadata";
+import { matchScore } from "./titleMatcher";
 
 const PROXY_ZILLA = "/proxy-zilla?url=";
 
@@ -20,49 +21,38 @@ export async function getAllServers({
 }) {
   const allServers: any[] = [];
 
-  // Obtener todos los títulos desde AniList
   const searchTitle = title || slug;
   const meta = await getAnimeMetadata(searchTitle);
+  const allTitles = meta.titles;
 
   // ─── 1. ANIMEAV1 (Zilla) ───
-  // Probar cada título como slug (reemplazamos espacios por guiones)
+  // Generar candidatos de slug a partir de todos los títulos (sin limitarse a una sola transformación)
   const tried = new Set<string>();
-  for (const variantTitle of meta.titles) {
-    const candidateSlug = variantTitle
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-");
+  for (const t of allTitles) {
+    const candidateSlugs = generateSlugVariants(t);
+    for (const candidateSlug of candidateSlugs) {
+      if (tried.has(candidateSlug)) continue;
+      tried.add(candidateSlug);
 
-    if (tried.has(candidateSlug)) continue;
-    tried.add(candidateSlug);
-
-    const url = `https://animeav1.com/media/${candidateSlug}/${number}`;
-    const av1Servers = await scrapePage(url);
-    if (av1Servers.length) {
-      for (const s of av1Servers) {
-        allServers.push({
-          name: "",
-          type: "Externo",
-          embed: `${PROXY_ZILLA}${encodeURIComponent(s.embed)}`,
-        });
+      const url = `https://animeav1.com/media/${candidateSlug}/${number}`;
+      const av1Servers = await scrapePage(url);
+      if (av1Servers.length) {
+        for (const s of av1Servers) {
+          allServers.push({
+            name: "",
+            type: "Externo",
+            embed: `${PROXY_ZILLA}${encodeURIComponent(s.embed)}`,
+          });
+        }
+        break; // encontrado, salimos del bucle
       }
-      break; // encontrado, salimos del bucle
     }
+    if (allServers.length) break; // ya tenemos servidores
   }
 
   // ─── 2. JKANIME (Magi, Desu) ───
   if (allServers.length === 0) {
-    // Probar cada título de la metadata hasta encontrar un slug válido
-    let jkSlug: string | null = null;
-    for (const variantTitle of meta.titles) {
-      jkSlug = await findJKAnimeSlug(variantTitle, env);
-      if (jkSlug) break;
-    }
-    // Fallback: si no encontró, intentamos con el slug original
-    if (!jkSlug) {
-      jkSlug = await findJKAnimeSlug(searchTitle, env);
-    }
+    const jkSlug = await findJKAnimeSlug(searchTitle, env, allTitles, meta.malId);
     const targetSlug = jkSlug || slug;
 
     const jkServers = await getJKAnimeServers(targetSlug, number);
@@ -93,4 +83,39 @@ export async function getAllServers({
 
 export async function getSubtitles(slug: string, episode: number) {
   return getJKAnimeSubtitles(slug, episode);
+}
+
+// ─── Helper: genera variantes de slug para AnimeAV1 ───
+function generateSlugVariants(title: string): string[] {
+  const base = title
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+
+  const variants = new Set<string>();
+  variants.add(base);
+
+  // Sin temporada / parte / cour
+  const noSeason = base
+    .replace(/\b(season|temporada|part|parte|cour)-?\d+\b/gi, "")
+    .replace(/\b\d+(st|nd|rd|th)-?(season|temporada)\b/gi, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  if (noSeason && noSeason !== base) variants.add(noSeason);
+
+  // Versión corta (primeras 3-4 palabras)
+  const words = base.split("-").filter(w => w.length > 1);
+  if (words.length >= 3) {
+    variants.add(words.slice(0, 3).join("-"));
+    variants.add(words.slice(0, 4).join("-"));
+  }
+
+  // Reemplazar "season" por "tv" y viceversa
+  if (base.includes("season")) variants.add(base.replace(/season/gi, "tv"));
+  if (base.includes("tv")) variants.add(base.replace(/tv/gi, "season"));
+
+  return Array.from(variants).slice(0, 8);
 }
