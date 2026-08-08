@@ -5,305 +5,265 @@ const JK_BASE = "https://jkanime.net";
 // ======================================================
 // TIPOS
 // ======================================================
-export interface JKAnimeSearchResult {
+export interface JKSearchResult {
   title: string;
   slug: string;
   url: string;
-  score: number;
+  score?: number;
 }
 
-export interface JKAnimeServer {
+export interface JKServer {
   name: string;
-  type: "iframe";
-  embed: string;
-  lang: "sub";
-}
-
-export interface JKSubtitle {
-  lang: string;
   url: string;
+  type: "iframe";
 }
 
 // ======================================================
 // NORMALIZACIÓN
 // ======================================================
-function decodeHtml(text: string): string {
+function normalize(text: string): string {
   return text
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)));
-}
-
-function stripHtml(text: string): string {
-  return decodeHtml(text)
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-export function normalize(text: string): string {
-  return decodeHtml(text)
-    .normalize("NFKD")
     .toLowerCase()
+    .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/['’]/g, "")
-    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-// ======================================================
-// SLUG
-// ======================================================
-function extractSlug(href: string): string | null {
-  try {
-    const url = new URL(href, JK_BASE);
-    if (url.hostname !== "jkanime.net") return null;
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (parts.length !== 1) return null;
-    const slug = parts[0].trim();
-    if (!slug) return null;
-    const reserved = new Set([
-      "buscar", "genero", "temporada", "studio", "usuario",
-      "dash", "directorio", "ranking", "top", "horario",
-      "historial", "login", "logout", "ajax"
-    ]);
-    return reserved.has(slug.toLowerCase()) ? null : slug;
-  } catch { return null; }
+function tokenize(text: string): string[] {
+  return normalize(text).split(" ").filter(x => x.length > 1);
+}
+
+function levenshtein(a: string, b: string): number {
+  const matrix: number[][] = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      matrix[i][j] =
+        b[i - 1] === a[j - 1]
+          ? matrix[i - 1][j - 1]
+          : Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+function levenshteinSimilarity(a: string, b: string): number {
+  a = normalize(a);
+  b = normalize(b);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const dist = levenshtein(a, b);
+  return 1 - dist / Math.max(a.length, b.length);
+}
+
+function tokenSimilarity(a: string, b: string): number {
+  const A = new Set(tokenize(a));
+  const B = new Set(tokenize(b));
+  if (!A.size || !B.size) return 0;
+  let common = 0;
+  for (const token of A) if (B.has(token)) common++;
+  return common / Math.max(A.size, B.size);
+}
+
+function titleScore(query: string, result: string): number {
+  const q = normalize(query);
+  const r = normalize(result);
+  if (!q || !r) return 0;
+  if (q === r) return 1;
+  if (r.includes(q)) {
+    const ratio = q.length / r.length;
+    return 0.82 + ratio * 0.15;
+  }
+  if (q.includes(r)) {
+    const ratio = r.length / q.length;
+    return 0.75 + ratio * 0.15;
+  }
+  const lev = levenshteinSimilarity(q, r);
+  const tok = tokenSimilarity(q, r);
+  return lev * 0.45 + tok * 0.55;
 }
 
 // ======================================================
-// EXTRAER RESULTADOS DE BÚSQUEDA
+// EXTRACCIÓN DE RESULTADOS DE BÚSQUEDA
 // ======================================================
-function extractSearchResults(html: string): JKAnimeSearchResult[] {
-  const results: JKAnimeSearchResult[] = [];
-  const seen = new Set<string>();
-  const regex = /<a\b([^>]*?)>([\s\S]*?)<\/a>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(html))) {
-    const attrs = match[1];
-    const content = match[2];
-    const hrefMatch = attrs.match(/\bhref\s*=\s*(?:"([^"]+)"|'([^']+)')/i);
-    if (!hrefMatch) continue;
-    const href = hrefMatch[1] ?? hrefMatch[2];
-    const slug = extractSlug(href);
-    if (!slug) continue;
-
-    let title: string | null = null;
-    const titleMatch = attrs.match(/\btitle\s*=\s*(?:"([^"]+)"|'([^']+)')/i);
-    if (titleMatch) {
-      title = decodeHtml(titleMatch[1] ?? titleMatch[2] ?? "");
-    }
-    if (!title) {
-      const heading = content.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i);
-      if (heading) title = stripHtml(heading[1]);
-    }
-    if (!title) title = stripHtml(content);
-    title = title?.trim() ?? "";
+function extractSearchResults(html: string): JKSearchResult[] {
+  const results: JKSearchResult[] = [];
+  const anchorRegex = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = anchorRegex.exec(html)) !== null) {
+    const href = match[1];
+    if (!href) continue;
+    const slugMatch = href.match(/(?:https?:\/\/jkanime\.net)?\/([^/?#"']+)\/?/i);
+    if (!slugMatch) continue;
+    const slug = slugMatch[1];
+    const title = match[2]
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
     if (!title || title.length < 2) continue;
-
-    const key = slug.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    results.push({ title, slug, url: `${JK_BASE}/${slug}/`, score: 0 });
+    results.push({ title, slug, url: `${JK_BASE}/${slug}/` });
   }
-  return results;
+  // Deduplicar
+  const unique = new Map<string, JKSearchResult>();
+  for (const r of results) if (!unique.has(r.slug)) unique.set(r.slug, r);
+  return Array.from(unique.values());
 }
 
 // ======================================================
 // BÚSQUEDA EN JKANIME
 // ======================================================
-export async function searchJKAnime(query: string): Promise<JKAnimeSearchResult[]> {
-  const clean = query.trim();
+export async function searchJKAnime(query: string): Promise<JKSearchResult[]> {
+  const clean = normalize(query);
   if (!clean) return [];
-  const url = `${JK_BASE}/buscar/${encodeURIComponent(clean)}/`;
-  console.log(`[JK SEARCH] ${url}`);
-  const html = await fetchHtml(url);
-  if (!html) {
-    console.log("[JK SEARCH] HTML vacío");
-    return [];
+  const candidates: JKSearchResult[] = [];
+  for (let page = 1; page <= 2; page++) {
+    const url = `${JK_BASE}/buscar/${encodeURIComponent(clean)}/${page}/`;
+    console.log("🔎 JKAnime SEARCH:", url);
+    const html = await fetchHtml(url);
+    if (!html) { console.log("❌ JKAnime search sin HTML:", page); continue; }
+    const results = extractSearchResults(html);
+    console.log(`🔎 JKAnime resultados página ${page}:`, results.length);
+    candidates.push(...results);
+    if (results.length === 0) break;
   }
-  const results = extractSearchResults(html);
-  console.log(`[JK SEARCH] ${results.length} resultados`);
-  return results;
+  const map = new Map<string, JKSearchResult>();
+  for (const item of candidates) if (!map.has(item.slug)) map.set(item.slug, item);
+  return Array.from(map.values());
 }
 
 // ======================================================
-// FUZZY
+// VALIDACIÓN DE CANDIDATO (VISITANDO LA PÁGINA)
 // ======================================================
-function levenshtein(a: string, b: string): number {
-  const aa = normalize(a);
-  const bb = normalize(b);
-  const matrix: number[][] = [];
-  for (let i = 0; i <= aa.length; i++) { matrix[i] = []; matrix[i][0] = i; }
-  for (let j = 0; j <= bb.length; j++) matrix[0][j] = j;
-  for (let i = 1; i <= aa.length; i++) {
-    for (let j = 1; j <= bb.length; j++) {
-      const cost = aa[i - 1] === bb[j - 1] ? 0 : 1;
-      matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost);
-    }
-  }
-  return matrix[aa.length][bb.length];
-}
-
-function similarity(a: string, b: string): number {
-  const aa = normalize(a);
-  const bb = normalize(b);
-  if (!aa || !bb) return 0;
-  if (aa === bb) return 1;
-  if (aa.includes(bb) || bb.includes(aa)) return 0.94;
-  const distance = levenshtein(aa, bb);
-  return 1 - distance / Math.max(aa.length, bb.length);
-}
-
-function tokenScore(a: string, b: string): number {
-  const A = new Set(normalize(a).split(" ").filter(Boolean));
-  const B = new Set(normalize(b).split(" ").filter(Boolean));
-  if (!A.size || !B.size) return 0;
-  let common = 0;
-  for (const word of A) if (B.has(word)) common++;
-  return common / Math.max(A.size, B.size);
+async function inspectJKAnimePage(
+  candidate: JKSearchResult,
+  requestedTitle: string
+): Promise<JKSearchResult | null> {
+  const html = await fetchHtml(candidate.url);
+  if (!html) { console.log("❌ No se pudo abrir:", candidate.url); return null; }
+  const ogTitle = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] || "";
+  const dataTitle = html.match(/data-title=["']([^"']+)["']/i)?.[1] || "";
+  const dataAnime = html.match(/data-anime=["']([^"']+)["']/i)?.[1] || "";
+  const canonical = html.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i)?.[1] || "";
+  const pageTitle = dataTitle || ogTitle || candidate.title;
+  const score = Math.max(
+    titleScore(requestedTitle, pageTitle),
+    titleScore(requestedTitle, candidate.title),
+    dataAnime ? titleScore(requestedTitle, dataAnime.replace(/-/g, " ")) : 0
+  );
+  console.log("🧪 CANDIDATO:", candidate.title, "→", pageTitle, "score:", score);
+  if (score < 0.60) return null;
+  return { ...candidate, title: pageTitle, score };
 }
 
 // ======================================================
-// RESOLVER SLUG REAL
+// RESOLVER SLUG REAL (BUSCAR + VALIDAR)
 // ======================================================
 export async function findJKAnimeSlug(
-  title: string,
-  alternatives: string[] = []
+  input: string | { slug?: string; title?: string; anilistId?: number },
+  env?: any,
+  extraTitles: string[] = []
 ): Promise<string | null> {
-  const queries = [title, ...alternatives]
-    .filter(Boolean)
-    .map(x => x.trim())
-    .filter((x, i, arr) => arr.findIndex(y => normalize(y) === normalize(x)) === i);
+  const title = typeof input === "string" ? input : input.title || input.slug || "";
+  if (!title) return null;
+  const queries = [title, ...extraTitles].filter(Boolean).map(normalize).filter(Boolean);
+  const allCandidates = new Map<string, JKSearchResult>();
 
-  const all = new Map<string, JKAnimeSearchResult>();
   for (const query of queries) {
     const results = await searchJKAnime(query);
     for (const result of results) {
-      const sim = similarity(title, result.title);
-      const tokens = tokenScore(title, result.title);
-      let score = sim * 70 + tokens * 30;
-      if (normalize(title) === normalize(result.title)) score = 100;
-      const old = all.get(result.slug);
-      if (!old || score > old.score) all.set(result.slug, { ...result, score });
+      const score = Math.max(titleScore(title, result.title), titleScore(query, result.title));
+      const existing = allCandidates.get(result.slug);
+      if (!existing || score > (existing.score || 0)) {
+        allCandidates.set(result.slug, { ...result, score });
+      }
     }
   }
 
-  const ranked = [...all.values()].sort((a, b) => b.score - a.score);
-  console.log("[JK RESOLVER]", JSON.stringify(ranked.slice(0, 10), null, 2));
-  if (!ranked.length) return null;
-  if (ranked[0].score < 72) return null;
-  return ranked[0].slug;
+  const candidates = Array.from(allCandidates.values()).sort((a, b) => (b.score || 0) - (a.score || 0));
+  console.log("🎯 JKAnime candidatos:", candidates.slice(0, 10).map(x => ({ title: x.title, slug: x.slug, score: x.score })));
+  if (!candidates.length) { console.log("❌ JKAnime: ningún candidato"); return null; }
+
+  for (const candidate of candidates.slice(0, 5)) {
+    const verified = await inspectJKAnimePage(candidate, title);
+    if (verified) {
+      console.log("✅ JKAnime elegido:", verified.title, verified.slug, verified.score);
+      return verified.slug;
+    }
+  }
+  console.log("❌ JKAnime: ningún candidato pudo ser validado");
+  return null;
 }
 
 // ======================================================
-// EXTRAER VIDEO[] (DESU/MAGI)
+// EXTRAER VIDEO[] Y MAPEAR DESU/MAGI
 // ======================================================
-function extractJKVideoArray(html: string): string[] {
-  const videos: string[] = [];
+function extractVideoArray(html: string): Map<number, string> {
+  const videos = new Map<number, string>();
   const regex = /video\s*\[\s*(\d+)\s*\]\s*=\s*(['"])([\s\S]*?)\2\s*;/gi;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(html))) {
-    const iframeHtml = match[3];
-    const srcMatch = iframeHtml.match(/<iframe\b[^>]*\bsrc\s*=\s*(['"])(.*?)\1/i);
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    const index = Number(match[1]);
+    const content = match[3];
+    const srcMatch = content.match(/<iframe\b[^>]*\bsrc=["']([^"']+)["']/i);
     if (!srcMatch) continue;
-    let url = srcMatch[2];
-    if (url.startsWith("//")) url = "https:" + url;
-    if (url.startsWith("/")) url = JK_BASE + url;
-    if (!/^https?:\/\//i.test(url)) continue;
-    if (!videos.includes(url)) videos.push(url);
+    let src = srcMatch[1];
+    if (src.startsWith("//")) src = "https:" + src;
+    if (src.startsWith("/")) src = JK_BASE + src;
+    videos.set(index, src);
   }
   return videos;
 }
 
-// ======================================================
-// EXTRAER SERVIDORES DEL EPISODIO (SOLO DESU/MAGI)
-// ======================================================
-export async function getJKAnimeServers(
-  slug: string,
-  episode: number
-): Promise<JKAnimeServer[]> {
-  const url = `${JK_BASE}/${slug}/${episode}/`;
-  console.log(`[JK EPISODE] ${url}`);
-  const html = await fetchHtml(url);
-  if (!html) { console.log("[JK EPISODE] HTML vacío"); return []; }
-
-  const videos = extractJKVideoArray(html);
-  console.log(`[JK EPISODE] video[] = ${videos.length}`);
-
-  // Mapear data-id -> nombre (Desu/Magi)
-  const buttonMap = new Map<number, string>();
-  const buttonRegex = /<a\b[^>]*data-id=["'](\d+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  let btnMatch;
-  while ((btnMatch = buttonRegex.exec(html))) {
-    const index = Number(btnMatch[1]);
-    const name = btnMatch[2].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-    if (name === "desu" || name === "magi") buttonMap.set(index, name);
+function extractNamedPlayers(html: string, videos: Map<number, string>): JKServer[] {
+  const servers: JKServer[] = [];
+  const seen = new Set<string>();
+  const regex = /<a\b[^>]*data-id=["'](\d+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    const index = Number(match[1]);
+    const name = match[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+    if (name !== "desu" && name !== "magi") continue;
+    const iframe = videos.get(index);
+    if (!iframe) { console.log(`⚠️ ${name} encontrado pero video[${index}] no existe`); continue; }
+    if (seen.has(iframe)) continue;
+    seen.add(iframe);
+    servers.push({ name: name === "desu" ? "Desu" : "Magi", url: iframe, type: "iframe" });
   }
-
-  const servers: JKAnimeServer[] = [];
-  for (let i = 0; i < videos.length; i++) {
-    const name = buttonMap.get(i);
-    if (name) {
-      servers.push({
-        name: name === "desu" ? "Desu" : "Magi",
-        type: "iframe",
-        embed: videos[i],
-        lang: "sub"
-      });
-    }
-  }
-
   return servers;
 }
 
 // ======================================================
-// SUBTÍTULOS EN ESPAÑOL
+// OBTENER SERVIDORES DEL EPISODIO (SOLO DESU/MAGI)
 // ======================================================
-export async function getJKAnimeSubtitles(
-  slug: string,
-  episode: number
-): Promise<JKSubtitle[]> {
-  const url = `https://jkanime.net/${slug}/${episode}/`;
+export async function getJKAnimeServers(slug: string, episode: number): Promise<JKServer[]> {
+  const url = `${JK_BASE}/${slug}/${episode}/`;
+  console.log("🎬 JKAnime episodio:", url);
   const html = await fetchHtml(url);
-  if (!html) return [];
-
-  const subs: JKSubtitle[] = [];
-  const seen = new Set<string>();
-  const subMatches = html.matchAll(
-    /<button[^>]+data-url="([^"]+)"[^>]+data-language="([^"]*)"[^>]*>/g
-  );
-  for (const m of subMatches) {
-    const subUrl = m[1];
-    const lang = m[2].toLowerCase();
-    if ((lang === "es" || lang.includes("spa") || lang.includes("español")) && !seen.has(subUrl)) {
-      seen.add(subUrl);
-      subs.push({ lang: "Español", url: subUrl });
-    }
-  }
-  return subs;
+  if (!html) { console.log("❌ JKAnime episodio no devolvió HTML"); return []; }
+  const videos = extractVideoArray(html);
+  console.log("🎥 video[] encontrados:", Array.from(videos.keys()));
+  const servers = extractNamedPlayers(html, videos);
+  console.log("🎯 Desu/Magi encontrados:", servers);
+  return servers;
 }
 
 // ======================================================
-// CONTADOR DE EPISODIOS (para latestEpisode)
+// CONTADOR DE EPISODIOS (último capítulo)
 // ======================================================
 export async function getJKAnimeLatestEpisode(slug: string): Promise<number | null> {
   const url = `${JK_BASE}/${slug}/`;
   const html = await fetchHtml(url);
   if (!html) return null;
-
-  // Método 1: paginationEps(numero)
   const pagMatch = html.match(/paginationEps\((\d+)\)/);
   if (pagMatch) return parseInt(pagMatch[1]);
-
-  // Método 2: AJAX a /ajax/episodes/ID/1
   const idMatch = html.match(/anime_checks\('([^']+)',\s*'(\d+)'\)/);
   if (idMatch) {
     const animeId = idMatch[2];
@@ -318,8 +278,6 @@ export async function getJKAnimeLatestEpisode(slug: string): Promise<number | nu
       } catch {}
     }
   }
-
-  // Método 3: contar enlaces de episodios
   const links = html.match(/href="\/[^"]+\/(\d+)\/"/g);
   if (links) {
     const nums = links.map(h => parseInt(h.match(/(\d+)/)![0])).filter(n => !isNaN(n));
