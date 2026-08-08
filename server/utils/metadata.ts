@@ -1,12 +1,16 @@
 export interface MetadataResult {
   titles: string[];
+  malId: number | null;
+  anilistId: number | null;
 }
 
-async function fetchAniListTitles(title: string): Promise<string[]> {
+export async function getAnimeMetadata(title: string): Promise<MetadataResult> {
   try {
     const query = `
       query ($search: String) {
         Media(search: $search, type: ANIME) {
+          id
+          idMal
           title { romaji english native }
           synonyms
         }
@@ -19,65 +23,21 @@ async function fetchAniListTitles(title: string): Promise<string[]> {
     });
     const json = await res.json();
     const media = json?.data?.Media;
-    if (!media) return [];
-    return [
+    if (!media) return { titles: [], malId: null, anilistId: null };
+
+    const titles = [
       media.title?.romaji,
       media.title?.english,
       media.title?.native,
       ...(media.synonyms || []),
-    ].filter(Boolean);
+    ].filter(Boolean) as string[];
+
+    return {
+      titles,
+      malId: media.idMal ?? null,
+      anilistId: media.id ?? null,
+    };
   } catch {
-    return [];
+    return { titles: [], malId: null, anilistId: null };
   }
-}
-
-async function fetchJikanTitles(title: string): Promise<string[]> {
-  try {
-    const res = await fetch(
-      `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(title)}&limit=1`
-    );
-    const json = await res.json();
-    const anime = json?.data?.[0];
-    if (!anime) return [];
-    return [
-      anime.title,
-      anime.title_english,
-      anime.title_japanese,
-      ...(anime.title_synonyms || []),
-    ].filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-async function fetchKitsuTitles(title: string): Promise<string[]> {
-  try {
-    const res = await fetch(
-      `https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(title)}&page[limit]=1`
-    );
-    const json = await res.json();
-    const anime = json?.data?.[0];
-    if (!anime) return [];
-    const attrs = anime.attributes;
-    return [
-      attrs.canonicalTitle,
-      attrs.titles?.en,
-      attrs.titles?.en_jp,
-      attrs.titles?.ja_jp,
-      ...(attrs.abbreviatedTitles || []),
-    ].filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-export async function getAnimeMetadata(title: string): Promise<MetadataResult> {
-  const [aniList, jikan, kitsu] = await Promise.all([
-    fetchAniListTitles(title),
-    fetchJikanTitles(title),
-    fetchKitsuTitles(title),
-  ]);
-
-  const allTitles = [...new Set([title, ...aniList, ...jikan, ...kitsu])];
-  return { titles: allTitles };
 }
