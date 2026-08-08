@@ -12,9 +12,13 @@ export async function scrapePage(url: string) {
     const servers: any[] = [];
     for (const u of urls) {
       if (!isZilla(u)) continue;
-      servers.push({ name: "animeav1", embed: u });
+      servers.push({
+        name: "Zilla",
+        embed: u,
+        type: "iframe",
+      });
     }
-    const unique = new Map();
+    const unique = new Map<string, any>();
     for (const s of servers) {
       if (!unique.has(s.embed)) unique.set(s.embed, s);
     }
