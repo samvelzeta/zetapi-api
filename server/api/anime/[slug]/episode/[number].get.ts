@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: "Número de episodio inválido" });
   }
 
-  // KV Cache (opcional, lo dejamos preparado)
+  // KV (opcional)
   let cached: any = null;
   try {
     const env = (event.context as any).cloudflare?.env;
@@ -28,33 +28,23 @@ export default defineEventHandler(async (event) => {
     return {
       success: true,
       source: "kv",
-      data: {
-        slug,
-        number: episode,
-        servers: cached.servers,
-        subtitles: cached.subtitles || [],
-        latestEpisode: cached.latestEpisode || null,
-      },
+      data: { slug, number: episode, servers: cached.servers, subtitles: cached.subtitles || [], latestEpisode: cached.latestEpisode || null }
     };
   }
 
   const { servers, latestEpisode } = await getAllServers({
     slug,
     number: episode,
-    title: slug, // si tu frontend puede enviar el título real, mejor
+    title: slug, // si tu frontend puede pasar el título real, mejor
     anilistId: anilistId ? Number(anilistId) : undefined,
   });
-
-  console.log("🔍 Servers encontrados:", servers.length);
 
   let subtitles: { lang: string; url: string }[] = [];
   try {
     subtitles = await getJKAnimeSubtitles(slug, episode);
-  } catch (e) {
-    console.log("⚠️ Error subtítulos:", e);
-  }
+  } catch {}
 
-  // Guardar en KV (si existe)
+  // Guardar en KV
   if (servers.length) {
     try {
       const env = (event.context as any).cloudflare?.env;
