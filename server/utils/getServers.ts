@@ -1,9 +1,9 @@
 import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
-import { scrapePage } from "./sources";           // extracción original de Zilla
-import { findJKAnimeSlug } from "./jkSearch";      // buscador antiguo de JKAnime
-import { resolveSlugVariants } from "./slugResolver";
+import { scrapePage } from "./sources";
+import { findJKAnimeSlug } from "./jkSearch";
+import { getAnimeMetadata } from "./metadata";
 
-const PROXY_ZILLA = "/proxy-zilla?url=";   // nuestro nuevo proxy
+const PROXY_ZILLA = "/proxy-zilla?url=";
 
 export async function getAllServers({
   slug,
@@ -20,34 +20,57 @@ export async function getAllServers({
 }) {
   const allServers: any[] = [];
 
+  // Obtener todos los títulos desde AniList
+  const searchTitle = title || slug;
+  const meta = await getAnimeMetadata(searchTitle);
+
   // ─── 1. ANIMEAV1 (Zilla) ───
-  const variants = resolveSlugVariants(slug);
-  for (const variant of variants) {
-    const url = `https://animeav1.com/media/${variant}/${number}`;
+  // Probar cada título como slug (reemplazamos espacios por guiones)
+  const tried = new Set<string>();
+  for (const variantTitle of meta.titles) {
+    const candidateSlug = variantTitle
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-");
+
+    if (tried.has(candidateSlug)) continue;
+    tried.add(candidateSlug);
+
+    const url = `https://animeav1.com/media/${candidateSlug}/${number}`;
     const av1Servers = await scrapePage(url);
     if (av1Servers.length) {
       for (const s of av1Servers) {
         allServers.push({
           name: "",
           type: "Externo",
-          embed: `${PROXY_ZILLA}${encodeURIComponent(s.embed)}`,  // pasa por el proxy
+          embed: `${PROXY_ZILLA}${encodeURIComponent(s.embed)}`,
         });
       }
-      break;  // encontrado, salimos del bucle
+      break; // encontrado, salimos del bucle
     }
   }
 
   // ─── 2. JKANIME (Magi, Desu) ───
   if (allServers.length === 0) {
-    const realSlug = await findJKAnimeSlug({ slug, title, anilistId }, env);
-    const targetSlug = realSlug || slug;
+    // Probar cada título de la metadata hasta encontrar un slug válido
+    let jkSlug: string | null = null;
+    for (const variantTitle of meta.titles) {
+      jkSlug = await findJKAnimeSlug(variantTitle, env);
+      if (jkSlug) break;
+    }
+    // Fallback: si no encontró, intentamos con el slug original
+    if (!jkSlug) {
+      jkSlug = await findJKAnimeSlug(searchTitle, env);
+    }
+    const targetSlug = jkSlug || slug;
 
     const jkServers = await getJKAnimeServers(targetSlug, number);
     for (const s of jkServers) {
       allServers.push({
         name: "",
         type: "Externo",
-        embed: s.url,  // los iframes de Magi/Desu no necesitan proxy
+        embed: s.url,
       });
     }
   }
