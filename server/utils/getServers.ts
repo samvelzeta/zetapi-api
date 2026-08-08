@@ -1,6 +1,6 @@
-import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
-import { getAnimeAV1Embeds } from "./animeav1";      // <-- nuevo módulo
-import { findJKAnimeSlug } from "./jkSearch";
+import { getJKAnimeServers, getJKAnimeSubtitles, findJKAnimeSlug } from "./jkanime";
+import { getAnimeAV1Embeds } from "./animeav1";
+import { getAnimeX2Servers } from "./animex2";   // <-- nueva
 import { getAnimeMetadata } from "./metadata";
 
 const PROXY = "/proxy-zilla?url=";
@@ -19,42 +19,64 @@ export async function getAllServers({
   env?: any;
 }) {
   const allServers: any[] = [];
-
   const searchTitle = title || slug;
   const meta = await getAnimeMetadata(searchTitle);
   const allTitles = meta.titles;
 
-  // ─── 1. ANIMEAV1 (HLS/Zilla, UPNShare, Mega, MP4Upload) ───
   const tried = new Set<string>();
+
+  // ─── 1. ANIMEX2 (nueva, prioridad máxima) ───
   for (const t of allTitles) {
     const slugs = generateSlugVariants(t);
     for (const candidate of slugs) {
       if (tried.has(candidate)) continue;
       tried.add(candidate);
 
-      const embeds = await getAnimeAV1Embeds(candidate, number);
-      if (!embeds.length) continue;
-
-      // Prioridad: mantener el orden original, pero podemos forzar los nombres deseados
-      for (const embed of embeds) {
-        // Todos pasan por el proxy menos Mega
-        const finalUrl = embed.server === "Mega"
-          ? embed.url
-          : `${PROXY}${encodeURIComponent(embed.url)}`;
-
-        allServers.push({
-          name: "",
-          type: "Externo",
-          embed: finalUrl,
-        });
+      const servers = await getAnimeX2Servers(candidate, number);
+      if (servers.length) {
+        for (const s of servers) {
+          // Todos los servidores de Animex2 se entregan directamente (o podrían pasar por proxy si se desea)
+          allServers.push({
+            name: "",
+            type: "Externo",
+            embed: s.url,
+          });
+        }
+        break;
       }
-      break; // encontrado, salimos del bucle
     }
     if (allServers.length) break;
   }
 
-  // ─── 2. JKANIME (Magi, Desu) ───
-  if (allServers.length === 0) {
+  // ─── 2. ANIMEAV1 (si no hubo suerte con Animex2) ───
+  if (!allServers.length) {
+    for (const t of allTitles) {
+      const slugs = generateSlugVariants(t);
+      for (const candidate of slugs) {
+        if (tried.has(candidate)) continue;
+        tried.add(candidate);
+
+        const embeds = await getAnimeAV1Embeds(candidate, number);
+        if (embeds.length) {
+          for (const embed of embeds) {
+            const finalUrl = embed.server === "Mega"
+              ? embed.url
+              : `${PROXY}${encodeURIComponent(embed.url)}`;
+            allServers.push({
+              name: "",
+              type: "Externo",
+              embed: finalUrl,
+            });
+          }
+          break;
+        }
+      }
+      if (allServers.length) break;
+    }
+  }
+
+  // ─── 3. JKANIME (fallback final) ───
+  if (!allServers.length) {
     const jkSlug = await findJKAnimeSlug(searchTitle, env, allTitles, meta.malId);
     const targetSlug = jkSlug || slug;
 
@@ -68,7 +90,7 @@ export async function getAllServers({
     }
   }
 
-  // ─── 3. DEDUPLICAR Y NOMBRAR ───
+  // DEDUPLICAR Y NOMBRAR
   const seen = new Set<string>();
   const unique = allServers.filter(s => {
     if (!s.embed) return false;
@@ -88,7 +110,7 @@ export async function getSubtitles(slug: string, episode: number) {
   return getJKAnimeSubtitles(slug, episode);
 }
 
-// ─── Helper para generar variantes de slug para AnimeAV1 ───
+// ─── Helper para generar variantes de slug (compartido) ───
 function generateSlugVariants(title: string): string[] {
   const base = title
     .toLowerCase()
