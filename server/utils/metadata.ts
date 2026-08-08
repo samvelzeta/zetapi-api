@@ -1,5 +1,5 @@
 export interface MetadataResult {
-  titles: string[];
+  titles: string[];       // ordenado por prioridad: userPreferred, english, romaji, native, synonyms
   malId: number | null;
   anilistId: number | null;
 }
@@ -11,7 +11,12 @@ export async function getAnimeMetadata(title: string): Promise<MetadataResult> {
         Media(search: $search, type: ANIME) {
           id
           idMal
-          title { romaji english native }
+          title {
+            romaji
+            english
+            native
+            userPreferred
+          }
           synonyms
         }
       }
@@ -25,15 +30,20 @@ export async function getAnimeMetadata(title: string): Promise<MetadataResult> {
     const media = json?.data?.Media;
     if (!media) return { titles: [], malId: null, anilistId: null };
 
-    const titles = [
-      media.title?.romaji,
+    // Orden de prioridad
+    const priorityTitles = [
+      media.title?.userPreferred,
       media.title?.english,
+      media.title?.romaji,
       media.title?.native,
       ...(media.synonyms || []),
     ].filter(Boolean) as string[];
 
+    // Eliminar duplicados manteniendo el orden
+    const uniqueTitles = [...new Set(priorityTitles)];
+
     return {
-      titles,
+      titles: uniqueTitles,
       malId: media.idMal ?? null,
       anilistId: media.id ?? null,
     };
