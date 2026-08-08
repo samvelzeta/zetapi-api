@@ -1,7 +1,9 @@
 import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
-import { scrapePage } from "./sources";
+import { getAnimeAV1Embeds } from "./animeav1";      // <-- nuevo módulo
 import { findJKAnimeSlug } from "./jkSearch";
 import { getAnimeMetadata } from "./metadata";
+
+const PROXY = "/proxy-zilla?url=";
 
 export async function getAllServers({
   slug,
@@ -22,29 +24,33 @@ export async function getAllServers({
   const meta = await getAnimeMetadata(searchTitle);
   const allTitles = meta.titles;
 
-  // ─── 1. ANIMEAV1 (UPNShare, MP4Upload, Mega) ───
+  // ─── 1. ANIMEAV1 (HLS/Zilla, UPNShare, Mega, MP4Upload) ───
   const tried = new Set<string>();
   for (const t of allTitles) {
-    const candidateSlugs = generateSlugVariants(t);
-    for (const candidateSlug of candidateSlugs) {
-      if (tried.has(candidateSlug)) continue;
-      tried.add(candidateSlug);
+    const slugs = generateSlugVariants(t);
+    for (const candidate of slugs) {
+      if (tried.has(candidate)) continue;
+      tried.add(candidate);
 
-      const url = `https://animeav1.com/media/${candidateSlug}/${number}`;
-      const av1Servers = await scrapePage(url);
-      if (av1Servers.length) {
-        for (const s of av1Servers) {
-          // Todos los servidores de AV1 se entregan directamente, sin proxy
-          allServers.push({
-            name: "",
-            type: "Externo",
-            embed: s.embed,
-          });
-        }
-        break; // encontrado, salimos del bucle
+      const embeds = await getAnimeAV1Embeds(candidate, number);
+      if (!embeds.length) continue;
+
+      // Prioridad: mantener el orden original, pero podemos forzar los nombres deseados
+      for (const embed of embeds) {
+        // Todos pasan por el proxy menos Mega
+        const finalUrl = embed.server === "Mega"
+          ? embed.url
+          : `${PROXY}${encodeURIComponent(embed.url)}`;
+
+        allServers.push({
+          name: "",
+          type: "Externo",
+          embed: finalUrl,
+        });
       }
+      break; // encontrado, salimos del bucle
     }
-    if (allServers.length) break; // ya tenemos servidores
+    if (allServers.length) break;
   }
 
   // ─── 2. JKANIME (Magi, Desu) ───
@@ -82,7 +88,7 @@ export async function getSubtitles(slug: string, episode: number) {
   return getJKAnimeSubtitles(slug, episode);
 }
 
-// ─── Helper: genera variantes de slug para AnimeAV1 ───
+// ─── Helper para generar variantes de slug para AnimeAV1 ───
 function generateSlugVariants(title: string): string[] {
   const base = title
     .toLowerCase()
@@ -95,7 +101,6 @@ function generateSlugVariants(title: string): string[] {
   const variants = new Set<string>();
   variants.add(base);
 
-  // Sin temporada / parte / cour
   const noSeason = base
     .replace(/\b(season|temporada|part|parte|cour)-?\d+\b/gi, "")
     .replace(/\b\d+(st|nd|rd|th)-?(season|temporada)\b/gi, "")
@@ -103,14 +108,12 @@ function generateSlugVariants(title: string): string[] {
     .replace(/^-|-$/g, "");
   if (noSeason && noSeason !== base) variants.add(noSeason);
 
-  // Versión corta (primeras 3‑4 palabras)
   const words = base.split("-").filter(w => w.length > 1);
   if (words.length >= 3) {
     variants.add(words.slice(0, 3).join("-"));
     variants.add(words.slice(0, 4).join("-"));
   }
 
-  // Intercambiar season / tv
   if (base.includes("season")) variants.add(base.replace(/season/gi, "tv"));
   if (base.includes("tv")) variants.add(base.replace(/tv/gi, "season"));
 
