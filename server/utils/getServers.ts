@@ -3,8 +3,6 @@ import { scrapePage } from "./sources";
 import { findJKAnimeSlug } from "./jkSearch";
 import { getAnimeMetadata } from "./metadata";
 
-const PROXY = "/proxy-zilla?url=";
-
 export async function getAllServers({
   slug,
   number,
@@ -36,20 +34,17 @@ export async function getAllServers({
       const av1Servers = await scrapePage(url);
       if (av1Servers.length) {
         for (const s of av1Servers) {
-          // Mega sin proxy, los demás con proxy
-          const embedUrl = s.name === "Mega"
-            ? s.embed
-            : `${PROXY}${encodeURIComponent(s.embed)}`;
+          // Todos los servidores de AV1 se entregan directamente, sin proxy
           allServers.push({
             name: "",
             type: "Externo",
-            embed: embedUrl,
+            embed: s.embed,
           });
         }
-        break; // encontrado
+        break; // encontrado, salimos del bucle
       }
     }
-    if (allServers.length) break;
+    if (allServers.length) break; // ya tenemos servidores
   }
 
   // ─── 2. JKANIME (Magi, Desu) ───
@@ -87,7 +82,7 @@ export async function getSubtitles(slug: string, episode: number) {
   return getJKAnimeSubtitles(slug, episode);
 }
 
-// ─── Helper para generar variantes de slug para AnimeAV1 ───
+// ─── Helper: genera variantes de slug para AnimeAV1 ───
 function generateSlugVariants(title: string): string[] {
   const base = title
     .toLowerCase()
