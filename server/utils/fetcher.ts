@@ -6,18 +6,18 @@ export function getHeaders(url: string): Headers {
   return headers;
 }
 
-export async function fetchHtml(url: string): Promise<string | null> {
+export async function fetchHtml(url: string, options?: RequestInit): Promise<string | null> {
   try {
-    const response = await fetch(url, {
+    const res = await fetch(url, {
       method: "GET",
       headers: getHeaders(url),
       redirect: "follow",
-      cf: { cacheTtl: 0, cacheEverything: false }
+      ...options
     });
-    const text = await response.text();
-    console.log(`[FETCH] ${response.status} ${url} (${text.length} bytes)`);
-    if (!response.ok) {
-      console.log(`[FETCH ERROR] HTTP ${response.status}`);
+    const text = await res.text();
+    console.log(`[FETCH] ${res.status} ${url} (${text.length} bytes)`);
+    if (!res.ok) {
+      console.log(`[FETCH ERROR] HTTP ${res.status}`);
       return null;
     }
     if (!text || text.length < 100) {
