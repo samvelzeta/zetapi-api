@@ -1,7 +1,10 @@
 import { fetchHtml } from "./fetcher";
 
-function isZilla(url: string) {
-  return url.includes("zilla-networks");
+function classifyUrl(url: string): string | null {
+  if (url.includes("uns.bio")) return "UPNShare";
+  if (url.includes("mp4upload.com")) return "MP4Upload";
+  if (url.includes("mega.nz") || url.includes("mega.co.nz")) return "Mega";
+  return null;   // Zilla ya no se extrae
 }
 
 export async function scrapePage(url: string) {
@@ -11,9 +14,10 @@ export async function scrapePage(url: string) {
     const urls = html.match(/https?:\/\/[^"' ]+/g) || [];
     const servers: any[] = [];
     for (const u of urls) {
-      if (!isZilla(u)) continue;
+      const type = classifyUrl(u);
+      if (!type) continue;
       servers.push({
-        name: "Zilla",
+        name: type,
         embed: u,
         type: "iframe",
       });
