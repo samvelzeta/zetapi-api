@@ -19,6 +19,11 @@ export interface JKAnimeServer {
   lang: "sub";
 }
 
+export interface JKSubtitle {
+  lang: string;
+  url: string;
+}
+
 // ======================================================
 // NORMALIZACIÓN
 // ======================================================
@@ -233,7 +238,7 @@ export async function getJKAnimeServers(
   const videos = extractJKVideoArray(html);
   console.log(`[JK EPISODE] video[] = ${videos.length}`);
 
-  // Buscar los botones de Desu/Magi para mapear índices
+  // Mapear data-id -> nombre (Desu/Magi)
   const buttonMap = new Map<number, string>();
   const buttonRegex = /<a\b[^>]*data-id=["'](\d+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let btnMatch;
@@ -243,7 +248,6 @@ export async function getJKAnimeServers(
     if (name === "desu" || name === "magi") buttonMap.set(index, name);
   }
 
-  // Construir servidores para Desu y Magi
   const servers: JKAnimeServer[] = [];
   for (let i = 0; i < videos.length; i++) {
     const name = buttonMap.get(i);
@@ -258,6 +262,33 @@ export async function getJKAnimeServers(
   }
 
   return servers;
+}
+
+// ======================================================
+// SUBTÍTULOS EN ESPAÑOL
+// ======================================================
+export async function getJKAnimeSubtitles(
+  slug: string,
+  episode: number
+): Promise<JKSubtitle[]> {
+  const url = `https://jkanime.net/${slug}/${episode}/`;
+  const html = await fetchHtml(url);
+  if (!html) return [];
+
+  const subs: JKSubtitle[] = [];
+  const seen = new Set<string>();
+  const subMatches = html.matchAll(
+    /<button[^>]+data-url="([^"]+)"[^>]+data-language="([^"]*)"[^>]*>/g
+  );
+  for (const m of subMatches) {
+    const subUrl = m[1];
+    const lang = m[2].toLowerCase();
+    if ((lang === "es" || lang.includes("spa") || lang.includes("español")) && !seen.has(subUrl)) {
+      seen.add(subUrl);
+      subs.push({ lang: "Español", url: subUrl });
+    }
+  }
+  return subs;
 }
 
 // ======================================================
