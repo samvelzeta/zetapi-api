@@ -1,12 +1,13 @@
+// server/api/proxy-zilla.ts
 export default defineEventHandler(async (event) => {
-  // ─── Preflight CORS ───
+  // ─── Preflight ───
   if (event.method === 'OPTIONS') {
     setResponseHeaders(event, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-      'Access-Control-Allow-Headers': 'Range, Content-Type, Accept, Origin, Referer, User-Agent, X-Requested-With',
+      'Access-Control-Allow-Headers': '*',
+      'Access-Control-Expose-Headers': '*',
       'Access-Control-Max-Age': '86400',
-      'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
     })
     return new Response(null, { status: 204 })
   }
@@ -15,7 +16,7 @@ export default defineEventHandler(async (event) => {
   const targetParam = requestUrl.searchParams.get('url')
 
   if (!targetParam) {
-    throw createError({ statusCode: 400, statusMessage: 'Missing "url" parameter' })
+    throw createError({ statusCode: 400, statusMessage: 'Missing url parameter' })
   }
 
   let targetUrl: string
@@ -26,93 +27,131 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Invalid URL' })
   }
 
-  // ─── User-Agents realistas ───
+  // ─── User Agents ───
   const userAgents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15',
   ]
   const ua = userAgents[Math.floor(Math.random() * userAgents.length)]
-  const isChrome = ua.includes('Chrome') && !ua.includes('Edg')
 
-  // ─── Detectores ───
-  const isVideoLike =
-    /\.(m3u8|ts|mp4|webm|mkv|m4s|mpd|m4v)(\?|$)/i.test(targetUrl) ||
-    /\/(stream|hls|video|embed|player|media|play|file|getvideo)\//i.test(targetUrl) ||
-    /(?:streamwish|filemoon|voe|dood|mp4upload|yourupload|mixdrop|upstream|streamtape|vidhide|luluvdo|turbo|vidsrc)/i.test(targetUrl)
+  // Detectores más precisos
+  const isM3U8 = /\.m3u8(\?|$)/i.test(targetUrl)
+  const isTS = /\.ts(\?|$)/i.test(targetUrl)
+  const isMP4 = /\.(mp4|m4v|webm|mkv)(\?|$)/i.test(targetUrl)
+  const isHLS = isM3U8 || isTS
+  const isVideo = isHLS || isMP4 || /\/(stream|hls|embed|player|media|getvideo|play)\//i.test(targetUrl)
 
   const isResource =
     requestUrl.searchParams.has('resource') ||
-    isVideoLike ||
-    /\.(js|css|png|jpe?g|webp|gif|svg|woff2?|ttf|ico|json|xml)(\?|$)/i.test(targetUrl)
+    isVideo ||
+    /\.(js|css|png|jpe?g|webp|gif|svg|woff2?|ttf|json|xml|ico)(\?|$)/i.test(targetUrl)
 
-  // ─── Headers base ───
+  // Headers base
   const baseHeaders: Record<string, string> = {
     'User-Agent': ua,
     'Accept-Language': 'es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Accept-Encoding': 'gzip, deflate, br, zstd',
+    'Accept-Encoding': 'gzip, deflate, br',
     'Referer': 'https://animeav1.com/',
     'Origin': 'https://animeav1.com',
     'Sec-Fetch-Site': 'cross-site',
     'Cache-Control': 'no-cache',
     'Pragma': 'no-cache',
-  }
-
-  if (isChrome) {
-    baseHeaders['Sec-Ch-Ua'] = '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"'
-    baseHeaders['Sec-Ch-Ua-Mobile'] = '?0'
-    baseHeaders['Sec-Ch-Ua-Platform'] = '"Windows"'
+    'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
   }
 
   // ────────────────────────────────────────────────
-  // 1. PROXY DE RECURSOS
+  // 1. RECURSOS (m3u8, ts, mp4, js, css...)
   // ────────────────────────────────────────────────
   if (isResource) {
     try {
       const range = getHeader(event, 'range')
 
-      const fetchHeaders: Record<string, string> = {
+      // Accept headers específicos según el tipo
+      let accept = '*/*'
+      if (isM3U8) {
+        accept = 'application/vnd.apple.mpegurl,application/x-mpegURL,application/octet-stream,*/*;q=0.8'
+      } else if (isTS) {
+        accept = 'video/mp2t,video/*,application/octet-stream,*/*;q=0.8'
+      } else if (isMP4) {
+        accept = 'video/mp4,video/*,application/octet-stream,*/*;q=0.8'
+      } else if (isVideo) {
+        accept = 'video/*,application/octet-stream,*/*;q=0.8'
+      }
+
+      const headers: Record<string, string> = {
         ...baseHeaders,
-        'Accept': isVideoLike
-          ? 'application/vnd.apple.mpegurl,application/x-mpegURL,video/*,application/octet-stream,*/*;q=0.8'
-          : '*/*',
-        'Sec-Fetch-Dest': isVideoLike ? 'video' : 'script',
+        'Accept': accept,
+        'Sec-Fetch-Dest': isVideo ? 'video' : 'script',
         'Sec-Fetch-Mode': 'no-cors',
       }
 
-      if (range) fetchHeaders['Range'] = range
+      // Range es crítico para MP4 (seeking)
+      if (range) {
+        headers['Range'] = range
+      }
 
       const res = await fetch(targetUrl, {
-        method: 'GET',
-        headers: fetchHeaders,
+        method: event.method === 'HEAD' ? 'HEAD' : 'GET',
+        headers,
         redirect: 'follow',
       })
 
-      const headers = new Headers()
+      const responseHeaders = new Headers()
 
-      // Pasar headers útiles
-      for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified']) {
+      // Copiar headers importantes del upstream
+      const importantHeaders = [
+        'content-type',
+        'content-length',
+        'content-range',
+        'accept-ranges',
+        'etag',
+        'last-modified',
+        'content-encoding',
+      ]
+      for (const h of importantHeaders) {
         const val = res.headers.get(h)
-        if (val) headers.set(h, val)
+        if (val) responseHeaders.set(h, val)
       }
 
-      // Cabeceras recomendadas + anti-bloqueo
-      headers.set('Access-Control-Allow-Origin', '*')
-      headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
-      headers.set('Access-Control-Allow-Headers', 'Range, Content-Type, Accept, Origin, Referer')
-      headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, ETag')
-      headers.set('Access-Control-Max-Age', '86400')
-      headers.set('X-Content-Type-Options', 'nosniff')
-      headers.set('Vary', 'User-Agent')
-      headers.set('Keep-Alive', 'timeout=5, max=100')
-      headers.set('Cache-Control', isVideoLike ? 'public, max-age=14400' : 'public, max-age=86400')
+      // Forzar content-type correcto si el upstream miente
+      if (isM3U8 && !responseHeaders.get('content-type')?.includes('mpegurl')) {
+        responseHeaders.set('Content-Type', 'application/vnd.apple.mpegurl')
+      }
+      if (isTS && !responseHeaders.get('content-type')) {
+        responseHeaders.set('Content-Type', 'video/mp2t')
+      }
+      if (isMP4 && !responseHeaders.get('content-type')?.includes('video')) {
+        responseHeaders.set('Content-Type', 'video/mp4')
+      }
+
+      // CORS máximo
+      responseHeaders.set('Access-Control-Allow-Origin', '*')
+      responseHeaders.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
+      responseHeaders.set('Access-Control-Allow-Headers', '*')
+      responseHeaders.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, ETag, Content-Type')
+      responseHeaders.set('Access-Control-Max-Age', '86400')
+
+      responseHeaders.set('X-Content-Type-Options', 'nosniff')
+      responseHeaders.set('Vary', 'User-Agent, Accept-Encoding')
+      responseHeaders.set('Accept-Ranges', 'bytes')
+
+      // Cache más largo en segmentos
+      if (isTS || isMP4) {
+        responseHeaders.set('Cache-Control', 'public, max-age=28800') // 8 horas
+      } else if (isM3U8) {
+        responseHeaders.set('Cache-Control', 'public, max-age=60') // manifests cortos
+      } else {
+        responseHeaders.set('Cache-Control', 'public, max-age=86400')
+      }
 
       return new Response(res.body, {
         status: res.status,
         statusText: res.statusText,
-        headers,
+        headers: responseHeaders,
       })
     } catch (err) {
       console.error('[Proxy Resource Error]', targetUrl, err)
@@ -121,13 +160,13 @@ export default defineEventHandler(async (event) => {
   }
 
   // ────────────────────────────────────────────────
-  // 2. PROXY DE PÁGINAS HTML + INYECCIÓN DE FETCH
+  // 2. PÁGINAS HTML + INYECCIÓN EXTREMA
   // ────────────────────────────────────────────────
   try {
     const res = await fetch(targetUrl, {
       headers: {
         ...baseHeaders,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Upgrade-Insecure-Requests': '1',
         'Sec-Fetch-Dest': 'document',
         'Sec-Fetch-Mode': 'navigate',
@@ -143,7 +182,6 @@ export default defineEventHandler(async (event) => {
     let html = await res.text()
     const base = new URL(targetUrl)
 
-    // Función para convertir a proxy
     const toProxy = (raw: string): string => {
       if (!raw || raw.startsWith('data:') || raw.startsWith('blob:') || raw.startsWith('javascript:') || raw.startsWith('#')) {
         return raw
@@ -152,18 +190,17 @@ export default defineEventHandler(async (event) => {
 
       try {
         const absolute = new URL(raw, base).href
-        const isVid =
-          /\.(m3u8|ts|mp4|webm|m4s|mpd)(\?|$)/i.test(absolute) ||
-          /\/(embed|stream|hls|player|media|getvideo)\//i.test(absolute) ||
-          /(?:streamwish|filemoon|voe|dood|mp4upload|mixdrop|yourupload|vidsrc)/i.test(absolute)
+        const needsResource =
+          /\.(m3u8|ts|mp4|webm|m4s|mpd|m4v|js|css|json)(\?|$)/i.test(absolute) ||
+          /\/(stream|hls|embed|player|media|getvideo|play|ajax|api)\//i.test(absolute)
 
-        return `/proxy-zilla?url=${encodeURIComponent(absolute)}${isVid ? '&resource=1' : ''}`
+        return `/proxy-zilla?url=${encodeURIComponent(absolute)}${needsResource ? '&resource=1' : ''}`
       } catch {
         return raw
       }
     }
 
-    // Reescritura de atributos
+    // Reescritura profunda de atributos
     const tags = [
       { tag: 'script', attr: 'src' },
       { tag: 'link', attr: 'href' },
@@ -194,7 +231,7 @@ export default defineEventHandler(async (event) => {
     })
 
     // data-* 
-    html = html.replace(/(data-(?:src|lazy-src|original|bg|background|srcset|poster))\s*=\s*["']([^"']+)["']/gi, (_, attr, value) => {
+    html = html.replace(/(data-(?:src|lazy-src|original|bg|background|srcset|poster|file|url))\s*=\s*["']([^"']+)["']/gi, (_, attr, value) => {
       return `${attr}="${toProxy(value)}"`
     })
 
@@ -207,22 +244,13 @@ export default defineEventHandler(async (event) => {
       return `url(${quote}${toProxy(value)}${quote})`
     })
 
-    // style attributes
-    html = html.replace(/style\s*=\s*["']([^"']*)["']/gi, (_, content) => {
-      const newContent = content.replace(/url\((['"]?)([^"')]+)\1\)/gi, (f: string, q: string, v: string) => {
-        if (v.startsWith('data:')) return f
-        return `url(${q}${toProxy(v)}${q})`
-      })
-      return `style="${newContent}"`
-    })
-
     // Limpiar protecciones
     html = html
       .replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, '')
       .replace(/<meta[^>]+content=["'][^"']*X-Frame-Options[^"']*["'][^>]*>/gi, '')
       .replace(/\s+sandbox=["'][^"']*["']/gi, '')
 
-    // Hacer iframes más permisivos
+    // Iframes más permisivos
     html = html.replace(/<iframe\b([^>]*)>/gi, (_, attrs) => {
       let newAttrs = attrs
         .replace(/\s*sandbox=["'][^"']*["']/i, '')
@@ -231,59 +259,106 @@ export default defineEventHandler(async (event) => {
       return `<iframe${newAttrs}>`
     })
 
-    // 🔥 INYECCIÓN DE FETCH + XHR (lo más importante)
+    // 🔥 INYECCIÓN EXTREMA (fetch + XHR + HLS.js + setAttribute + MutationObserver)
     const injectScript = `
 <script>
 (function() {
   const PROXY = '/proxy-zilla?url=';
-  const originalFetch = window.fetch;
-  const originalXHROpen = XMLHttpRequest.prototype.open;
-  const originalXHRSend = XMLHttpRequest.prototype.send;
 
   function shouldProxy(url) {
-    if (!url || url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('javascript:')) return false;
+    if (!url || typeof url !== 'string') return false;
+    if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('javascript:')) return false;
     if (url.includes('/proxy-zilla')) return false;
-    // Proxyear casi todo lo que no sea same-origin estricto
+
     try {
       const u = new URL(url, location.href);
-      return u.origin !== location.origin || 
-             /\\.(m3u8|ts|mp4|webm|m4s|mpd|json)(\\?|$)/i.test(u.pathname) ||
-             /\\/(stream|hls|embed|player|media|getvideo|ajax)\\//i.test(u.pathname);
-    } catch {
+      return (
+        u.origin !== location.origin ||
+        /\\.(m3u8|ts|mp4|webm|m4s|mpd|m4v|json)(\\?|$)/i.test(u.pathname) ||
+        /\\/(stream|hls|embed|player|media|getvideo|play|ajax|api|file)\\//i.test(u.pathname)
+      );
+    } catch (e) {
       return true;
     }
   }
 
-  function toProxyUrl(url) {
+  function toProxy(url) {
     try {
       const absolute = new URL(url, location.href).href;
       return PROXY + encodeURIComponent(absolute) + '&resource=1';
-    } catch {
+    } catch (e) {
       return url;
     }
   }
 
-  // Patch fetch
+  // 1. Patch fetch
+  const _fetch = window.fetch;
   window.fetch = function(input, init) {
-    let url = typeof input === 'string' ? input : input.url;
-    if (shouldProxy(url)) {
-      url = toProxyUrl(url);
-      if (typeof input === 'string') {
-        input = url;
-      } else {
-        input = new Request(url, input);
+    try {
+      let url = typeof input === 'string' ? input : (input && input.url);
+      if (shouldProxy(url)) {
+        const proxied = toProxy(url);
+        if (typeof input === 'string') input = proxied;
+        else if (input instanceof Request) input = new Request(proxied, input);
       }
-    }
-    return originalFetch.call(this, input, init);
+    } catch (e) {}
+    return _fetch.call(this, input, init);
   };
 
-  // Patch XMLHttpRequest
+  // 2. Patch XMLHttpRequest
+  const _open = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-    if (shouldProxy(url)) {
-      url = toProxyUrl(url);
-    }
-    return originalXHROpen.call(this, method, url, ...rest);
+    try {
+      if (shouldProxy(url)) url = toProxy(url);
+    } catch (e) {}
+    return _open.call(this, method, url, ...rest);
   };
+
+  // 3. Patch setAttribute
+  const _setAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function(name, value) {
+    try {
+      if ((name === 'src' || name === 'href') && shouldProxy(value)) {
+        value = toProxy(value);
+      }
+    } catch (e) {}
+    return _setAttribute.call(this, name, value);
+  };
+
+  // 4. Patch HLS.js si existe (muy importante)
+  const patchHls = () => {
+    try {
+      if (window.Hls && window.Hls.prototype) {
+        const originalLoadSource = window.Hls.prototype.loadSource;
+        window.Hls.prototype.loadSource = function(src) {
+          if (shouldProxy(src)) src = toProxy(src);
+          return originalLoadSource.call(this, src);
+        };
+      }
+    } catch (e) {}
+  };
+  patchHls();
+  // Reintentar por si HLS.js se carga después
+  setTimeout(patchHls, 1000);
+  setTimeout(patchHls, 3000);
+
+  // 5. MutationObserver para cambios dinámicos
+  const observer = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.type === 'attributes' && (m.attributeName === 'src' || m.attributeName === 'href')) {
+        const el = m.target;
+        const val = el.getAttribute(m.attributeName);
+        if (val && shouldProxy(val)) {
+          el.setAttribute(m.attributeName, toProxy(val));
+        }
+      }
+    }
+  });
+  observer.observe(document.documentElement, {
+    attributes: true,
+    subtree: true,
+    attributeFilter: ['src', 'href']
+  });
 })();
 </script>
 `
@@ -306,7 +381,6 @@ export default defineEventHandler(async (event) => {
     headers.set('Access-Control-Expose-Headers', '*')
     headers.set('X-Content-Type-Options', 'nosniff')
     headers.set('Vary', 'User-Agent')
-    headers.set('Keep-Alive', 'timeout=5, max=100')
     headers.set('Cache-Control', 'public, max-age=1800')
     headers.set('X-Frame-Options', 'ALLOWALL')
     headers.set('Content-Security-Policy', "frame-ancestors *;")
@@ -319,7 +393,7 @@ export default defineEventHandler(async (event) => {
     console.error('[Proxy Page Error]', targetUrl, err)
     throw createError({
       statusCode: 502,
-      statusMessage: 'Proxy page failed',
+      statusMessage: 'Proxy failed',
       data: { target: targetUrl, message: err?.message },
     })
   }
