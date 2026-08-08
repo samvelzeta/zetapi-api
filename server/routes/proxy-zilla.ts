@@ -3,7 +3,8 @@ export default defineEventHandler(async (event) => {
   const targetUrl = query.url as string;
   if (!targetUrl) throw createError({ statusCode: 400, message: "url required" });
 
-  // Fetch the Zilla page
+  console.log("🔄 Proxy Zilla:", targetUrl);
+
   const response = await fetch(targetUrl, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -12,18 +13,12 @@ export default defineEventHandler(async (event) => {
   });
 
   let body = await response.text();
-
-  // Remove X-Frame-Options and CSP headers that prevent embedding
   const headers = new Headers(response.headers);
   headers.delete("x-frame-options");
   headers.delete("content-security-policy");
   headers.set("Access-Control-Allow-Origin", "*");
 
-  // Optionally rewrite resource URLs to go through our proxy (if needed)
-  // body = body.replace(/(src|href)="https?:\/\/player\.zilla-networks\.com/g, '$1="/proxy-zilla?url=');
+  console.log("✅ Proxy Zilla: status", response.status);
 
-  return new Response(body, {
-    status: response.status,
-    headers,
-  });
+  return new Response(body, { status: response.status, headers });
 });
