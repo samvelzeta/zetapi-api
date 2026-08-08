@@ -2,7 +2,7 @@ import { getJKAnimeServers, getJKAnimeSubtitles, getJKAnimeLatestEpisode } from 
 import { getAnimeFLVServers } from "./animeflv";
 import { findJKAnimeSlug } from "./jkSearch";
 import { getAnimeMetadata } from "./metadata";
-import { resolveSlugVariants } from "./slugResolver";
+import { resolveSlugVariants } from "./slugResolver"; // Solo para AnimeFLV
 
 export async function getAllServers({
   slug,
@@ -20,56 +20,51 @@ export async function getAllServers({
   const allServers: any[] = [];
   let latestEpisode: number | null = null;
 
-  // Obtener títulos alternativos desde las APIs de metadatos
-  const searchTitle = title || slug; // slug puede servir como búsqueda inicial
+  const searchTitle = title || slug;
   let extraTitles: string[] = [];
   try {
     const meta = await getAnimeMetadata(searchTitle);
     extraTitles = meta.titles;
   } catch {}
 
-  // Generar todas las variantes de slugs posibles (con los títulos obtenidos)
+  // ─── 1. ANIMEFLV (aún con variantes de slug, hasta que implementemos su buscador) ───
   const variants = resolveSlugVariants(slug, extraTitles);
-
-  // ─── 1. ANIMEFLV ───
   for (const variant of variants) {
     const { servers, latestEpisode: le } = await getAnimeFLVServers(variant, number);
     if (servers.length) {
-      allServers.push(
-        ...servers.map(s => ({
-          name: s.name,
-          type: "embed",
-          embed: s.url,
-          lang: "sub",
-        }))
-      );
+      allServers.push(...servers.map(s => ({
+        name: s.name,
+        type: "embed",
+        embed: s.url,
+        lang: "sub"
+      })));
       if (le) latestEpisode = le;
       break;
     }
   }
 
-  // ─── 2. JKANIME ─── (respaldo)
+  // ─── 2. JKANIME (buscador mejorado) ───
   if (allServers.length === 0) {
-    // Usamos la búsqueda fuzzy mejorada
     const jkSlug = await findJKAnimeSlug(
       { slug, title: searchTitle, anilistId },
       env,
       extraTitles
     );
-    const targetSlug = jkSlug || slug;
+    if (jkSlug) {
+      // Validar que el episodio existe (ya lo hace findJKAnimeSlug indirectamente)
+      const jkServers = await getJKAnimeServers(jkSlug, number);
+      if (jkServers.length) {
+        allServers.push(...jkServers.map(s => ({
+          name: s.name,
+          type: "embed",
+          embed: s.url,
+          lang: "sub"
+        })));
 
-    const jkServers = await getJKAnimeServers(targetSlug, number);
-    for (const s of jkServers) {
-      allServers.push({
-        name: s.name,
-        type: "embed",
-        embed: s.url,
-        lang: "sub",
-      });
+        const jkLatest = await getJKAnimeLatestEpisode(jkSlug);
+        if (jkLatest) latestEpisode = jkLatest;
+      }
     }
-
-    const jkLatest = await getJKAnimeLatestEpisode(targetSlug);
-    if (jkLatest) latestEpisode = jkLatest;
   }
 
   // Deduplicar
