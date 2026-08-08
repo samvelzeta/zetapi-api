@@ -12,44 +12,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: "Número de episodio inválido" });
   }
 
-  // KV (opcional)
-  let cached: any = null;
-  try {
-    const env = (event.context as any).cloudflare?.env;
-    if (env?.ANIME_CACHE) {
-      const key = `${slug}:${episode}:${lang || "sub"}`;
-      const raw = await env.ANIME_CACHE.get(key);
-      if (raw) cached = JSON.parse(raw);
-    }
-  } catch {}
-
-  if (cached?.servers) {
-    return {
-      success: true,
-      source: "kv",
-      data: { slug, number: episode, servers: cached.servers, subtitles: [], latestEpisode: cached.latestEpisode || null }
-    };
-  }
-
   const { servers, latestEpisode } = await getAllServers({
     slug,
     number: episode,
-    title: slug, // si tu frontend puede enviar el título real, mejor
+    title: slug,
     anilistId: anilistId ? Number(anilistId) : undefined,
   });
-
-  console.log("🔍 Servers encontrados:", servers.length);
-
-  // Guardar en KV
-  if (servers.length) {
-    try {
-      const env = (event.context as any).cloudflare?.env;
-      if (env?.ANIME_CACHE) {
-        const key = `${slug}:${episode}:${lang || "sub"}`;
-        await env.ANIME_CACHE.put(key, JSON.stringify({ servers, subtitles: [], latestEpisode }), { expirationTtl: 60 * 60 * 24 * 30 });
-      }
-    } catch {}
-  }
 
   return {
     success: true,
