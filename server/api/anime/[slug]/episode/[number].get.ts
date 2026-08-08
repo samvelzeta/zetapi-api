@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
   const { servers, latestEpisode } = await getAllServers({
     slug,
     number: episode,
-    title: slug, // si tu frontend puede pasar el título real, mejor
+    title: slug,
     anilistId: anilistId ? Number(anilistId) : undefined,
   });
 
@@ -50,11 +50,7 @@ export default defineEventHandler(async (event) => {
       const env = (event.context as any).cloudflare?.env;
       if (env?.ANIME_CACHE) {
         const key = `${slug}:${episode}:${lang || "sub"}`;
-        await env.ANIME_CACHE.put(
-          key,
-          JSON.stringify({ servers, subtitles, latestEpisode }),
-          { expirationTtl: 60 * 60 * 24 * 30 }
-        );
+        await env.ANIME_CACHE.put(key, JSON.stringify({ servers, subtitles, latestEpisode }), { expirationTtl: 60 * 60 * 24 * 30 });
       }
     } catch {}
   }
