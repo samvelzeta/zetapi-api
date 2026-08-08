@@ -2,9 +2,8 @@ import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
 import { scrapePage } from "./sources";
 import { findJKAnimeSlug } from "./jkSearch";
 import { getAnimeMetadata } from "./metadata";
-import { matchScore } from "./titleMatcher";
 
-const PROXY_ZILLA = "/proxy-zilla?url=";
+const PROXY = "/proxy-zilla?url=";
 
 export async function getAllServers({
   slug,
@@ -25,8 +24,7 @@ export async function getAllServers({
   const meta = await getAnimeMetadata(searchTitle);
   const allTitles = meta.titles;
 
-  // ─── 1. ANIMEAV1 (Zilla) ───
-  // Generar candidatos de slug a partir de todos los títulos (sin limitarse a una sola transformación)
+  // ─── 1. ANIMEAV1 (UPNShare, MP4Upload, Mega) ───
   const tried = new Set<string>();
   for (const t of allTitles) {
     const candidateSlugs = generateSlugVariants(t);
@@ -38,16 +36,20 @@ export async function getAllServers({
       const av1Servers = await scrapePage(url);
       if (av1Servers.length) {
         for (const s of av1Servers) {
+          // Mega sin proxy, los demás con proxy
+          const embedUrl = s.name === "Mega"
+            ? s.embed
+            : `${PROXY}${encodeURIComponent(s.embed)}`;
           allServers.push({
             name: "",
             type: "Externo",
-            embed: `${PROXY_ZILLA}${encodeURIComponent(s.embed)}`,
+            embed: embedUrl,
           });
         }
-        break; // encontrado, salimos del bucle
+        break; // encontrado
       }
     }
-    if (allServers.length) break; // ya tenemos servidores
+    if (allServers.length) break;
   }
 
   // ─── 2. JKANIME (Magi, Desu) ───
@@ -85,7 +87,7 @@ export async function getSubtitles(slug: string, episode: number) {
   return getJKAnimeSubtitles(slug, episode);
 }
 
-// ─── Helper: genera variantes de slug para AnimeAV1 ───
+// ─── Helper para generar variantes de slug para AnimeAV1 ───
 function generateSlugVariants(title: string): string[] {
   const base = title
     .toLowerCase()
@@ -106,14 +108,14 @@ function generateSlugVariants(title: string): string[] {
     .replace(/^-|-$/g, "");
   if (noSeason && noSeason !== base) variants.add(noSeason);
 
-  // Versión corta (primeras 3-4 palabras)
+  // Versión corta (primeras 3‑4 palabras)
   const words = base.split("-").filter(w => w.length > 1);
   if (words.length >= 3) {
     variants.add(words.slice(0, 3).join("-"));
     variants.add(words.slice(0, 4).join("-"));
   }
 
-  // Reemplazar "season" por "tv" y viceversa
+  // Intercambiar season / tv
   if (base.includes("season")) variants.add(base.replace(/season/gi, "tv"));
   if (base.includes("tv")) variants.add(base.replace(/tv/gi, "season"));
 
