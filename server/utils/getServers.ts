@@ -1,6 +1,7 @@
-import { getJKAnimeServers, getJKAnimeSubtitles, findJKAnimeSlug } from "./jkanime";
+import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
+import { findJKAnimeSlug } from "./jkSearch";          // <-- importación correcta
 import { getAnimeAV1Embeds } from "./animeav1";
-import { getAnimeX2Servers } from "./animex2";   // <-- nueva
+import { getAnimeX2Servers } from "./animex2";
 import { getAnimeMetadata } from "./metadata";
 
 const PROXY = "/proxy-zilla?url=";
@@ -25,7 +26,7 @@ export async function getAllServers({
 
   const tried = new Set<string>();
 
-  // ─── 1. ANIMEX2 (nueva, prioridad máxima) ───
+  // ─── 1. ANIMEX2 (prioridad máxima) ───
   for (const t of allTitles) {
     const slugs = generateSlugVariants(t);
     for (const candidate of slugs) {
@@ -35,7 +36,6 @@ export async function getAllServers({
       const servers = await getAnimeX2Servers(candidate, number);
       if (servers.length) {
         for (const s of servers) {
-          // Todos los servidores de Animex2 se entregan directamente (o podrían pasar por proxy si se desea)
           allServers.push({
             name: "",
             type: "Externo",
