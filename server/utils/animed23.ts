@@ -1,4 +1,4 @@
-import { fetchHtml } from "./fetchers";
+import { fetchHtml, getHeaders } from "./fetcher"; // <-- Importación corregida (singular)
 import { getAnimeMetadata } from "./metadata";
 
 // Función para extraer URLs de servidores de una respuesta (JSON o HTML plano)
@@ -97,6 +97,3 @@ export async function getAnimeD23Servers(slug: string, episode: number): Promise
   // Si no se encontró nada, devolver array vacío
   return [];
 }
-
-// Reutilizar getHeaders de fetchers
-import { getHeaders } from "./fetchers";
