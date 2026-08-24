@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
       ...(cached.sources.hls || []),
       ...(cached.sources.mp4 || []),
       ...(cached.sources.embed || []),
-    ].map((u: string) => ({ embed: u, name: "", type: "Externo" })); // reasignar nombres en cache
+    ].map((u: string) => ({ embed: u, name: "", type: "Externo" }));
 
     if (servers.length) {
       return {
