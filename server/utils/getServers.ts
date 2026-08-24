@@ -3,7 +3,7 @@ import { findJKAnimeSlug } from "./jkSearch";
 import { getAnimeAV1Embeds } from "./animeav1";
 import { getAnimeX2Servers } from "./animex2";
 import { getAnimeMetadata } from "./metadata";
-import { getAnimeD23Servers } from "./animed23"; // <-- NUEVA IMPORTACIÓN
+import { getAnimeD23Servers } from "./animed23"; // <-- Importación correcta
 
 const PROXY = "/proxy-zilla?url=";
 
