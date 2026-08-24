@@ -1,8 +1,9 @@
 import { getJKAnimeServers, getJKAnimeSubtitles } from "./jkanime";
-import { findJKAnimeSlug } from "./jkSearch";          // <-- importación correcta
+import { findJKAnimeSlug } from "./jkSearch";
 import { getAnimeAV1Embeds } from "./animeav1";
 import { getAnimeX2Servers } from "./animex2";
 import { getAnimeMetadata } from "./metadata";
+import { getAnimeD23Servers } from "./animed23"; // <-- NUEVA IMPORTACIÓN
 
 const PROXY = "/proxy-zilla?url=";
 
@@ -23,7 +24,6 @@ export async function getAllServers({
   const searchTitle = title || slug;
   const meta = await getAnimeMetadata(searchTitle);
   const allTitles = meta.titles;
-
   const tried = new Set<string>();
 
   // ─── 1. ANIMEX2 (prioridad máxima) ───
@@ -75,7 +75,28 @@ export async function getAllServers({
     }
   }
 
-  // ─── 3. JKANIME (fallback final) ───
+  // ─── 3. ANIMED23 (NUEVO - Se agrega aquí) ───
+  if (!allServers.length) {
+    // Generar variantes de slug para buscar en Animed23
+    const d23Slugs = [slug, ...allTitles.map(t => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-"))];
+    
+    for (const candidate of d23Slugs) {
+      const servers = await getAnimeD23Servers(candidate, number);
+      if (servers.length) {
+        for (const s of servers) {
+          // Los enlaces de AnimeD23 (archive, ok, etc.) son directos, no necesitan proxy
+          allServers.push({
+            name: "",
+            type: "Externo",
+            embed: s.url,
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  // ─── 4. JKANIME (fallback final) ───
   if (!allServers.length) {
     const jkSlug = await findJKAnimeSlug(searchTitle, env, allTitles, meta.malId);
     const targetSlug = jkSlug || slug;
@@ -110,7 +131,7 @@ export async function getSubtitles(slug: string, episode: number) {
   return getJKAnimeSubtitles(slug, episode);
 }
 
-// ─── Helper para generar variantes de slug (compartido) ───
+// Helper para generar variantes de slug (compartido)
 function generateSlugVariants(title: string): string[] {
   const base = title
     .toLowerCase()
