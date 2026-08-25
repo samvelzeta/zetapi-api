@@ -1,21 +1,36 @@
-import { getJKAnimeServers } from "./jkanime";
-import { findJKAnimeSlug } from "./jkSearch";
+import {
+  findJKAnimeSlug,
+} from "./jkSearch";
 
 import {
-  getAnimeAV1Embeds,
+  getJKAnimeServers,
+} from "./jkanime";
+
+import {
   findAnimeAV1Slug,
+  getAnimeAV1Embeds,
 } from "./animeav1";
 
-import { getAnimeX2Servers } from "./animex2";
-
-import { getAnimeMetadata } from "./metadata";
-
-import { getAnimeD23Servers } from "./animed23";
-
 import {
-  findAnimeFLVSlug,
   getAnimeFLVServers,
 } from "./animeflv";
+
+import {
+  getAnimeX2Servers,
+} from "./animex2";
+
+import {
+  getAnimeD23Servers,
+} from "./animed23";
+
+import {
+  getAnimeMetadata,
+} from "./metadata";
+
+interface InternalServer {
+  url: string;
+  priority: number;
+}
 
 export interface AggregatedServer {
   name: string;
@@ -23,140 +38,14 @@ export interface AggregatedServer {
   embed: string;
 }
 
-function cleanSlug(
-  value: string,
-): string {
-  return String(value || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(
-      /[\u0300-\u036f]/g,
-      "",
-    )
-    .replace(
-      /[^a-z0-9\s-]/g,
-      "",
-    )
-    .replace(
-      /\s+/g,
-      "-",
-    )
-    .replace(
-      /-+/g,
-      "-",
-    )
-    .replace(
-      /^-|-$/g,
-      "",
-    );
-}
-
-function generateFallbackSlugs(
-  input: string,
-  titles: string[],
-): string[] {
-  const values = [
-    input,
-    ...titles,
-  ];
-
-  const variants =
-    new Set<string>();
-
-  for (
-    const value of values
-  ) {
-    const base =
-      cleanSlug(value);
-
-    if (!base) {
-      continue;
-    }
-
-    variants.add(base);
-
-    const noSeason =
-      base
-        .replace(
-          /-(?:season|temporada|part|parte|cour)-?\d+$/i,
-          "",
-        )
-        .replace(
-          /-\d+(?:st|nd|rd|th)-(?:season|temporada)$/i,
-          "",
-        )
-        .replace(
-          /-+/g,
-          "-",
-        )
-        .replace(
-          /^-|-$/g,
-          "",
-        );
-
-    if (noSeason) {
-      variants.add(
-        noSeason,
-      );
-    }
-
-    const noYear =
-      base.replace(
-        /-(?:19|20)\d{2}$/,
-        "",
-      );
-
-    if (noYear) {
-      variants.add(
-        noYear,
-      );
-    }
-
-    const words =
-      base
-        .split("-")
-        .filter(Boolean);
-
-    if (
-      words.length >= 3
-    ) {
-      variants.add(
-        words
-          .slice(0, 3)
-          .join("-"),
-      );
-    }
-
-    if (
-      words.length >= 4
-    ) {
-      variants.add(
-        words
-          .slice(0, 4)
-          .join("-"),
-      );
-    }
-  }
-
-  return [
-    ...variants,
-  ].slice(0, 6);
-}
-
-function normalizeEmbed(
+function normalizeUrl(
   value: string,
 ): string | null {
-  if (!value) {
-    return null;
-  }
-
   const url =
-    value.trim();
+    String(value || "").trim();
 
   if (
-    !/^https?:\/\//i.test(
-      url,
-    )
+    !/^https?:\/\//i.test(url)
   ) {
     return null;
   }
@@ -164,45 +53,120 @@ function normalizeEmbed(
   return url;
 }
 
-function addServer(
-  target: AggregatedServer[],
-  source: string,
-  name: string,
+function addUnique(
+  target: InternalServer[],
   url: string,
+  priority: number,
 ) {
-  const embed =
-    normalizeEmbed(url);
+  const clean =
+    normalizeUrl(url);
 
-  if (!embed) {
+  if (!clean) {
+    return;
+  }
+
+  if (
+    target.some(
+      item =>
+        item.url
+          .replace(
+            /\/+$/,
+            "",
+          )
+          .toLowerCase() ===
+        clean
+          .replace(
+            /\/+$/,
+            "",
+          )
+          .toLowerCase(),
+    )
+  ) {
     return;
   }
 
   target.push({
-    name: name
-      ? `${source} • ${name}`
-      : source,
-
-    type: "Externo",
-
-    embed,
+    url: clean,
+    priority,
   });
 }
 
-async function resolveJKAnime(
-  input: string,
+function slugFallbacks(
+  value: string,
+): string[] {
+  const normalized =
+    String(value || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(
+        /[\u0300-\u036f]/g,
+        "",
+      )
+      .replace(
+        /[^a-z0-9\s-]/g,
+        " ",
+      )
+      .replace(
+        /\s+/g,
+        "-",
+      )
+      .replace(
+        /-+/g,
+        "-",
+      )
+      .replace(
+        /^-|-$/g,
+        "",
+      );
+
+  const variants =
+    new Set<string>();
+
+  if (!normalized) {
+    return [];
+  }
+
+  variants.add(
+    normalized,
+  );
+
+  variants.add(
+    normalized.replace(
+      /-(?:season|temporada|part|parte|cour)-?\d+$/i,
+      "",
+    ),
+  );
+
+  variants.add(
+    normalized.replace(
+      /-(?:19|20)\d{2}$/,
+      "",
+    ),
+  );
+
+  return [
+    ...variants,
+  ].filter(Boolean);
+}
+
+async function scrapeJKAnime(
+  title: string,
   titles: string[],
   env: any,
   episode: number,
-): Promise<AggregatedServer[]> {
+): Promise<InternalServer[]> {
+  const result: InternalServer[] =
+    [];
+
   const slug =
     await findJKAnimeSlug(
-      input,
+      title,
       env,
       titles,
     );
 
   if (!slug) {
-    return [];
+    return result;
   }
 
   const servers =
@@ -211,72 +175,41 @@ async function resolveJKAnime(
       episode,
     );
 
-  return servers.map(
-    server => ({
-      name:
-        `JKAnime • ${server.name}`,
-
-      type:
-        "Externo" as const,
-
-      embed:
-        server.url,
-    }),
-  );
-}
-
-async function resolveAnimeFLV(
-  input: string,
-  titles: string[],
-  env: any,
-  episode: number,
-): Promise<AggregatedServer[]> {
-  const slug =
-    await findAnimeFLVSlug(
-      input,
-      titles,
-      env,
+  for (
+    const server of servers
+  ) {
+    addUnique(
+      result,
+      server.url,
+      server.name
+        .toLowerCase() ===
+      "desu"
+        ? 0
+        : 1,
     );
-
-  if (!slug) {
-    return [];
   }
 
-  const servers =
-    await getAnimeFLVServers(
-      slug,
-      episode,
-    );
-
-  return servers.map(
-    server => ({
-      name:
-        `AnimeFLV • ${server.name}`,
-
-      type:
-        "Externo" as const,
-
-      embed:
-        server.url,
-    }),
-  );
+  return result;
 }
 
-async function resolveAnimeAV1(
-  input: string,
+async function scrapeAnimeAV1(
+  title: string,
   titles: string[],
   env: any,
   episode: number,
-): Promise<AggregatedServer[]> {
+): Promise<InternalServer[]> {
+  const result: InternalServer[] =
+    [];
+
   const slug =
     await findAnimeAV1Slug(
-      input,
+      title,
       titles,
       env,
     );
 
   if (!slug) {
-    return [];
+    return result;
   }
 
   const embeds =
@@ -285,122 +218,168 @@ async function resolveAnimeAV1(
       episode,
     );
 
-  return embeds.map(
-    embed => ({
-      name:
-        `AnimeAV1 • ${embed.server}` +
-        (
-          embed.language ===
-          "dub"
-            ? " • DUB"
-            : " • SUB"
-        ),
+  for (
+    const embed of embeds
+  ) {
+    const server =
+      embed.server.toLowerCase();
 
-      type:
-        "Externo" as const,
+    /*
+     * Zilla primero.
+     */
+    let priority = 2;
 
-      /*
-       * MUY IMPORTANTE:
-       *
-       * Se devuelve el iframe nativo.
-       * No se envuelve en /proxy-zilla.
-       */
-      embed:
-        embed.url,
-    }),
-  );
+    if (
+      server === "hls"
+    ) {
+      priority = 2;
+    } else if (
+      server === "byse"
+    ) {
+      priority = 3;
+    } else if (
+      server === "mega"
+    ) {
+      priority = 4;
+    } else if (
+      server === "mp4upload"
+    ) {
+      priority = 5;
+    }
+
+    addUnique(
+      result,
+      embed.url,
+      priority,
+    );
+  }
+
+  return result;
 }
 
-async function resolveAnimeX2(
-  input: string,
-  titles: string[],
+async function scrapeAnimeFLV(
+  title: string,
   episode: number,
-): Promise<AggregatedServer[]> {
-  const results:
-    AggregatedServer[] =
+): Promise<InternalServer[]> {
+  const result: InternalServer[] =
+    [];
+
+  const servers =
+    await getAnimeFLVServers(
+      title,
+      episode,
+    );
+
+  for (
+    const server of servers
+  ) {
+    const name =
+      server.name.toLowerCase();
+
+    let priority = 6;
+
+    if (name === "hls") {
+      priority = 6;
+    } else if (
+      name === "byse"
+    ) {
+      priority = 7;
+    } else if (
+      name === "mega"
+    ) {
+      priority = 8;
+    } else if (
+      name === "mp4upload"
+    ) {
+      priority = 9;
+    }
+
+    addUnique(
+      result,
+      server.url,
+      priority,
+    );
+  }
+
+  return result;
+}
+
+async function scrapeAnimeX2(
+  title: string,
+  episode: number,
+): Promise<InternalServer[]> {
+  const result: InternalServer[] =
     [];
 
   for (
-    const candidate of
-    generateFallbackSlugs(
-      input,
-      titles,
-    )
+    const slug of
+    slugFallbacks(title)
   ) {
     const servers =
       await getAnimeX2Servers(
-        candidate,
+        slug,
         episode,
       );
 
-    if (!servers.length) {
+    if (
+      !servers.length
+    ) {
       continue;
     }
 
     for (
-      const server of
-      servers
+      const server of servers
     ) {
-      addServer(
-        results,
-        "AnimeX2",
-        server.name,
+      addUnique(
+        result,
         server.url,
+        20,
       );
     }
 
-    if (results.length) {
-      break;
-    }
+    break;
   }
 
-  return results;
+  return result;
 }
 
-async function resolveAnimeD23(
-  input: string,
-  titles: string[],
+async function scrapeAnimeD23(
+  title: string,
   episode: number,
-): Promise<AggregatedServer[]> {
-  const results:
-    AggregatedServer[] =
+): Promise<InternalServer[]> {
+  const result: InternalServer[] =
     [];
 
   for (
-    const candidate of
-    generateFallbackSlugs(
-      input,
-      titles,
-    )
+    const slug of
+    slugFallbacks(title)
   ) {
     const servers =
       await getAnimeD23Servers(
-        candidate,
+        slug,
         episode,
       );
 
-    if (!servers.length) {
+    if (
+      !servers.length
+    ) {
       continue;
     }
 
     for (
-      const server of
-      servers
+      const server of servers
     ) {
-      addServer(
-        results,
-        "AnimeD23",
-        "",
+      addUnique(
+        result,
         server.url,
+        30,
       );
     }
 
-    if (results.length) {
-      break;
-    }
+    break;
   }
 
-  return results;
+  return result;
 }
 
 export async function getAllServers({
@@ -417,65 +396,79 @@ export async function getAllServers({
   env?: any;
 }): Promise<AggregatedServer[]> {
   const input =
-    title || slug;
+    title?.trim() ||
+    slug;
 
   /*
-   * Si existe AniList ID usamos ID.
-   * Eso elimina falsos positivos por título.
+   * AniList solo para conseguir
+   * títulos alternativos.
    */
-  const meta =
+  const metadata =
     await getAnimeMetadata(
       input,
       anilistId,
     );
 
   const titles = [
-    ...new Set(
-      [
-        input,
-        slug,
-        ...(meta.titles || []),
-      ].filter(Boolean),
-    ),
-  ];
+    input,
+    slug,
+    ...(metadata.titles || []),
+  ].filter(Boolean);
+
+  const uniqueTitles =
+    [
+      ...new Set(
+        titles,
+      ),
+    ];
 
   /*
-   * Todas las fuentes se consultan
-   * independientemente.
+   * IMPORTANTE:
    *
-   * Si una falla, las demás continúan.
+   * Todas las fuentes se consultan.
+   *
+   * No hacemos:
+   *
+   * JKAnime -> si encontró algo
+   * STOP.
+   *
+   * Hacemos:
+   *
+   * JKAnime
+   * AnimeAV1
+   * AnimeFLV
+   * AnimeX2
+   * AnimeD23
+   *
+   * y juntamos todo.
    */
   const tasks = [
-    resolveJKAnime(
+    scrapeJKAnime(
       input,
-      titles,
+      uniqueTitles,
       env,
       number,
     ),
 
-    resolveAnimeFLV(
+    scrapeAnimeAV1(
       input,
-      titles,
+      uniqueTitles,
       env,
       number,
     ),
 
-    resolveAnimeAV1(
+    scrapeAnimeFLV(
       input,
-      titles,
-      env,
       number,
     ),
 
-    resolveAnimeX2(
+    scrapeAnimeX2(
       input,
-      titles,
       number,
     ),
 
-    resolveAnimeD23(
+    scrapeAnimeD23(
       input,
-      titles,
       number,
     ),
   ];
@@ -485,145 +478,92 @@ export async function getAllServers({
       tasks,
     );
 
-  const allServers:
-    AggregatedServer[] =
+  const servers:
+    InternalServer[] =
     [];
 
   for (
-    const result of
-    settled
+    const item of settled
   ) {
     if (
-      result.status ===
+      item.status ===
       "fulfilled"
     ) {
-      allServers.push(
-        ...result.value,
+      servers.push(
+        ...item.value,
       );
     }
   }
 
   /*
-   * Deduplicación.
+   * Orden interno.
    */
+  servers.sort(
+    (a, b) =>
+      a.priority -
+      b.priority,
+  );
+
+  /*
+   * Deduplicación final.
+   */
+  const finalUrls: string[] =
+    [];
+
   const seen =
     new Set<string>();
 
-  const unique =
-    allServers.filter(
-      server => {
-        const key =
-          server.embed
-            .replace(
-              /^https?:\/\//i,
-              "",
-            )
-            .split("?")[0]
-            .replace(
-              /\/$/,
-              "",
-            )
-            .toLowerCase();
+  for (
+    const server of servers
+  ) {
+    const key =
+      server.url
+        .replace(
+          /\/+$/,
+          "",
+        )
+        .toLowerCase();
 
-        if (
-          !key ||
-          seen.has(key)
-        ) {
-          return false;
-        }
+    if (
+      seen.has(key)
+    ) {
+      continue;
+    }
 
-        seen.add(key);
+    seen.add(key);
 
-        return true;
-      },
+    finalUrls.push(
+      server.url,
     );
+  }
 
   /*
-   * Prioridad:
+   * AQUÍ está lo que pediste:
    *
-   * 0 Desu
-   * 1 Magi
-   * 2 otros JKAnime
-   * 3 AnimeFLV
-   * 4 AnimeAV1
-   * 5 AnimeX2
-   * 6 AnimeD23
+   * NO:
+   *
+   * JKAnime • Desu
+   * AnimeAV1 • Mega
+   *
+   * SÍ:
+   *
+   * Server 1
+   * Server 2
+   * Server 3
+   * ...
    */
-  unique.sort(
-    (a, b) => {
-      const score =
-        (name: string) => {
-          const n =
-            name.toLowerCase();
+  return finalUrls
+    .slice(0, 15)
+    .map(
+      (url, index) => ({
+        name:
+          `Server ${index + 1}`,
 
-          if (
-            n.includes(
-              "jkanime • desu",
-            )
-          ) {
-            return 0;
-          }
+        type:
+          "Externo" as const,
 
-          if (
-            n.includes(
-              "jkanime • magi",
-            )
-          ) {
-            return 1;
-          }
-
-          if (
-            n.startsWith(
-              "jkanime",
-            )
-          ) {
-            return 2;
-          }
-
-          if (
-            n.startsWith(
-              "animeflv",
-            )
-          ) {
-            return 3;
-          }
-
-          if (
-            n.startsWith(
-              "animeav1",
-            )
-          ) {
-            return 4;
-          }
-
-          if (
-            n.startsWith(
-              "animex2",
-            )
-          ) {
-            return 5;
-          }
-
-          if (
-            n.startsWith(
-              "animed23",
-            )
-          ) {
-            return 6;
-          }
-
-          return 10;
-        };
-
-      return (
-        score(a.name) -
-        score(b.name)
-      );
-    },
-  );
-
-  return unique.slice(
-    0,
-    15,
-  );
+        embed:
+          url,
+      }),
+    );
 }
