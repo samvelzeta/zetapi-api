@@ -1,85 +1,339 @@
-function normalize(text: string): string {
-  return text
+export interface TitleCandidate {
+  slug: string;
+  title: string;
+  [key: string]: any;
+}
+
+export function normalizeTitle(text: string): string {
+  return String(text || "")
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[’']/g, "")
+    .replace(/&/g, " and ")
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+function compact(text: string): string {
+  return normalizeTitle(text).replace(/\s+/g, "");
+}
+
 function tokenize(text: string): string[] {
-  return normalize(text).split(" ").filter(x => x.length > 1);
+  return normalizeTitle(text)
+    .split(" ")
+    .filter(token => token.length > 1);
 }
 
 function levenshtein(a: string, b: string): number {
-  const matrix: number[][] = [];
-  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      matrix[i][j] =
-        b[i - 1] === a[j - 1]
-          ? matrix[i - 1][j - 1]
-          : Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+  if (a === b) return 0;
+  if (!a) return b.length;
+  if (!b) return a.length;
+
+  const previous = new Array<number>(b.length + 1);
+  const current = new Array<number>(b.length + 1);
+
+  for (let j = 0; j <= b.length; j++) {
+    previous[j] = j;
+  }
+
+  for (let i = 1; i <= a.length; i++) {
+    current[0] = i;
+
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] + cost,
+      );
+    }
+
+    for (let j = 0; j <= b.length; j++) {
+      previous[j] = current[j];
     }
   }
-  return matrix[b.length][a.length];
+
+  return previous[b.length];
 }
 
-function levenshteinSimilarity(a: string, b: string): number {
-  a = normalize(a);
-  b = normalize(b);
-  if (!a || !b) return 0;
-  const dist = levenshtein(a, b);
-  return 1 - dist / Math.max(a.length, b.length);
+function levenshteinSimilarity(
+  a: string,
+  b: string,
+): number {
+  const A = normalizeTitle(a);
+  const B = normalizeTitle(b);
+
+  if (!A || !B) return 0;
+
+  return (
+    1 -
+    levenshtein(A, B) /
+      Math.max(A.length, B.length)
+  );
 }
 
-function tokenSimilarity(a: string, b: string): number {
+function tokenSimilarity(
+  a: string,
+  b: string,
+): number {
   const A = new Set(tokenize(a));
   const B = new Set(tokenize(b));
+
   if (!A.size || !B.size) return 0;
+
   let common = 0;
-  for (const token of A) if (B.has(token)) common++;
+
+  for (const token of A) {
+    if (B.has(token)) common++;
+  }
+
   return common / Math.max(A.size, B.size);
+}
+
+function orderedTokenSimilarity(
+  a: string,
+  b: string,
+): number {
+  const A = tokenize(a);
+  const B = tokenize(b);
+
+  if (!A.length || !B.length) return 0;
+
+  let matched = 0;
+  let cursor = 0;
+
+  for (const token of A) {
+    const index = B.indexOf(token, cursor);
+
+    if (index >= 0) {
+      matched++;
+      cursor = index + 1;
+    }
+  }
+
+  return matched / A.length;
+}
+
+function extractSeason(text: string): number | null {
+  const normalized = normalizeTitle(text);
+
+  const match = normalized.match(
+    /\b(?:season|temporada|part|parte|cour|s)\s*(\d+)\b/,
+  );
+
+  return match ? Number(match[1]) : null;
+}
+
+function hasExplicitSeason(text: string): boolean {
+  return /\b(?:season|temporada|part|parte|cour|s)\s*\d+\b/i.test(
+    text,
+  );
+}
+
+function hasYear(text: string): boolean {
+  return /\b(?:19|20)\d{2}\b/.test(text);
+}
+
+export function buildSearchQueries(
+  input: string,
+  aliases: string[] = [],
+): string[] {
+  const raw = [input, ...aliases].filter(Boolean);
+
+  const queries: string[] = [];
+
+  const add = (value: string) => {
+    const normalized = normalizeTitle(value);
+
+    if (
+      normalized &&
+      !queries.includes(normalized)
+    ) {
+      queries.push(normalized);
+    }
+  };
+
+  for (const value of raw) {
+    add(value);
+
+    const withoutSeason = normalizeTitle(value)
+      .replace(
+        /\b(?:season|temporada|part|parte|cour)\s*\d+\b/g,
+        " ",
+      )
+      .replace(
+        /\b\d+(?:st|nd|rd|th)\s+(?:season|temporada)\b/g,
+        " ",
+      )
+      .replace(/\s+/g, " ")
+      .trim();
+
+    add(withoutSeason);
+
+    const withoutYear = withoutSeason
+      .replace(/\b(?:19|20)\d{2}\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    add(withoutYear);
+  }
+
+  const first = normalizeTitle(input)
+    .split(" ")
+    .filter(Boolean);
+
+  for (
+    let size = Math.min(4, first.length);
+    size >= 2;
+    size--
+  ) {
+    add(first.slice(0, size).join(" "));
+  }
+
+  return queries.slice(0, 12);
 }
 
 export function matchScore(
   candidateTitle: string,
   candidateSlug: string,
-  candidateMalId: number | null,
   queryTitles: string[],
-  queryMalId: number | null
 ): number {
+  const candidate = normalizeTitle(candidateTitle);
+
+  const slugTitle = normalizeTitle(
+    candidateSlug.replace(/[-_]+/g, " "),
+  );
+
+  if (!candidate && !slugTitle) {
+    return 0;
+  }
+
   let best = 0;
 
-  // MAL ID exacto → puntuación máxima
-  if (candidateMalId && queryMalId && candidateMalId === queryMalId) {
-    return 100;
-  }
-
   for (const queryTitle of queryTitles) {
-    const q = normalize(queryTitle);
-    const c = normalize(candidateTitle);
-    if (!q || !c) continue;
+    const query = normalizeTitle(queryTitle);
 
-    if (q === c) { best = Math.max(best, 95); continue; }
+    if (!query) continue;
 
-    // Coincidencia parcial (uno contiene al otro)
-    if (c.includes(q)) best = Math.max(best, 90);
-    else if (q.includes(c)) best = Math.max(best, 85);
+    const titleExact = candidate === query;
+    const slugExact = slugTitle === query;
 
-    const lev = levenshteinSimilarity(q, c);
-    const tok = tokenSimilarity(q, c);
-    best = Math.max(best, lev * 50 + tok * 50);
+    if (titleExact) {
+      best = Math.max(best, 100);
+    }
+
+    if (slugExact) {
+      best = Math.max(best, 98);
+    }
+
+    const compactQuery = compact(query);
+
+    if (compactQuery === compact(candidate)) {
+      best = Math.max(best, 99);
+    }
+
+    if (candidate.includes(query)) {
+      const extra = Math.max(
+        0,
+        candidate.length - query.length,
+      );
+
+      best = Math.max(
+        best,
+        extra <= 8 ? 94 : 89,
+      );
+    } else if (query.includes(candidate)) {
+      best = Math.max(best, 86);
+    }
+
+    const lev = levenshteinSimilarity(
+      query,
+      candidate,
+    );
+
+    const tok = tokenSimilarity(
+      query,
+      candidate,
+    );
+
+    const ordered = orderedTokenSimilarity(
+      query,
+      candidate,
+    );
+
+    const slugTok = tokenSimilarity(
+      query,
+      slugTitle,
+    );
+
+    best = Math.max(
+      best,
+      lev * 38 +
+        tok * 34 +
+        ordered * 18 +
+        slugTok * 10,
+    );
+
+    const querySeason = extractSeason(query);
+    const candidateSeason = extractSeason(candidate);
+
+    if (
+      querySeason !== null &&
+      candidateSeason !== null &&
+      querySeason !== candidateSeason
+    ) {
+      best -= 25;
+    } else if (
+      querySeason !== null &&
+      candidateSeason === null
+    ) {
+      best -= 15;
+    } else if (
+      querySeason === null &&
+      candidateSeason !== null
+    ) {
+      best -= 6;
+    }
+
+    if (
+      !hasYear(query) &&
+      hasYear(candidate)
+    ) {
+      best -= 3;
+    }
   }
 
-  // Bonus por slug (el slug suele ser el título normalizado)
-  if (candidateSlug) {
-    const slugTitle = candidateSlug.replace(/-/g, " ");
-    best = Math.max(best, matchScore(slugTitle, "", null, queryTitles, null) * 0.9);
-  }
+  return Math.max(
+    0,
+    Math.min(100, best),
+  );
+}
 
-  return Math.min(100, best);
+export function rankCandidates<
+  T extends TitleCandidate
+>(
+  candidates: T[],
+  queryTitles: string[],
+): Array<T & { score: number }> {
+  const ranked = candidates.map(candidate => ({
+    ...candidate,
+    score: matchScore(
+      candidate.title,
+      candidate.slug,
+      queryTitles,
+    ),
+  }));
+
+  ranked.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+
+    return a.title.length - b.title.length;
+  });
+
+  return ranked;
 }
