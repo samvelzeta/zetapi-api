@@ -1,491 +1,542 @@
 import { fetchHtml } from "./fetcher";
-import { stripHtml } from "./htmlUtils";
-import {
-  buildSearchQueries,
-  normalizeTitle,
-  rankCandidates,
-  TitleCandidate,
-} from "./titleMatcher";
 
 const BASE =
-  "https://www4.animeflv.net";
-
-const memoryCache =
-  new Map<string, string>();
+  "https://animeflv.or.at";
 
 export interface AnimeFLVServer {
   name: string;
   url: string;
-  type:
-    | "iframe"
-    | "mp4"
-    | "generic";
+  type: "iframe";
 }
 
-interface SearchResult
-  extends TitleCandidate {
-  url: string;
+interface EpisodeEntry {
+  post_id?: number;
+  permalink?: string;
+  number?: number;
+  range?: number;
 }
 
-function extractSearchResults(
-  html: string,
-): SearchResult[] {
-  const results: SearchResult[] = [];
-
-  const itemRegex =
-    /<li\b[^>]*>([\s\S]*?)<\/li>/gi;
-
-  let match:
-    | RegExpExecArray
-    | null;
-
-  while (
-    (match =
-      itemRegex.exec(html)) !== null
-  ) {
-    const block = match[1];
-
-    const hrefMatch =
-      block.match(
-        /href=["']\/anime\/([^"']+)["']/i,
-      );
-
-    const titleMatch =
-      block.match(
-        /<h3\b[^>]*>([\s\S]*?)<\/h3>/i,
-      );
-
-    if (
-      !hrefMatch ||
-      !titleMatch
-    ) {
-      continue;
-    }
-
-    const slug =
-      hrefMatch[1].trim();
-
-    const title =
-      stripHtml(titleMatch[1]);
-
-    if (!slug || !title) {
-      continue;
-    }
-
-    results.push({
-      slug,
-      title,
-      url: `${BASE}/anime/${slug}`,
-    });
-  }
-
-  if (results.length) {
-    return dedupe(results);
-  }
-
-  // Fallback para cambios menores del HTML.
-  const linkRegex =
-    /<a\b[^>]*href=["']\/anime\/([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-
-  while (
-    (match =
-      linkRegex.exec(html)) !== null
-  ) {
-    const slug =
-      match[1].trim();
-
-    const titleMatch =
-      match[2].match(
-        /<h3\b[^>]*>([\s\S]*?)<\/h3>/i,
-      );
-
-    const title = stripHtml(
-      titleMatch?.[1] ||
-        match[2],
-    );
-
-    if (
-      slug &&
-      title &&
-      title.length < 180
-    ) {
-      results.push({
-        slug,
-        title,
-        url: `${BASE}/anime/${slug}`,
-      });
-    }
-  }
-
-  return dedupe(results);
-}
-
-function dedupe(
-  results: SearchResult[],
-): SearchResult[] {
-  const map =
-    new Map<string, SearchResult>();
-
-  for (const result of results) {
-    if (!map.has(result.slug)) {
-      map.set(
-        result.slug,
-        result,
-      );
-    }
-  }
-
-  return [
-    ...map.values(),
-  ];
-}
-
-export async function searchAnimeFLV(
-  query: string,
-  page = 1,
-): Promise<SearchResult[]> {
-  const url =
-    `${BASE}/browse?q=${encodeURIComponent(query)}` +
-    (page > 1
-      ? `&page=${page}`
-      : "");
-
-  const html =
-    await fetchHtml(url);
-
-  if (!html) {
-    return [];
-  }
-
-  return extractSearchResults(
-    html,
-  );
-}
-
-export async function findAnimeFLVSlug(
-  input: string,
-  allTitles: string[] = [],
-  env?: any,
-): Promise<string | null> {
-  const queries =
-    buildSearchQueries(
-      input,
-      allTitles,
-    );
-
-  const cacheKey =
-    `animeflv:${normalizeTitle(input)}`;
-
-  const memory =
-    memoryCache.get(cacheKey);
-
-  if (memory) {
-    return memory;
-  }
-
-  if (env?.SLUG_CACHE) {
-    try {
-      const cached =
-        await env.SLUG_CACHE.get(
-          cacheKey,
-        );
-
-      if (cached) {
-        memoryCache.set(
-          cacheKey,
-          cached,
-        );
-
-        return cached;
-      }
-    } catch {}
-  }
-
-  const candidates =
-    new Map<
-      string,
-      SearchResult
-    >();
-
-  // Primera pasada rápida.
-  const primary =
-    await Promise.all(
-      queries
-        .slice(0, 5)
-        .map(query =>
-          searchAnimeFLV(
-            query,
-            1,
-          ),
-        ),
-    );
-
-  for (
-    const result of
-    primary.flat()
-  ) {
-    candidates.set(
-      result.slug,
-      result,
-    );
-  }
-
-  let ranked =
-    rankCandidates(
-      [...candidates.values()],
-      [input, ...allTitles],
-    );
-
-  // Segunda pasada solamente si no hay coincidencia clara.
-  if (
-    !ranked[0] ||
-    ranked[0].score < 86
-  ) {
-    const secondary =
-      await Promise.all(
-        queries
-          .slice(5, 9)
-          .flatMap(query =>
-            [1, 2].map(
-              page =>
-                searchAnimeFLV(
-                  query,
-                  page,
-                ),
-            ),
-          ),
-      );
-
-    for (
-      const result of
-      secondary.flat()
-    ) {
-      candidates.set(
-        result.slug,
-        result,
-      );
-    }
-
-    ranked =
-      rankCandidates(
-        [...candidates.values()],
-        [input, ...allTitles],
-      );
-  }
-
-  if (!ranked.length) {
-    return null;
-  }
-
-  const best =
-    ranked[0];
-
-  if (
-    !best ||
-    best.score < 68
-  ) {
-    return null;
-  }
-
-  memoryCache.set(
-    cacheKey,
-    best.slug,
-  );
-
-  if (env?.SLUG_CACHE) {
-    try {
-      await env.SLUG_CACHE.put(
-        cacheKey,
-        best.slug,
-        {
-          expirationTtl:
-            60 * 60 * 24 * 7,
-        },
-      );
-    } catch {}
-  }
-
-  return best.slug;
-}
-
-function normalizeServerUrl(
-  url: string,
+function normalizeTitle(
+  value: string,
 ): string {
-  if (!url) return "";
-
-  return url
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
     .replace(
-      "mega.nz/embed#!",
-      "mega.nz/embed/",
+      /[\u0300-\u036f]/g,
+      "",
     )
     .replace(
-      "mega.nz/#!",
-      "mega.nz/file/",
+      /&/g,
+      " and ",
+    )
+    .replace(
+      /[^a-z0-9\s-]/g,
+      " ",
+    )
+    .replace(
+      /\s+/g,
+      " ",
     )
     .trim();
 }
 
-function extractVideosObject(
-  html: string,
-): any | null {
-  const marker =
-    "var videos =";
-
-  const index =
-    html.indexOf(marker);
-
-  if (index < 0) {
-    return null;
-  }
-
-  const start =
-    html.indexOf(
-      "{",
-      index + marker.length,
+function slugify(
+  value: string,
+): string {
+  return normalizeTitle(
+    value,
+  )
+    .replace(
+      /\s+/g,
+      "-",
+    )
+    .replace(
+      /-+/g,
+      "-",
+    )
+    .replace(
+      /^-|-$/g,
+      "",
     );
-
-  if (start < 0) {
-    return null;
-  }
-
-  let depth = 0;
-  let quote:
-    | string
-    | null = null;
-
-  let escaped = false;
-  let end = -1;
-
-  for (
-    let i = start;
-    i < html.length;
-    i++
-  ) {
-    const ch =
-      html[i];
-
-    if (quote) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-
-      if (ch === "\\") {
-        escaped = true;
-        continue;
-      }
-
-      if (ch === quote) {
-        quote = null;
-      }
-
-      continue;
-    }
-
-    if (
-      ch === '"' ||
-      ch === "'"
-    ) {
-      quote = ch;
-      continue;
-    }
-
-    if (ch === "{") {
-      depth++;
-    }
-
-    if (ch === "}") {
-      depth--;
-
-      if (depth === 0) {
-        end = i + 1;
-        break;
-      }
-    }
-  }
-
-  if (end < 0) {
-    return null;
-  }
-
-  const raw =
-    html.slice(
-      start,
-      end,
-    );
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
 }
 
-export async function getAnimeFLVServers(
-  slug: string,
-  episode: number,
-): Promise<AnimeFLVServer[]> {
+function cleanHtml(
+  value: string,
+): string {
+  return String(value || "")
+    .replace(
+      /<[^>]*>/g,
+      " ",
+    )
+    .replace(
+      /&amp;/gi,
+      "&",
+    )
+    .replace(
+      /&quot;/gi,
+      '"',
+    )
+    .replace(
+      /&#39;/gi,
+      "'",
+    )
+    .replace(
+      /&#x27;/gi,
+      "'",
+    )
+    .replace(
+      /&nbsp;/gi,
+      " ",
+    )
+    .replace(
+      /\s+/g,
+      " ",
+    )
+    .trim();
+}
+
+/*
+ * Intenta obtener la página /anime/slug/
+ * directamente.
+ */
+async function getAnimePage(
+  title: string,
+): Promise<{
+  html: string;
+  url: string;
+} | null> {
+  const slug =
+    slugify(title);
+
+  if (!slug) {
+    return null;
+  }
+
   const url =
-    `${BASE}/ver/${slug}-${episode}`;
+    `${BASE}/anime/${slug}/`;
 
   const html =
     await fetchHtml(url);
 
+  if (
+    html &&
+    html.length > 1000
+  ) {
+    return {
+      html,
+      url,
+    };
+  }
+
+  return null;
+}
+
+/*
+ * Fallback: búsqueda WordPress.
+ */
+async function searchAnimeFLV(
+  title: string,
+): Promise<{
+  html: string;
+  url: string;
+} | null> {
+  const query =
+    encodeURIComponent(
+      title,
+    );
+
+  const searchUrl =
+    `${BASE}/?s=${query}`;
+
+  const html =
+    await fetchHtml(
+      searchUrl,
+    );
+
   if (!html) {
+    return null;
+  }
+
+  /*
+   * Primero buscamos links de /anime/
+   */
+  const animeRegex =
+    /<a\b[^>]*href=["'](https?:\/\/animeflv\.or\.at\/anime\/[^"']+\/)["'][^>]*>([\s\S]*?)<\/a>/gi;
+
+  const candidates: Array<{
+    url: string;
+    title: string;
+    score: number;
+  }> = [];
+
+  let match: RegExpExecArray | null;
+
+  while (
+    (match =
+      animeRegex.exec(html)) !== null
+  ) {
+    const url =
+      match[1];
+
+    const candidateTitle =
+      cleanHtml(
+        match[2],
+      );
+
+    if (!candidateTitle) {
+      continue;
+    }
+
+    const A =
+      normalizeTitle(title);
+
+    const B =
+      normalizeTitle(
+        candidateTitle,
+      );
+
+    let score = 0;
+
+    if (A === B) {
+      score = 100;
+    } else if (
+      B.includes(A) ||
+      A.includes(B)
+    ) {
+      score = 90;
+    } else {
+      const tokens =
+        new Set(
+          A.split(" "),
+        );
+
+      const candidateTokens =
+        new Set(
+          B.split(" "),
+        );
+
+      let common = 0;
+
+      for (
+        const token of
+        tokens
+      ) {
+        if (
+          token.length > 2 &&
+          candidateTokens.has(
+            token,
+          )
+        ) {
+          common++;
+        }
+      }
+
+      score =
+        (common /
+          Math.max(
+            1,
+            tokens.size,
+          )) *
+        80;
+    }
+
+    candidates.push({
+      url,
+      title:
+        candidateTitle,
+      score,
+    });
+  }
+
+  candidates.sort(
+    (a, b) =>
+      b.score -
+      a.score,
+  );
+
+  if (
+    !candidates.length
+  ) {
+    return null;
+  }
+
+  const best =
+    candidates[0];
+
+  if (
+    best.score < 55
+  ) {
+    return null;
+  }
+
+  const animeHtml =
+    await fetchHtml(
+      best.url,
+    );
+
+  if (!animeHtml) {
+    return null;
+  }
+
+  return {
+    html: animeHtml,
+    url: best.url,
+  };
+}
+
+/*
+ * Obtiene:
+ *
+ * <script type="application/json"
+ * class="animeflv-episodes-data">
+ *
+ * [...]
+ *
+ * </script>
+ */
+function extractEpisodes(
+  html: string,
+): EpisodeEntry[] {
+  const regex =
+    /<script\b[^>]*class=["'][^"']*animeflv-episodes-data[^"']*["'][^>]*>([\s\S]*?)<\/script>/i;
+
+  const match =
+    html.match(regex);
+
+  if (!match) {
     return [];
   }
 
-  const videos =
-    extractVideosObject(
-      html,
-    );
+  const raw =
+    match[1].trim();
 
-  const sub =
-    Array.isArray(
-      videos?.SUB,
-    )
-      ? videos.SUB
-      : [];
+  try {
+    const parsed =
+      JSON.parse(raw);
 
-  const dub =
-    Array.isArray(
-      videos?.DUB,
-    )
-      ? videos.DUB
-      : [];
+    if (
+      Array.isArray(parsed)
+    ) {
+      return parsed;
+    }
+  } catch {}
 
-  const sourceList =
-    sub.length
-      ? sub
-      : dub;
+  return [];
+}
 
-  return sourceList
-    .map((server: any) => {
-      const raw =
-        normalizeServerUrl(
-          server?.code ||
-          server?.url ||
+/*
+ * Extrae los botones:
+ *
+ * <button
+ *   data-src="BASE64"
+ * >
+ *
+ * El sitio actual usa exactamente este
+ * mecanismo para cargar el iframe.
+ */
+function extractServers(
+  html: string,
+): AnimeFLVServer[] {
+  const result:
+    AnimeFLVServer[] =
+    [];
+
+  const regex =
+    /<button\b[^>]*data-src=["']([^"']+)["'][^>]*>([\s\S]*?)<\/button>/gi;
+
+  let match: RegExpExecArray | null;
+
+  const allowed =
+    new Set([
+      "hls",
+      "byse",
+      "mega",
+      "mp4upload",
+    ]);
+
+  const seen =
+    new Set<string>();
+
+  while (
+    (match =
+      regex.exec(html)) !== null
+  ) {
+    const encoded =
+      match[1];
+
+    const label =
+      cleanHtml(
+        match[2],
+      );
+
+    const normalized =
+      label.toLowerCase();
+
+    /*
+     * Voe eliminado.
+     */
+    if (
+      normalized ===
+      "voe"
+    ) {
+      continue;
+    }
+
+    if (
+      !allowed.has(
+        normalized,
+      )
+    ) {
+      continue;
+    }
+
+    let url = "";
+
+    try {
+      url =
+        atob(encoded);
+    } catch {
+      continue;
+    }
+
+    if (
+      !/^https?:\/\//i.test(
+        url,
+      )
+    ) {
+      continue;
+    }
+
+    const key =
+      url
+        .replace(
+          /\/+$/,
           "",
-        );
+        )
+        .toLowerCase();
 
-      if (!raw) {
-        return null;
+    if (
+      seen.has(key)
+    ) {
+      continue;
+    }
+
+    seen.add(key);
+
+    result.push({
+      name: label,
+      url,
+      type: "iframe",
+    });
+  }
+
+  /*
+   * El orden que nos interesa.
+   */
+  const priority =
+    (name: string) => {
+      const n =
+        name.toLowerCase();
+
+      if (n === "hls") {
+        return 0;
       }
 
-      return {
-        name: String(
-          server?.title ||
-            "AnimeFLV",
-        ),
+      if (n === "byse") {
+        return 1;
+      }
 
-        url: raw,
+      if (n === "mega") {
+        return 2;
+      }
 
-        type: raw.includes(
-          ".mp4",
-        )
-          ? "mp4"
-          : "iframe",
-      } as AnimeFLVServer;
-    })
-    .filter(Boolean) as AnimeFLVServer[];
+      if (
+        n === "mp4upload"
+      ) {
+        return 3;
+      }
+
+      return 99;
+    };
+
+  result.sort(
+    (a, b) =>
+      priority(a.name) -
+      priority(b.name),
+  );
+
+  return result;
+}
+
+export async function getAnimeFLVServers(
+  title: string,
+  episode: number,
+): Promise<AnimeFLVServer[]> {
+  /*
+   * 1. Intento directo.
+   */
+  let anime =
+    await getAnimePage(
+      title,
+    );
+
+  /*
+   * 2. Fallback por búsqueda.
+   */
+  if (!anime) {
+    anime =
+      await searchAnimeFLV(
+        title,
+      );
+  }
+
+  if (!anime) {
+    return [];
+  }
+
+  /*
+   * 3. Sacamos el permalink real
+   * del episodio.
+   */
+  const episodes =
+    extractEpisodes(
+      anime.html,
+    );
+
+  const target =
+    episodes.find(
+      item =>
+        Number(
+          item.number,
+        ) === episode,
+    );
+
+  if (
+    !target?.permalink
+  ) {
+    return [];
+  }
+
+  /*
+   * 4. Entramos directamente al
+   * permalink que AnimeFLV nos dio.
+   *
+   * Esto evita inventar la fecha.
+   */
+  const episodeHtml =
+    await fetchHtml(
+      target.permalink,
+    );
+
+  if (!episodeHtml) {
+    return [];
+  }
+
+  /*
+   * 5. Extraemos los players.
+   */
+  return extractServers(
+    episodeHtml,
+  );
 }
