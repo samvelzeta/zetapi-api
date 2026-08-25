@@ -6,15 +6,122 @@ export interface JKServer {
   type: "iframe" | "mp4";
 }
 
-export interface JKSubtitle {
-  lang: string;
-  url: string;
+function cleanUrl(
+  value: string,
+): string {
+  return String(value || "")
+    .replace(
+      /&amp;/gi,
+      "&",
+    )
+    .replace(
+      /\\\//g,
+      "/",
+    )
+    .replace(
+      /\\"/g,
+      '"',
+    )
+    .trim();
 }
 
-// ----------------------------------------------------------
-// EXTRAER SERVIDORES DE JKANIME
-// Magi, Desu, YourUpload y Mega
-// ----------------------------------------------------------
+/* ============================================================
+ * FILTRO JKPLAYER
+ * ========================================================== */
+
+function isUsableJKPlayer(
+  url: string,
+): boolean {
+  const value =
+    cleanUrl(url)
+      .toLowerCase();
+
+  if (
+    !/^https?:\/\/jkanime\.net\/jkplayer\//i.test(
+      value,
+    )
+  ) {
+    return false;
+  }
+
+  /*
+   * ELIMINAR:
+   *
+   * https://jkanime.net/jkplayer/jk?u=stream/jkmedia/...
+   *
+   * Ese reproductor es el que no está cargando.
+   */
+  if (
+    /[?&]u=stream\/jkmedia\//i.test(
+      value,
+    )
+  ) {
+    return false;
+  }
+
+  /*
+   * Solamente:
+   *
+   * /jkplayer/um
+   * /jkplayer/umv
+   */
+  return /^https?:\/\/jkanime\.net\/jkplayer\/umv?(?:[/?]|$)/i.test(
+    value,
+  );
+}
+
+/* ============================================================
+ * AÑADIR SERVER
+ * ========================================================== */
+
+function addServer(
+  servers: JKServer[],
+  seen: Set<string>,
+  name: string,
+  rawUrl: string,
+): void {
+  const url =
+    cleanUrl(rawUrl);
+
+  if (
+    !isUsableJKPlayer(
+      url,
+    )
+  ) {
+    return;
+  }
+
+  const key =
+    url
+      .toLowerCase()
+      .replace(
+        /\/+$/,
+        "",
+      );
+
+  if (
+    seen.has(key)
+  ) {
+    return;
+  }
+
+  seen.add(key);
+
+  servers.push({
+    name,
+    url,
+    type: "iframe",
+  });
+}
+
+/* ============================================================
+ * JKANIME
+ *
+ * ÚNICAMENTE:
+ *
+ * Magi
+ * Desu
+ * ========================================================== */
 
 export async function getJKAnimeServers(
   slug: string,
@@ -24,14 +131,18 @@ export async function getJKAnimeServers(
     `https://jkanime.net/${slug}/${episode}/`;
 
   console.log(
-    "🔎 JKAnime:",
+    "🔵 JKAnime:",
     url,
   );
 
   const html =
-    await fetchHtml(url);
+    await fetchHtml(
+      url,
+    );
 
-  if (!html) {
+  if (
+    !html
+  ) {
     console.log(
       "❌ JKAnime: HTML vacío",
     );
@@ -39,28 +150,26 @@ export async function getJKAnimeServers(
     return [];
   }
 
-  const servers: JKServer[] = [];
-  const seen = new Set<string>();
+  const servers:
+    JKServer[] = [];
 
-  // --------------------------------------------------------
-  // 1. MAGI / DESU
-  //
-  // JKAnime utiliza:
-  //
-  // video[0] = Desu
-  // video[1] = Magi
-  //
-  // Mantenemos exactamente esta lógica porque es la que
-  // funcionaba en el main del repositorio.
-  // --------------------------------------------------------
+  const seen =
+    new Set<string>();
 
-  const videoMatches =
-    html.matchAll(
-      /video\[(\d+)\]\s*=\s*'<iframe[^>]+src="([^"]+)"/g,
-    );
+  /*
+   * JKAnime:
+   *
+   * video[0] = Desu
+   * video[1] = Magi
+   */
+  const exactVideoRegex =
+    /video\[\s*(\d+)\s*\]\s*=\s*(['"])([\s\S]*?)\2/gi;
 
   for (
-    const match of videoMatches
+    const match of
+      html.matchAll(
+        exactVideoRegex,
+      )
   ) {
     const index =
       Number.parseInt(
@@ -68,424 +177,156 @@ export async function getJKAnimeServers(
         10,
       );
 
-    const iframeUrl =
-      match[2];
+    const content =
+      match[3];
 
-    if (!iframeUrl) {
+    const srcMatch =
+      content.match(
+        /<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i,
+      );
+
+    if (
+      !srcMatch
+    ) {
       continue;
     }
 
-    const fullUrl =
-      iframeUrl.startsWith(
-        "http",
-      )
-        ? iframeUrl
-        : `https://jkanime.net${iframeUrl}`;
+    const iframeUrl =
+      cleanUrl(
+        srcMatch[1],
+      );
 
-    const name =
+    if (
       index === 0
-        ? "Desu"
-        : index === 1
-        ? "Magi"
-        : `JKAnime ${index}`;
-
-    const key =
-      fullUrl
-        .trim()
-        .replace(
-          /\/+$/,
-          "",
-        )
-        .toLowerCase();
-
-    if (!key) {
-      continue;
+    ) {
+      addServer(
+        servers,
+        seen,
+        "Desu",
+        iframeUrl,
+      );
+    } else if (
+      index === 1
+    ) {
+      addServer(
+        servers,
+        seen,
+        "Magi",
+        iframeUrl,
+      );
     }
 
     if (
-      seen.has(key)
+      servers.length >= 2
     ) {
-      continue;
+      break;
     }
-
-    seen.add(key);
-
-    servers.push({
-      name,
-      url: fullUrl,
-      type: "iframe",
-    });
   }
 
-  // --------------------------------------------------------
-  // FALLBACK PARA VARIANTES DE COMILLAS
-  // --------------------------------------------------------
-
+  /*
+   * FALLBACK
+   *
+   * Si el HTML cambia la forma de video[].
+   *
+   * Solamente aceptamos:
+   *
+   * /um
+   * /umv
+   *
+   * Nunca:
+   *
+   * /jk?u=stream/jkmedia/
+   */
   if (
     servers.length < 2
   ) {
-    const flexibleRegex =
-      /video\[\s*(\d+)\s*\]\s*=\s*(['"])([\s\S]*?)\2/g;
+    const iframeRegex =
+      /<iframe\b[^>]*\bsrc\s*=\s*["'](https?:\/\/jkanime\.net\/jkplayer\/[^"']+)["']/gi;
 
     for (
-      const match of html.matchAll(
-        flexibleRegex,
-      )
-    ) {
-      const index =
-        Number.parseInt(
-          match[1],
-          10,
-        );
-
-      const content =
-        match[3];
-
-      const srcMatch =
-        content.match(
-          /<iframe[^>]+src=["']([^"']+)["']/i,
-        );
-
-      if (!srcMatch) {
-        continue;
-      }
-
-      const iframeUrl =
-        srcMatch[1];
-
-      if (!iframeUrl) {
-        continue;
-      }
-
-      const fullUrl =
-        iframeUrl.startsWith(
-          "http",
+      const match of
+        html.matchAll(
+          iframeRegex,
         )
-          ? iframeUrl
-          : `https://jkanime.net${iframeUrl}`;
+    ) {
+      const iframeUrl =
+        cleanUrl(
+          match[1],
+        );
+
+      if (
+        !isUsableJKPlayer(
+          iframeUrl,
+        )
+      ) {
+        continue;
+      }
+
+      const lower =
+        iframeUrl.toLowerCase();
 
       const name =
-        index === 0
-          ? "Desu"
-          : index === 1
-          ? "Magi"
-          : `JKAnime ${index}`;
-
-      const key =
-        fullUrl
-          .trim()
-          .replace(
-            /\/+$/,
-            "",
-          )
-          .toLowerCase();
-
-      if (
-        seen.has(key)
-      ) {
-        continue;
-      }
-
-      seen.add(key);
-
-      servers.push({
-        name,
-        url: fullUrl,
-        type: "iframe",
-      });
-    }
-  }
-
-  // --------------------------------------------------------
-  // 2. var servers = [...]
-  //
-  // YOURUPLOAD / MEGA
-  // --------------------------------------------------------
-
-  const serversMatch =
-    html.match(
-      /var\s+servers\s*=\s*(\[[\s\S]*?\]);/,
-    );
-
-  if (serversMatch) {
-    try {
-      const rawList =
-        JSON.parse(
-          serversMatch[1],
-        );
-
-      if (
-        Array.isArray(
-          rawList,
+        lower.includes(
+          "/jkplayer/umv",
         )
-      ) {
-        for (
-          const item of rawList
-        ) {
-          const serverName =
-            String(
-              item?.server ||
-                "",
-            ).trim();
+          ? "Magi"
+          : "Desu";
 
-          const remote =
-            String(
-              item?.remote ||
-                "",
-            ).trim();
-
-          if (
-            !serverName ||
-            !remote
-          ) {
-            continue;
-          }
-
-          // --------------------------------------------------
-          // YOURUPLOAD
-          // --------------------------------------------------
-
-          if (
-            serverName
-              .toLowerCase() ===
-            "yourupload"
-          ) {
-            const playerIframe =
-              `https://jkanime.net/jkplayer/c1?u=${encodeURIComponent(
-                remote,
-              )}&s=yourupload`;
-
-            const key =
-              playerIframe
-                .replace(
-                  /\/+$/,
-                  "",
-                )
-                .toLowerCase();
-
-            if (
-              seen.has(key)
-            ) {
-              continue;
-            }
-
-            seen.add(key);
-
-            servers.push({
-              name:
-                "YourUpload",
-              url:
-                playerIframe,
-              type:
-                "iframe",
-            });
-
-            continue;
-          }
-
-          // --------------------------------------------------
-          // MEGA
-          // --------------------------------------------------
-
-          if (
-            serverName
-              .toLowerCase() ===
-            "mega"
-          ) {
-            let realUrl =
-              "";
-
-            try {
-              realUrl =
-                atob(
-                  remote,
-                );
-            } catch {
-              try {
-                realUrl =
-                  atob(
-                    remote +
-                      "==",
-                  );
-              } catch {
-                realUrl =
-                  "";
-              }
-            }
-
-            if (
-              !realUrl ||
-              !/^https?:\/\//i.test(
-                realUrl,
-              )
-            ) {
-              continue;
-            }
-
-            const key =
-              realUrl
-                .replace(
-                  /\/+$/,
-                  "",
-                )
-                .toLowerCase();
-
-            if (
-              seen.has(key)
-            ) {
-              continue;
-            }
-
-            seen.add(key);
-
-            servers.push({
-              name:
-                "Mega",
-              url:
-                realUrl,
-              type:
-                "mp4",
-            });
-          }
-        }
-      }
-    } catch (error) {
-      console.log(
-        "⚠️ JKAnime servers JSON:",
-        error,
+      addServer(
+        servers,
+        seen,
+        name,
+        iframeUrl,
       );
+
+      if (
+        servers.length >= 2
+      ) {
+        break;
+      }
     }
   }
+
+  /*
+   * ORDEN ABSOLUTO:
+   *
+   * 1 Magi
+   * 2 Desu
+   */
+  servers.sort(
+    (a, b) => {
+      const pa =
+        a.name === "Magi"
+          ? 0
+          : 1;
+
+      const pb =
+        b.name === "Magi"
+          ? 0
+          : 1;
+
+      return pa - pb;
+    },
+  );
 
   console.log(
-    "✅ JKAnime servers:",
+    "✅ JKAnime players:",
     servers.map(
       server => ({
         name:
           server.name,
-        type:
-          server.type,
         url:
           server.url,
       }),
     ),
   );
 
-  return servers;
-}
-
-
-// ----------------------------------------------------------
-// SUBTÍTULOS
-// ----------------------------------------------------------
-
-export async function getJKAnimeSubtitles(
-  slug: string,
-  episode: number,
-): Promise<JKSubtitle[]> {
-  const url =
-    `https://jkanime.net/${slug}/${episode}/`;
-
-  const html =
-    await fetchHtml(url);
-
-  if (!html) {
-    return [];
-  }
-
-  const subs: JKSubtitle[] = [];
-  const seen = new Set<string>();
-
-  const buttonRegex =
-    /<button\b([^>]*)>/gi;
-
-  let match:
-    RegExpExecArray | null;
-
-  while (
-    (match =
-      buttonRegex.exec(
-        html,
-      )) !== null
-  ) {
-    const attrs =
-      match[1];
-
-    const urlMatch =
-      attrs.match(
-        /\bdata-url=["']([^"']+)["']/i,
-      );
-
-    const langMatch =
-      attrs.match(
-        /\bdata-language=["']([^"']*)["']/i,
-      );
-
-    if (
-      !urlMatch ||
-      !langMatch
-    ) {
-      continue;
-    }
-
-    const lang =
-      String(
-        langMatch[1],
-      )
-        .toLowerCase()
-        .trim();
-
-    const isSpanish =
-      lang === "es" ||
-      lang.includes(
-        "spa",
-      ) ||
-      lang.includes(
-        "español",
-      ) ||
-      lang.includes(
-        "spanish",
-      );
-
-    if (!isSpanish) {
-      continue;
-    }
-
-    const subUrl =
-      String(
-        urlMatch[1],
-      )
-        .replace(
-          /&amp;/gi,
-          "&",
-        )
-        .replace(
-          /\\\//g,
-          "/",
-        )
-        .trim();
-
-    if (!subUrl) {
-      continue;
-    }
-
-    if (
-      seen.has(subUrl)
-    ) {
-      continue;
-    }
-
-    seen.add(
-      subUrl,
-    );
-
-    subs.push({
-      lang:
-        "Español",
-      url:
-        subUrl,
-    });
-  }
-
-  return subs;
+  /*
+   * JKAnime nunca devuelve más
+   * de los dos players que queremos.
+   */
+  return servers.slice(
+    0,
+    2,
+  );
 }
