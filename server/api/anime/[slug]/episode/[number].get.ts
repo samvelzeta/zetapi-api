@@ -1,84 +1,195 @@
 import { getAllServers } from "../../../../utils/getServers";
-import { getJKAnimeSubtitles } from "../../../../utils/jkanime";
 
-export default defineEventHandler(async (event) => {
-  setHeader(event, "Access-Control-Allow-Origin", "*");
-  if (event.method === "OPTIONS") return "";
+export default defineEventHandler(
+  async (event: any) => {
+    setHeader(
+      event,
+      "Access-Control-Allow-Origin",
+      "*",
+    );
 
-  const { slug, number } = getRouterParams(event);
-  const { lang, anilistId } = getQuery(event);
+    setHeader(
+      event,
+      "Access-Control-Allow-Methods",
+      "GET,OPTIONS",
+    );
 
-  const episode = parseInt(number);
-  if (isNaN(episode)) {
-    throw createError({ statusCode: 400, message: "Número de episodio inválido" });
-  }
+    setHeader(
+      event,
+      "Access-Control-Allow-Headers",
+      "Content-Type",
+    );
 
-  // KV Cache (opcional)
-  let cached: any = null;
-  try {
-    const env = (event.context as any).cloudflare?.env;
+    if (
+      event.method ===
+      "OPTIONS"
+    ) {
+      return "";
+    }
+
+    const {
+      slug,
+      number,
+    } =
+      getRouterParams(event);
+
+    const query =
+      getQuery(event) as Record<
+        string,
+        any
+      >;
+
+    const episode =
+      Number.parseInt(
+        String(number),
+        10,
+      );
+
+    if (
+      !slug ||
+      !Number.isFinite(
+        episode,
+      )
+    ) {
+      throw createError({
+        statusCode: 400,
+        message:
+          "Slug o número de episodio inválido",
+      });
+    }
+
+    const env =
+      (event.context as any)
+        .cloudflare?.env;
+
+    const lang =
+      typeof query.lang ===
+      "string"
+        ? query.lang
+        : "sub";
+
+    const anilistId =
+      query.anilistId
+        ? Number(
+            query.anilistId,
+          )
+        : undefined;
+
+    /*
+     * Compatible con Lovable:
+     *
+     * si no manda title,
+     * utilizamos slug.
+     */
+    const title =
+      typeof query.title ===
+        "string" &&
+      query.title.trim()
+        ? query.title.trim()
+        : slug;
+
+    /*
+     * CACHE
+     *
+     * Conservamos la misma estructura
+     * de clave que utilizaba tu API.
+     */
     if (env?.ANIME_CACHE) {
-      const key = `${slug}:${episode}:${lang || "sub"}`;
-      const raw = await env.ANIME_CACHE.get(key);
-      if (raw) cached = JSON.parse(raw);
+      try {
+        const key =
+          `${slug}:${episode}:${lang}`;
+
+        const raw =
+          await env.ANIME_CACHE.get(
+            key,
+          );
+
+        if (raw) {
+          const cached =
+            JSON.parse(raw);
+
+          if (
+            Array.isArray(
+              cached?.servers,
+            ) &&
+            cached.servers.length
+          ) {
+            return {
+              success: true,
+
+              source: "kv",
+
+              data: {
+                slug,
+                number: episode,
+                servers:
+                  cached.servers,
+              },
+            };
+          }
+        }
+      } catch {}
     }
-  } catch {}
 
-  if (cached?.sources) {
-    const servers = [
-      ...(cached.sources.hls || []),
-      ...(cached.sources.mp4 || []),
-      ...(cached.sources.embed || []),
-    ].map((u: string) => ({ embed: u, name: "", type: "Externo" }));
+    /*
+     * SCRAPER
+     */
+    const servers =
+      await getAllServers({
+        slug,
+        number: episode,
+        title,
+        anilistId:
+          Number.isFinite(
+            anilistId,
+          )
+            ? anilistId
+            : undefined,
+        env,
+      });
 
-    if (servers.length) {
-      return {
-        success: true,
-        source: "kv",
-        data: { slug, number: episode, servers, subtitles: cached.subtitles || [] },
-      };
-    }
-  }
+    console.log(
+      "🔍 Servers encontrados:",
+      servers.length,
+    );
 
-  // Scraping
-  const servers = await getAllServers({
-    slug,
-    number: episode,
-    title: slug,
-    anilistId: anilistId ? Number(anilistId) : undefined,
-  });
+    /*
+     * CACHEAR RESULTADO.
+     */
+    if (
+      env?.ANIME_CACHE &&
+      servers.length
+    ) {
+      try {
+        const key =
+          `${slug}:${episode}:${lang}`;
 
-  console.log("🔍 Servers encontrados:", servers.length);
-
-  // Subtítulos
-  let subtitles: { lang: string; url: string }[] = [];
-  try {
-    subtitles = await getJKAnimeSubtitles(slug, episode);
-  } catch (e) {
-    console.log("⚠️ Error subtítulos:", e);
-  }
-
-  // Guardar en KV
-  if (servers.length) {
-    try {
-      const env = (event.context as any).cloudflare?.env;
-      if (env?.ANIME_CACHE) {
-        const key = `${slug}:${episode}:${lang || "sub"}`;
         await env.ANIME_CACHE.put(
           key,
           JSON.stringify({
-            sources: { embed: servers.map((s) => s.embed) },
-            subtitles,
+            servers,
           }),
-          { expirationTtl: 60 * 60 * 24 * 30 }
+          {
+            expirationTtl:
+              60 * 60 * 24 * 7,
+          },
         );
-      }
-    } catch {}
-  }
+      } catch {}
+    }
 
-  return {
-    success: true,
-    source: servers.length ? "scraper" : "empty",
-    data: { slug, number: episode, servers, subtitles },
-  };
-});
+    return {
+      success: true,
+
+      source:
+        servers.length
+          ? "scraper"
+          : "empty",
+
+      data: {
+        slug,
+        number: episode,
+        servers,
+      },
+    };
+  },
+);
