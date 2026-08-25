@@ -1,125 +1,341 @@
 import { fetchHtml } from "./fetcher";
-import { matchScore } from "./titleMatcher";
+import { stripHtml } from "./htmlUtils";
 
-const memoryCache = new Map<string, string>();
+import {
+  buildSearchQueries,
+  normalizeTitle,
+  rankCandidates,
+  TitleCandidate,
+} from "./titleMatcher";
 
-function normalize(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/['’]/g, "")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+const memoryCache =
+  new Map<string, string>();
+
+interface JKSearchResult
+  extends TitleCandidate {
+  url: string;
 }
 
-/**
- * Genera muchas variantes de búsqueda: título limpio, sin temporadas, versiones cortas…
- */
-function generateQueries(input: string, allTitles: string[]): string[] {
-  const base = normalize(input);
-  const words = base.split(" ").filter(w => w.length > 1);
-  const queries = new Set<string>();
+function extractResults(
+  html: string,
+): JKSearchResult[] {
+  const results: JKSearchResult[] = [];
 
-  // La consulta original
-  queries.add(base);
+  const regex =
+    /<h2\b[^>]*class=["'][^"']*portada-title[^"']*["'][^>]*>([\s\S]*?)<\/h2>/gi;
 
-  // Sin números de temporada, part, cour, etc.
-  const noSeason = base
-    .replace(/\b(season|temporada|part|parte|cour)\s*\d+\b/gi, "")
-    .replace(/\b\d+(st|nd|rd|th)\s*(season|temporada)\b/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (noSeason && noSeason !== base) queries.add(noSeason);
+  let match:
+    | RegExpExecArray
+    | null;
 
-  // Solo las primeras palabras (2,3,4)
-  for (let i = 2; i <= Math.min(4, words.length); i++) {
-    queries.add(words.slice(0, i).join(" "));
+  while (
+    (match =
+      regex.exec(html)) !== null
+  ) {
+    const block =
+      match[1];
+
+    const anchor =
+      block.match(
+        /<a\b([^>]*)>([\s\S]*?)<\/a>/i,
+      );
+
+    if (!anchor) {
+      continue;
+    }
+
+    const attrs =
+      anchor[1];
+
+    const hrefMatch =
+      attrs.match(
+        /href\s*=\s*["']([^"']+)["']/i,
+      );
+
+    if (!hrefMatch) {
+      continue;
+    }
+
+    const href =
+      hrefMatch[1];
+
+    const slugMatch =
+      href.match(
+        /\/([^/?#]+)\/?$/,
+      );
+
+    if (!slugMatch) {
+      continue;
+    }
+
+    const slug =
+      slugMatch[1];
+
+    if (
+      !slug ||
+      /^(buscar|directorio|genero|horario|login|usuario|ajax)$/i.test(
+        slug,
+      )
+    ) {
+      continue;
+    }
+
+    const titleAttr =
+      attrs.match(
+        /title\s*=\s*["']([^"']+)["']/i,
+      );
+
+    const title =
+      stripHtml(
+        titleAttr?.[1] ||
+          anchor[2],
+      );
+
+    if (!title) {
+      continue;
+    }
+
+    results.push({
+      slug,
+      title,
+      url: `https://jkanime.net/${slug}/`,
+    });
   }
 
-  // También los otros títulos (english, synonyms) sin duplicar
-  for (const t of allTitles) {
-    const n = normalize(t);
-    if (n && n !== base) queries.add(n);
-    // Versión sin temporada de cada título alternativo
-    const ns = n
-      .replace(/\b(season|temporada|part|parte|cour)\s*\d+\b/gi, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (ns && ns !== n) queries.add(ns);
+  // Fallback.
+  if (!results.length) {
+    const fallback =
+      /<a\b([^>]*)href=["'](?:https?:\/\/jkanime\.net)?\/([^/"']+)["']([^>]*)>([\s\S]*?)<\/a>/gi;
+
+    while (
+      (match =
+        fallback.exec(html)) !== null
+    ) {
+      const slug =
+        match[2];
+
+      const attrs =
+        `${match[1]} ${match[3]}`;
+
+      if (
+        /^(buscar|directorio|genero|horario|login|usuario|ajax|tipo)$/i.test(
+          slug,
+        )
+      ) {
+        continue;
+      }
+
+      if (
+        !/portada|title|let-link/i.test(
+          attrs + match[4],
+        )
+      ) {
+        continue;
+      }
+
+      const title =
+        stripHtml(
+          match[4],
+        );
+
+      if (
+        title.length < 2
+      ) {
+        continue;
+      }
+
+      results.push({
+        slug,
+        title,
+        url: `https://jkanime.net/${slug}/`,
+      });
+    }
   }
 
-  return Array.from(queries).slice(0, 12); // máximo 12 consultas
+  const unique =
+    new Map<
+      string,
+      JKSearchResult
+    >();
+
+  for (
+    const result of
+    results
+  ) {
+    if (
+      !unique.has(
+        result.slug,
+      )
+    ) {
+      unique.set(
+        result.slug,
+        result,
+      );
+    }
+  }
+
+  return [
+    ...unique.values(),
+  ];
 }
 
-function extractResults(html: string) {
-  const results: { slug: string; title: string }[] = [];
-  const regex = /<a\b[^>]*href\s*=\s*"([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
-  let m;
-  while ((m = regex.exec(html)) !== null) {
-    const href = m[1];
-    const slugMatch = href.match(/(?:https?:\/\/jkanime\.net)?\/([^/?#"']+)\/?/i);
-    if (!slugMatch) continue;
-    const slug = slugMatch[1];
-    // Ignorar rutas que claramente no son animes
-    if (/^(buscar|directorio|genero|temporada|studio|usuario|dash|ajax|ranking|top|horario|historial|guardado|playlist|aplicacion|login|salir)$/i.test(slug)) continue;
-    const title = m[2].replace(/<[^>]+>/g, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim();
-    if (title.length < 2) continue;
-    results.push({ slug, title });
+async function searchJKAnime(
+  query: string,
+  page = 1,
+): Promise<JKSearchResult[]> {
+  const url =
+    `https://jkanime.net/buscar/${encodeURIComponent(query)}/${page}/`;
+
+  const html =
+    await fetchHtml(url);
+
+  if (!html) {
+    return [];
   }
-  // Deduplicar por slug
-  const unique = new Map<string, { slug: string; title: string }>();
-  for (const r of results) if (!unique.has(r.slug)) unique.set(r.slug, r);
-  return Array.from(unique.values());
+
+  return extractResults(
+    html,
+  );
 }
 
 export async function findJKAnimeSlug(
-  query: string,
+  input: string,
   env?: any,
   allTitles: string[] = [],
-  malId: number | null = null
+  _malId: number | null = null,
 ): Promise<string | null> {
-  const key = normalize(query);
-  if (memoryCache.has(key)) return memoryCache.get(key)!;
+  const key =
+    `jkanime:${normalizeTitle(input)}`;
+
+  const cachedMemory =
+    memoryCache.get(key);
+
+  if (cachedMemory) {
+    return cachedMemory;
+  }
 
   if (env?.SLUG_CACHE) {
-    const cached = await env.SLUG_CACHE.get(key);
-    if (cached) {
-      memoryCache.set(key, cached);
-      return cached;
-    }
-  }
+    try {
+      const cached =
+        await env.SLUG_CACHE.get(
+          key,
+        );
 
-  const queries = generateQueries(query, allTitles);
-  const candidates = new Map<string, { slug: string; title: string; score: number }>();
+      if (cached) {
+        memoryCache.set(
+          key,
+          cached,
+        );
 
-  for (const q of queries) {
-    const url = `https://jkanime.net/buscar/${encodeURIComponent(q)}/1/`;
-    const html = await fetchHtml(url);
-    if (!html) continue;
-    const results = extractResults(html);
-    for (const r of results) {
-      // Usar el motor de puntuación avanzado (sin MAL ID porque JKAnime no lo expone en el listado)
-      const score = matchScore(r.title, r.slug, null, allTitles, malId);
-      const prev = candidates.get(r.slug);
-      if (!prev || score > prev.score) {
-        candidates.set(r.slug, { ...r, score });
+        return cached;
       }
-    }
+    } catch {}
   }
 
-  if (candidates.size === 0) return null;
+  const queries =
+    buildSearchQueries(
+      input,
+      allTitles,
+    );
 
-  // Ordenar por puntuación descendente
-  const ranked = Array.from(candidates.values()).sort((a, b) => b.score - a.score);
+  const candidates =
+    new Map<
+      string,
+      JKSearchResult
+    >();
 
-  // Elegir el mejor con score >= 72 (antes era 85)
-  const best = ranked[0];
-  if (best.score < 72) return null;
+  const primary =
+    await Promise.all(
+      queries
+        .slice(0, 5)
+        .map(query =>
+          searchJKAnime(
+            query,
+            1,
+          ),
+        ),
+    );
 
-  memoryCache.set(key, best.slug);
-  if (env?.SLUG_CACHE) await env.SLUG_CACHE.put(key, best.slug);
+  for (
+    const result of
+    primary.flat()
+  ) {
+    candidates.set(
+      result.slug,
+      result,
+    );
+  }
+
+  let ranked =
+    rankCandidates(
+      [...candidates.values()],
+      [input, ...allTitles],
+    );
+
+  if (
+    !ranked[0] ||
+    ranked[0].score < 86
+  ) {
+    const secondary =
+      await Promise.all(
+        queries
+          .slice(5, 10)
+          .map(query =>
+            searchJKAnime(
+              query,
+              1,
+            ),
+          ),
+      );
+
+    for (
+      const result of
+      secondary.flat()
+    ) {
+      candidates.set(
+        result.slug,
+        result,
+      );
+    }
+
+    ranked =
+      rankCandidates(
+        [...candidates.values()],
+        [input, ...allTitles],
+      );
+  }
+
+  if (!ranked.length) {
+    return null;
+  }
+
+  const best =
+    ranked[0];
+
+  if (
+    !best ||
+    best.score < 68
+  ) {
+    return null;
+  }
+
+  memoryCache.set(
+    key,
+    best.slug,
+  );
+
+  if (env?.SLUG_CACHE) {
+    try {
+      await env.SLUG_CACHE.put(
+        key,
+        best.slug,
+        {
+          expirationTtl:
+            60 * 60 * 24 * 7,
+        },
+      );
+    } catch {}
+  }
 
   return best.slug;
 }
