@@ -1214,30 +1214,16 @@ export async function getAllServers({
     "================================================",
   );
 
-  return {
-    servers:
-      finalServers,
+ return finalServers.map(
+  (server, index) => ({
+    name:
+      server.name ||
+      `Servidor ${index + 1}`,
 
-    latestEpisode:
-      null,
+    type:
+      "Externo",
 
-    success:
-      finalServers.length >
-      0,
-  };
-}
-
-
-// ============================================================
-// SUBTÍTULOS
-// ============================================================
-
-export async function getSubtitles(
-  slug: string,
-  episode: number,
-) {
-  return getJKAnimeSubtitles(
-    slug,
-    episode,
-  );
-}
+    embed:
+      server.embed,
+  }),
+);
