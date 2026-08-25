@@ -29,8 +29,10 @@ import {
 } from "./metadata";
 
 interface InternalServer {
+  name: string;
   url: string;
   priority: number;
+  source: string;
 }
 
 export interface AggregatedServer {
@@ -39,6 +41,9 @@ export interface AggregatedServer {
   embed: string;
 }
 
+/**
+ * Normaliza una URL.
+ */
 function normalizeUrl(
   value: string,
 ): string | null {
@@ -57,10 +62,15 @@ function normalizeUrl(
   return url;
 }
 
+/**
+ * Agrega un servidor sin duplicarlo.
+ */
 function addUnique(
   target: InternalServer[],
   url: string,
+  name: string,
   priority: number,
+  source: string,
 ) {
   const clean =
     normalizeUrl(url);
@@ -71,10 +81,13 @@ function addUnique(
 
   const key =
     clean
-      .replace(/\/+$/, "")
+      .replace(
+        /\/+$/,
+        "",
+      )
       .toLowerCase();
 
-  if (
+  const exists =
     target.some(
       item =>
         item.url
@@ -84,25 +97,26 @@ function addUnique(
           )
           .toLowerCase() ===
         key,
-    )
-  ) {
+    );
+
+  if (exists) {
     return;
   }
 
   target.push({
+    name:
+      name?.trim() ||
+      source,
     url: clean,
     priority,
+    source,
   });
 }
 
 /**
- * JKAnime conserva la lógica vieja:
- *
- * video[0] = Desu
- * video[1] = Magi
- *
- * pero la búsqueda del slug ahora utiliza
- * jkSearch + titleMatcher mejorados.
+ * -------------------------------------------------------
+ * JKANIME
+ * -------------------------------------------------------
  */
 async function scrapeJKAnime(
   title: string,
@@ -110,50 +124,96 @@ async function scrapeJKAnime(
   env: any,
   episode: number,
 ): Promise<InternalServer[]> {
-  const result:
-    InternalServer[] = [];
+  const result: InternalServer[] = [];
 
-  const slug =
-    await findJKAnimeSlug(
-      title,
-      env,
-      titles,
-    );
+  try {
+    const slug =
+      await findJKAnimeSlug(
+        title,
+        env,
+        titles,
+      );
 
-  if (!slug) {
-    return result;
-  }
+    if (!slug) {
+      console.log(
+        "[JKAnime] No se encontró slug:",
+        title,
+      );
 
-  const servers =
-    await getJKAnimeServers(
-      slug,
-      episode,
-    );
-
-  for (
-    let i = 0;
-    i < servers.length;
-    i++
-  ) {
-    const server =
-      servers[i];
-
-    /*
-     * Conservamos prioridad del extractor
-     * antiguo sin tener que modificar jkanime.ts.
-     */
-    let priority = 2;
-
-    if (i === 0) {
-      priority = 0;
-    } else if (i === 1) {
-      priority = 1;
+      return result;
     }
 
-    addUnique(
-      result,
-      server.url,
-      priority,
+    console.log(
+      "[JKAnime] slug:",
+      slug,
+    );
+
+    const servers =
+      await getJKAnimeServers(
+        slug,
+        episode,
+      );
+
+    console.log(
+      "[JKAnime] servidores:",
+      servers.length,
+    );
+
+    for (
+      const server of servers
+    ) {
+      let priority = 10;
+
+      const name =
+        String(
+          server.name ||
+            "",
+        )
+          .toLowerCase();
+
+      /**
+       * IMPORTANTE:
+       *
+       * Magi primero
+       * Desu segundo
+       */
+      if (
+        name === "magi"
+      ) {
+        priority = 0;
+      } else if (
+        name === "desu"
+      ) {
+        priority = 1;
+      } else if (
+        name.includes(
+          "yourupload",
+        )
+      ) {
+        priority = 2;
+      } else if (
+        name.includes(
+          "mega",
+        )
+      ) {
+        priority = 3;
+      } else {
+        priority = 4;
+      }
+
+      addUnique(
+        result,
+        server.url,
+        server.name ||
+          "JKAnime",
+        priority,
+        "JKAnime",
+      );
+    }
+  } catch (error) {
+    console.error(
+      "[JKAnime] error:",
+      error,
     );
   }
 
@@ -161,83 +221,100 @@ async function scrapeJKAnime(
 }
 
 /**
- * AnimeD23
- *
- * Prioridad inmediatamente después
- * de JKAnime.
+ * -------------------------------------------------------
+ * ANIMED23
+ * -------------------------------------------------------
  */
 async function scrapeAnimeD23(
   title: string,
   titles: string[],
   episode: number,
 ): Promise<InternalServer[]> {
-  const result:
-    InternalServer[] = [];
+  const result: InternalServer[] = [];
 
-  const servers =
-    await getAnimeD23Servers(
-      title,
-      episode,
-      titles,
+  try {
+    const servers =
+      await getAnimeD23Servers(
+        title,
+        episode,
+        titles,
+      );
+
+    console.log(
+      "[AnimeD23] servidores:",
+      servers.length,
     );
 
-  for (
-    const server of servers
-  ) {
-    const name =
-      server.name
-        .toLowerCase();
+    for (
+      const server of servers
+    ) {
+      const name =
+        String(
+          server.name ||
+            "",
+        )
+          .toLowerCase();
 
-    let priority = 15;
+      let priority =
+        20;
 
-    if (
-      name.includes(
-        "moon",
-      ) ||
-      name.includes(
-        "bysesukior",
-      )
-    ) {
-      priority = 3;
-    } else if (
-      name.includes(
-        "mytsumi",
-      )
-    ) {
-      priority = 4;
-    } else if (
-      name.includes(
-        "mega",
-      )
-    ) {
-      priority = 5;
-    } else if (
-      name.includes(
-        "ok",
-      )
-    ) {
-      priority = 6;
-    } else if (
-      name.includes(
-        "epsilon",
-      ) ||
-      name.includes(
-        "ytplay",
-      )
-    ) {
-      priority = 7;
-    } else if (
-      name.includes(
-        "abyss",
-      )
-    ) {
-      priority = 8;
+      if (
+        name.includes(
+          "moon",
+        ) ||
+        name.includes(
+          "bysesukior",
+        )
+      ) {
+        priority = 10;
+      } else if (
+        name.includes(
+          "mytsumi",
+        )
+      ) {
+        priority = 11;
+      } else if (
+        name.includes(
+          "mega",
+        )
+      ) {
+        priority = 12;
+      } else if (
+        name.includes(
+          "ok",
+        )
+      ) {
+        priority = 13;
+      } else if (
+        name.includes(
+          "epsilon",
+        ) ||
+        name.includes(
+          "ytplay",
+        )
+      ) {
+        priority = 14;
+      } else if (
+        name.includes(
+          "abyss",
+        )
+      ) {
+        priority = 15;
+      }
+
+      addUnique(
+        result,
+        server.url,
+        server.name ||
+          "AnimeD23",
+        priority,
+        "AnimeD23",
+      );
     }
-
-    addUnique(
-      result,
-      server.url,
-      priority,
+  } catch (error) {
+    console.error(
+      "[AnimeD23] error:",
+      error,
     );
   }
 
@@ -245,13 +322,9 @@ async function scrapeAnimeD23(
 }
 
 /**
- * AnimeAV1
- *
- * No se utiliza proxy-zilla aquí.
- *
- * Esto es importante porque si el proxy
- * era el que estaba provocando el bloqueo,
- * ahora tu frontend recibe el embed original.
+ * -------------------------------------------------------
+ * ANIMEAV1
+ * -------------------------------------------------------
  */
 async function scrapeAnimeAV1(
   title: string,
@@ -259,57 +332,88 @@ async function scrapeAnimeAV1(
   env: any,
   episode: number,
 ): Promise<InternalServer[]> {
-  const result:
-    InternalServer[] = [];
+  const result: InternalServer[] = [];
 
-  const slug =
-    await findAnimeAV1Slug(
-      title,
-      titles,
-      env,
-    );
+  try {
+    const slug =
+      await findAnimeAV1Slug(
+        title,
+        titles,
+        env,
+      );
 
-  if (!slug) {
-    return result;
-  }
+    if (!slug) {
+      console.log(
+        "[AnimeAV1] No se encontró slug:",
+        title,
+      );
 
-  const embeds =
-    await getAnimeAV1Embeds(
-      slug,
-      episode,
-    );
-
-  for (
-    const embed of embeds
-  ) {
-    const server =
-      embed.server
-        .toLowerCase();
-
-    let priority = 20;
-
-    if (
-      server === "hls"
-    ) {
-      priority = 20;
-    } else if (
-      server === "byse"
-    ) {
-      priority = 21;
-    } else if (
-      server === "mega"
-    ) {
-      priority = 22;
-    } else if (
-      server === "mp4upload"
-    ) {
-      priority = 23;
+      return result;
     }
 
-    addUnique(
-      result,
-      embed.url,
-      priority,
+    console.log(
+      "[AnimeAV1] slug:",
+      slug,
+    );
+
+    const embeds =
+      await getAnimeAV1Embeds(
+        slug,
+        episode,
+      );
+
+    console.log(
+      "[AnimeAV1] servidores:",
+      embeds.length,
+    );
+
+    for (
+      const embed of embeds
+    ) {
+      const server =
+        String(
+          embed.server ||
+            "",
+        )
+          .toLowerCase();
+
+      let priority =
+        30;
+
+      if (
+        server === "hls"
+      ) {
+        priority = 30;
+      } else if (
+        server === "byse"
+      ) {
+        priority = 31;
+      } else if (
+        server === "mega"
+      ) {
+        priority = 32;
+      } else if (
+        server ===
+        "mp4upload"
+      ) {
+        priority = 33;
+      } else {
+        priority = 34;
+      }
+
+      addUnique(
+        result,
+        embed.url,
+        embed.server ||
+          "AnimeAV1",
+        priority,
+        "AnimeAV1",
+      );
+    }
+  } catch (error) {
+    console.error(
+      "[AnimeAV1] error:",
+      error,
     );
   }
 
@@ -317,56 +421,75 @@ async function scrapeAnimeAV1(
 }
 
 /**
- * AnimeFLV
- *
- * Conservamos su extractor independiente.
+ * -------------------------------------------------------
+ * ANIMEFLV
+ * -------------------------------------------------------
  */
 async function scrapeAnimeFLV(
   title: string,
   episode: number,
 ): Promise<InternalServer[]> {
-  const result:
-    InternalServer[] = [];
+  const result: InternalServer[] = [];
 
-  const servers =
-    await getAnimeFLVServers(
-      title,
-      episode,
+  try {
+    const servers =
+      await getAnimeFLVServers(
+        title,
+        episode,
+      );
+
+    console.log(
+      "[AnimeFLV] servidores:",
+      servers.length,
     );
 
-  for (
-    const server of servers
-  ) {
-    const name =
-      server.name
-        .toLowerCase();
+    for (
+      const server of servers
+    ) {
+      const name =
+        String(
+          server.name ||
+            "",
+        )
+          .toLowerCase();
 
-    let priority = 30;
+      let priority =
+        40;
 
-    if (
-      name === "hls"
-    ) {
-      priority = 30;
-    } else if (
-      name === "byse"
-    ) {
-      priority = 31;
-    } else if (
-      name === "mega"
-    ) {
-      priority = 32;
-    } else if (
-      name === "mp4upload"
-    ) {
-      priority = 33;
-    } else {
-      priority = 34;
+      if (
+        name === "hls"
+      ) {
+        priority = 40;
+      } else if (
+        name === "byse"
+      ) {
+        priority = 41;
+      } else if (
+        name === "mega"
+      ) {
+        priority = 42;
+      } else if (
+        name ===
+        "mp4upload"
+      ) {
+        priority = 43;
+      } else {
+        priority = 44;
+      }
+
+      addUnique(
+        result,
+        server.url,
+        server.name ||
+          "AnimeFLV",
+        priority,
+        "AnimeFLV",
+      );
     }
-
-    addUnique(
-      result,
-      server.url,
-      priority,
+  } catch (error) {
+    console.error(
+      "[AnimeFLV] error:",
+      error,
     );
   }
 
@@ -374,94 +497,120 @@ async function scrapeAnimeFLV(
 }
 
 /**
- * AnimeX2
+ * -------------------------------------------------------
+ * ANIMEX2
+ * -------------------------------------------------------
  */
 async function scrapeAnimeX2(
   title: string,
   episode: number,
 ): Promise<InternalServer[]> {
-  const result:
-    InternalServer[] = [];
+  const result: InternalServer[] = [];
 
-  const normalized =
-    String(title || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(
-        /[\u0300-\u036f]/g,
-        "",
-      )
-      .replace(
-        /[^a-z0-9\s-]/g,
-        " ",
-      )
-      .replace(
-        /\s+/g,
-        "-",
-      )
-      .replace(
-        /-+/g,
-        "-",
-      )
-      .replace(
-        /^-|-$/g,
-        "",
-      );
+  try {
+    const normalized =
+      String(title || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(
+          /[\u0300-\u036f]/g,
+          "",
+        )
+        .replace(
+          /[^a-z0-9\s-]/g,
+          " ",
+        )
+        .replace(
+          /\s+/g,
+          "-",
+        )
+        .replace(
+          /-+/g,
+          "-",
+        )
+        .replace(
+          /^-|-$/g,
+          "",
+        );
 
-  if (!normalized) {
-    return result;
-  }
-
-  const variants =
-    new Set<string>();
-
-  variants.add(
-    normalized,
-  );
-
-  variants.add(
-    normalized.replace(
-      /-(?:season|temporada|part|parte)-?\d+$/i,
-      "",
-    ),
-  );
-
-  variants.add(
-    normalized.replace(
-      /-(?:19|20)\d{2}$/,
-      "",
-    ),
-  );
-
-  for (
-    const variant of variants
-  ) {
-    const servers =
-      await getAnimeX2Servers(
-        variant,
-        episode,
-      );
-
-    if (!servers.length) {
-      continue;
+    if (!normalized) {
+      return result;
     }
+
+    const variants =
+      new Set<string>();
+
+    variants.add(
+      normalized,
+    );
+
+    variants.add(
+      normalized.replace(
+        /-(?:season|temporada|part|parte)-?\d+$/i,
+        "",
+      ),
+    );
+
+    variants.add(
+      normalized.replace(
+        /-(?:19|20)\d{2}$/,
+        "",
+      ),
+    );
 
     for (
-      const server of servers
+      const variant of variants
     ) {
-      addUnique(
-        result,
-        server.url,
-        40,
-      );
-    }
+      if (!variant) {
+        continue;
+      }
 
-    break;
+      const servers =
+        await getAnimeX2Servers(
+          variant,
+          episode,
+        );
+
+      if (
+        !servers.length
+      ) {
+        continue;
+      }
+
+      for (
+        const server of servers
+      ) {
+        addUnique(
+          result,
+          server.url,
+          server.name ||
+            "AnimeX2",
+          50,
+          "AnimeX2",
+        );
+      }
+
+      /**
+       * Si una variante funcionó,
+       * todavía conservamos todos sus servidores.
+       */
+      break;
+    }
+  } catch (error) {
+    console.error(
+      "[AnimeX2] error:",
+      error,
+    );
   }
 
   return result;
 }
 
+/**
+ * -------------------------------------------------------
+ * AGREGADOR
+ * -------------------------------------------------------
+ */
 export async function getAllServers({
   slug,
   number,
@@ -479,23 +628,34 @@ export async function getAllServers({
     title?.trim() ||
     slug;
 
-  /*
-   * AniList se consulta UNA sola vez.
-   *
-   * No queremos que cada scraper haga
-   * su propia consulta.
+  /**
+   * Metadata una sola vez.
    */
-  const metadata =
-    await getAnimeMetadata(
-      input,
-      anilistId,
+  let metadata = {
+    titles: [] as string[],
+    malId: null as number | null,
+    anilistId: null as number | null,
+  };
+
+  try {
+    metadata =
+      await getAnimeMetadata(
+        input,
+        anilistId,
+      );
+  } catch (error) {
+    console.error(
+      "[Metadata] error:",
+      error,
     );
+  }
 
   const titles = [
     input,
     slug,
     ...(metadata.titles || []),
-  ].filter(Boolean);
+  ]
+    .filter(Boolean);
 
   const uniqueTitles =
     [
@@ -504,17 +664,20 @@ export async function getAllServers({
       ),
     ];
 
-  /*
-   * TODOS los scrapers son independientes.
+  console.log(
+    "[Aggregator] título:",
+    input,
+  );
+
+  console.log(
+    "[Aggregator] títulos:",
+    uniqueTitles,
+  );
+
+  /**
+   * TODOS los scrapers se ejecutan.
    *
-   * Si AV1 devuelve error:
-   * no afecta JKAnime.
-   *
-   * Si AnimeD23 devuelve error:
-   * no afecta AnimeFLV.
-   *
-   * Si AnimeFLV está caído:
-   * tampoco afecta los demás.
+   * Un fallo de uno NO mata los otros.
    */
   const tasks = [
     scrapeJKAnime(
@@ -566,15 +729,16 @@ export async function getAllServers({
       servers.push(
         ...item.value,
       );
+    } else {
+      console.error(
+        "[Aggregator] scraper rechazado:",
+        item.reason,
+      );
     }
   }
 
-  /*
-   * JKAnime siempre arriba,
-   * después D23,
-   * luego AV1,
-   * FLV,
-   * X2.
+  /**
+   * Orden global.
    */
   servers.sort(
     (a, b) =>
@@ -582,14 +746,14 @@ export async function getAllServers({
       b.priority,
   );
 
-  /*
-   * Deduplicación.
+  /**
+   * Deduplicación final.
    */
   const seen =
     new Set<string>();
 
-  const finalServers:
-    string[] = [];
+  const final:
+    InternalServer[] = [];
 
   for (
     const server of servers
@@ -609,38 +773,50 @@ export async function getAllServers({
     }
 
     seen.add(key);
-    finalServers.push(
-      server.url,
+
+    final.push(
+      server,
     );
   }
 
-  /*
-   * Tu frontend sigue recibiendo exactamente
-   * la estructura que espera:
+  console.log(
+    "[Aggregator] TOTAL:",
+    final.length,
+  );
+
+  console.log(
+    "[Aggregator] servidores:",
+    final.map(
+      server =>
+        `${server.name} [${server.source}]`,
+    ),
+  );
+
+  /**
+   * NO eliminamos servidores
+   * innecesariamente.
    *
-   * Server 1
-   * Server 2
-   * Server 3...
+   * Si hay 2, devuelve 2.
+   * Si hay 7, devuelve 7.
+   * Si hay 20, devuelve 20.
    */
-  return finalServers
-    .slice(0, 15)
-    .map(
-      (
-        url,
-        index,
-      ) => ({
-        name:
-          `Server ${index + 1}`,
-
-        type:
-          "Externo" as const,
-
-        embed:
-          url,
-      }),
-    );
+  return final.map(
+    server => ({
+      name:
+        server.name,
+      type:
+        "Externo" as const,
+      embed:
+        server.url,
+    }),
+  );
 }
 
+/**
+ * -------------------------------------------------------
+ * SUBTÍTULOS
+ * -------------------------------------------------------
+ */
 export async function getSubtitles(
   slug: string,
   episode: number,
