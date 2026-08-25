@@ -31,14 +31,8 @@ import {
 
 interface FinalServer {
   name: string;
-
-  type:
-    | "iframe"
-    | "mp4"
-    | "embed";
-
+  type: "iframe" | "mp4" | "embed";
   embed: string;
-
   lang: string;
 }
 
@@ -50,13 +44,9 @@ interface FinalServer {
 function normalizeTitle(
   value: string,
 ): string {
-  return String(
-    value || "",
-  )
+  return String(value || "")
     .toLowerCase()
-    .normalize(
-      "NFD",
-    )
+    .normalize("NFD")
     .replace(
       /[\u0300-\u036f]/g,
       "",
@@ -78,15 +68,13 @@ function normalizeTitle(
 
 
 // ============================================================
-// SLUG
+// SLUGIFY
 // ============================================================
 
 function slugify(
   value: string,
 ): string {
-  return normalizeTitle(
-    value,
-  )
+  return normalizeTitle(value)
     .replace(
       /\s+/g,
       "-",
@@ -103,118 +91,78 @@ function slugify(
 
 
 // ============================================================
-// VARIANTES
+// VARIANTES DE SLUG
 // ============================================================
 
 function generateSlugVariants(
   value: string,
 ): string[] {
-  const base =
-    slugify(value);
+  const base = slugify(value);
 
   if (!base) {
     return [];
   }
 
-  const variants =
-    new Set<string>();
+  const variants = new Set<string>();
 
-  const add =
-    (
-      candidate: string,
-    ) => {
-      const clean =
-        candidate
-          .replace(
-            /-+/g,
-            "-",
-          )
-          .replace(
-            /^-|-$/g,
-            "",
-          );
+  const add = (
+    candidate: string,
+  ) => {
+    const clean = candidate
+      .replace(
+        /-+/g,
+        "-",
+      )
+      .replace(
+        /^-|-$/g,
+        "",
+      );
 
-      if (clean) {
-        variants.add(
-          clean,
-        );
-      }
-    };
+    if (clean) {
+      variants.add(clean);
+    }
+  };
 
   add(base);
 
   // ----------------------------------------------------------
-  // title-season-2
+  // season / temporada
   // ----------------------------------------------------------
 
-  const season =
-    base.match(
-      /^(.*?)-(?:season|temporada)-?(\d+)$/i,
-    );
+  const season = base.match(
+    /^(.*?)-(?:season|temporada)-?(\d+)$/i,
+  );
 
   if (season) {
-    const title =
-      season[1];
-
-    const number =
-      season[2];
+    const title = season[1];
+    const number = season[2];
 
     add(title);
-
-    add(
-      `${title}-${number}`,
-    );
-
-    add(
-      `${title}-${number}th-season`,
-    );
-
-    add(
-      `${title}-${number}-season`,
-    );
-
-    add(
-      `${title}-season-${number}`,
-    );
-
-    add(
-      `${title}-temporada-${number}`,
-    );
+    add(`${title}-${number}`);
+    add(`${title}-${number}-season`);
+    add(`${title}-${number}th-season`);
+    add(`${title}-season-${number}`);
+    add(`${title}-temporada-${number}`);
   }
 
   // ----------------------------------------------------------
-  // title-2nd-season
+  // 2nd-season / 3rd-season / etc.
   // ----------------------------------------------------------
 
-  const ordinal =
-    base.match(
-      /^(.*?)-(\d+)(?:st|nd|rd|th)-season$/i,
-    );
+  const ordinal = base.match(
+    /^(.*?)-(\d+)(?:st|nd|rd|th)-season$/i,
+  );
 
   if (ordinal) {
-    const title =
-      ordinal[1];
-
-    const number =
-      ordinal[2];
+    const title = ordinal[1];
+    const number = ordinal[2];
 
     add(title);
-
-    add(
-      `${title}-${number}`,
-    );
-
-    add(
-      `${title}-${number}-season`,
-    );
-
-    add(
-      `${title}-${number}th-season`,
-    );
-
-    add(
-      `${title}-season-${number}`,
-    );
+    add(`${title}-${number}`);
+    add(`${title}-${number}-season`);
+    add(`${title}-${number}th-season`);
+    add(`${title}-season-${number}`);
+    add(`${title}-temporada-${number}`);
   }
 
   // ----------------------------------------------------------
@@ -239,43 +187,35 @@ function generateSlugVariants(
     ),
   );
 
-  return [
-    ...variants,
-  ].slice(
+  return [...variants].slice(
     0,
-    20,
+    30,
   );
 }
 
 
 // ============================================================
-// METADATA
+// COLECTAR TÍTULOS
 // ============================================================
 
 async function collectTitles(
   title: string,
   slug: string,
 ): Promise<string[]> {
-  const titles =
-    new Set<string>();
+  const titles = new Set<string>();
 
   if (title) {
-    titles.add(
-      title,
-    );
+    titles.add(title);
   }
 
   if (slug) {
-    titles.add(
-      slug,
-    );
+    titles.add(slug);
   }
 
   try {
-    const metadata =
-      await getAnimeMetadata(
-        title || slug,
-      );
+    const metadata = await getAnimeMetadata(
+      title || slug,
+    );
 
     if (
       Array.isArray(
@@ -283,14 +223,11 @@ async function collectTitles(
       )
     ) {
       for (
-        const value of
-          metadata.titles
+        const value of metadata.titles
       ) {
         if (
-          typeof value ===
-            "string" &&
-          value.trim()
-            .length > 1
+          typeof value === "string" &&
+          value.trim().length > 1
         ) {
           titles.add(
             value.trim(),
@@ -305,9 +242,7 @@ async function collectTitles(
     );
   }
 
-  return [
-    ...titles,
-  ];
+  return [...titles];
 }
 
 
@@ -336,25 +271,24 @@ async function collectJKAnime(
       "================================================",
     );
 
-    const jkSlug =
-      await findJKAnimeSlug(
-        {
-          slug,
-          title:
-            searchTitle,
-          anilistId,
-        },
-        env,
-        titles.filter(
-          value =>
-            normalizeTitle(
-              value,
-            ) !==
-            normalizeTitle(
-              searchTitle,
-            ),
-        ),
-      );
+    // --------------------------------------------------------
+    // Buscar el slug real de JKAnime.
+    // NO confiar únicamente en el slug de AniList.
+    // --------------------------------------------------------
+
+    const jkSlug = await findJKAnimeSlug(
+      {
+        slug,
+        title: searchTitle,
+        anilistId,
+      },
+      env,
+      titles.filter(
+        value =>
+          normalizeTitle(value) !==
+          normalizeTitle(searchTitle),
+      ),
+    );
 
     const targetSlug =
       jkSlug || slug;
@@ -368,6 +302,10 @@ async function collectJKAnime(
       return [];
     }
 
+    // --------------------------------------------------------
+    // Obtener TODOS los servidores que devuelva JKAnime.
+    // --------------------------------------------------------
+
     const servers =
       await getJKAnimeServers(
         targetSlug,
@@ -375,7 +313,8 @@ async function collectJKAnime(
       );
 
     if (
-      !servers?.length
+      !servers ||
+      !servers.length
     ) {
       console.log(
         "⚠️ JKAnime no devolvió servidores",
@@ -388,52 +327,42 @@ async function collectJKAnime(
     // MAGI → DESU → RESTO
     // --------------------------------------------------------
 
-    const priority =
-      (
-        server: {
-          name?: string;
-        },
-      ): number => {
-        const name =
-          String(
-            server.name ||
-              "",
-          ).toLowerCase();
+    const priority = (
+      server: {
+        name?: string;
+      },
+    ): number => {
+      const name =
+        String(
+          server.name || "",
+        ).toLowerCase();
 
-        if (
-          name.includes(
-            "magi",
-          )
-        ) {
-          return 0;
-        }
+      if (
+        name.includes("magi")
+      ) {
+        return 0;
+      }
 
-        if (
-          name.includes(
-            "desu",
-          )
-        ) {
-          return 1;
-        }
+      if (
+        name.includes("desu")
+      ) {
+        return 1;
+      }
 
-        if (
-          name.includes(
-            "yourupload",
-          )
-        ) {
-          return 2;
-        }
+      if (
+        name.includes("yourupload")
+      ) {
+        return 2;
+      }
 
-        if (
-          name.includes(
-            "mega",
-          )
-        ) {
-          return 3;
-        }
+      if (
+        name.includes("mega")
+      ) {
+        return 3;
+      }
 
-        return 10;
-      };
+      return 10;
+    };
 
     servers.sort(
       (a, b) =>
@@ -441,16 +370,12 @@ async function collectJKAnime(
         priority(b),
     );
 
-    const result:
-      FinalServer[] = [];
+    const result: FinalServer[] = [];
 
     for (
-      const server of
-        servers
+      const server of servers
     ) {
-      if (
-        !server?.url
-      ) {
+      if (!server?.url) {
         continue;
       }
 
@@ -460,8 +385,7 @@ async function collectJKAnime(
           "JKAnime",
 
         type:
-          server.type ===
-          "mp4"
+          server.type === "mp4"
             ? "mp4"
             : "iframe",
 
@@ -477,10 +401,9 @@ async function collectJKAnime(
       "✅ JKAnime:",
       result.map(
         server => ({
-          name:
-            server.name,
-          type:
-            server.type,
+          name: server.name,
+          type: server.type,
+          embed: server.embed,
         }),
       ),
     );
@@ -506,198 +429,176 @@ async function collectAnimeD23(
   number: number,
   titles: string[],
 ): Promise<FinalServer[]> {
-  console.log(
-    "================================================",
-  );
-
-  console.log(
-    "🟣 ANIMED23",
-  );
-
-  console.log(
-    "================================================",
-  );
-
-  const candidates =
-    new Set<string>();
-
-  // Primero el slug recibido.
-  for (
-    const candidate of
-      generateSlugVariants(
-        slug,
-      )
-  ) {
-    candidates.add(
-      candidate,
+  try {
+    console.log(
+      "================================================",
     );
-  }
 
-  // Después todos los títulos.
-  for (
-    const title of titles
-  ) {
+    console.log(
+      "🟣 ANIMED23",
+    );
+
+    console.log(
+      "================================================",
+    );
+
+    const candidates =
+      new Set<string>();
+
+    // --------------------------------------------------------
+    // Slug original
+    // --------------------------------------------------------
+
     for (
       const candidate of
-        generateSlugVariants(
-          title,
-        )
+        generateSlugVariants(slug)
     ) {
-      candidates.add(
-        candidate,
-      );
+      candidates.add(candidate);
     }
-  }
 
-  console.log(
-    "🔎 AnimeD23 candidatos:",
-    [
-      ...candidates,
-    ],
-  );
+    // --------------------------------------------------------
+    // Títulos de metadata
+    // --------------------------------------------------------
 
-  for (
-    const candidate of
-      candidates
-  ) {
-    try {
-      console.log(
-        "🔎 AnimeD23 probando:",
-        candidate,
-      );
+    for (
+      const title of titles
+    ) {
+      for (
+        const candidate of
+          generateSlugVariants(title)
+      ) {
+        candidates.add(candidate);
+      }
+    }
 
-      const servers =
-        await getAnimeD23Servers(
+    console.log(
+      "🔎 AnimeD23 candidatos:",
+      [...candidates],
+    );
+
+    // --------------------------------------------------------
+    // Probar cada variante.
+    // --------------------------------------------------------
+
+    for (
+      const candidate of candidates
+    ) {
+      try {
+        console.log(
+          "🔎 AnimeD23 probando:",
           candidate,
-          number,
         );
 
-      if (
-        !servers?.length
-      ) {
-        continue;
-      }
+        const servers =
+          await getAnimeD23Servers(
+            candidate,
+            number,
+          );
 
-      console.log(
-        "✅ AnimeD23 encontró:",
-        servers.map(
-          server => ({
-            name:
-              server.name,
-            type:
-              server.type,
-            url:
-              server.url,
-          }),
-        ),
-      );
-
-      const result:
-        FinalServer[] = [];
-
-      for (
-        const server of
-          servers
-      ) {
         if (
-          !server?.url
+          !servers ||
+          !servers.length
         ) {
           continue;
         }
 
-        // ----------------------------------------------------
-        // MUY IMPORTANTE:
-        //
-        // AnimeD23 YA DICE si es iframe o mp4.
-        //
-        // NO convertir todo a "embed".
-        // ----------------------------------------------------
+        console.log(
+          "✅ AnimeD23 encontró:",
+          servers.map(
+            server => ({
+              name: server.name,
+              type: server.type,
+              url: server.url,
+            }),
+          ),
+        );
 
-        const type =
-          server.type ===
-          "mp4"
-            ? "mp4"
-            : "iframe";
+        const result: FinalServer[] = [];
 
-        let name =
-          String(
-            server.name ||
-              "",
-          ).trim();
-
-        if (!name) {
-          const lower =
-            server.url
-              .toLowerCase();
-
-          if (
-            lower.includes(
-              "mytsumi",
-            )
-          ) {
-            name =
-              "Mytsumi";
-          } else if (
-            lower.includes(
-              "archive.org",
-            )
-          ) {
-            name =
-              "Archive";
-          } else if (
-            lower.includes(
-              "mega.nz",
-            )
-          ) {
-            name =
-              "Mega";
-          } else if (
-            lower.includes(
-              "ok.ru",
-            )
-          ) {
-            name =
-              "OK";
-          } else {
-            name =
-              "AnimeD23";
+        for (
+          const server of servers
+        ) {
+          if (!server?.url) {
+            continue;
           }
+
+          /*
+           * IMPORTANTE:
+           *
+           * Aquí NO modificamos el URL.
+           *
+           * AnimeD23 puede devolver:
+           *
+           * - iframe
+           * - mp4
+           *
+           * El frontend antiguo recibe todo como
+           * "Externo", por lo que conservamos el
+           * URL original.
+           */
+
+          const type =
+            server.type === "mp4"
+              ? "mp4"
+              : "iframe";
+
+          let name =
+            String(
+              server.name || "",
+            ).trim();
+
+          /*
+           * Si el scraper ya proporcionó nombre,
+           * lo conservamos internamente.
+           *
+           * Posteriormente getAllServers()
+           * renombrará los servidores genéricos.
+           */
+
+          if (!name) {
+            name = "AnimeD23";
+          }
+
+          result.push({
+            name,
+            type,
+            embed: server.url,
+            lang: "sub",
+          });
         }
 
-        result.push({
-          name,
-          type,
-          embed:
-            server.url,
-          lang:
-            "sub",
-        });
+        if (
+          result.length
+        ) {
+          return result;
+        }
+      } catch (error) {
+        console.log(
+          "⚠️ AnimeD23 candidato fallido:",
+          candidate,
+          error,
+        );
       }
-
-      if (
-        result.length
-      ) {
-        return result;
-      }
-    } catch (error) {
-      console.log(
-        "⚠️ AnimeD23:",
-        candidate,
-        error,
-      );
     }
+
+    console.log(
+      "❌ AnimeD23 no encontró servidores",
+    );
+
+    return [];
+  } catch (error) {
+    console.log(
+      "❌ AnimeD23 ERROR:",
+      error,
+    );
+
+    return [];
   }
-
-  console.log(
-    "❌ AnimeD23 no encontró servidores",
-  );
-
-  return [];
 }
 
 
 // ============================================================
-// AV1
+// ANIMEAV1
 // ============================================================
 
 async function collectAV1(
@@ -719,6 +620,11 @@ async function collectAV1(
       "================================================",
     );
 
+    /*
+     * Buscar usando títulos y no solamente el slug
+     * recibido desde AniList.
+     */
+
     const av1Slug =
       await findAnimeAV1Slug(
         searchTitle,
@@ -727,8 +633,17 @@ async function collectAV1(
       );
 
     if (!av1Slug) {
+      console.log(
+        "⚠️ AnimeAV1 no encontró slug",
+      );
+
       return [];
     }
+
+    console.log(
+      "🔎 AnimeAV1 slug:",
+      av1Slug,
+    );
 
     const embeds =
       await getAnimeAV1Embeds(
@@ -737,38 +652,56 @@ async function collectAV1(
       );
 
     if (
-      !embeds?.length
+      !embeds ||
+      !embeds.length
     ) {
+      console.log(
+        "⚠️ AnimeAV1 no devolvió embeds",
+      );
+
       return [];
     }
 
-    return embeds
-      .filter(
-        server =>
-          Boolean(
-            server?.url,
-          ),
-      )
-      .map(
+    const result: FinalServer[] =
+      embeds
+        .filter(
+          server =>
+            Boolean(
+              server?.url,
+            ),
+        )
+        .map(
+          server => ({
+            name:
+              server.server ||
+              "AV1",
+
+            type:
+              "iframe" as const,
+
+            embed:
+              server.url,
+
+            lang:
+              server.language ||
+              "sub",
+          }),
+        );
+
+    console.log(
+      "✅ AnimeAV1:",
+      result.map(
         server => ({
-          name:
-            server.server ||
-            "AV1",
-
-          type:
-            "iframe" as const,
-
-          embed:
-            server.url,
-
-          lang:
-            server.language ||
-            "sub",
+          name: server.name,
+          embed: server.embed,
         }),
-      );
+      ),
+    );
+
+    return result;
   } catch (error) {
     console.log(
-      "❌ AV1:",
+      "❌ AnimeAV1 ERROR:",
       error,
     );
 
@@ -786,90 +719,92 @@ async function collectAnimeX2(
   number: number,
   titles: string[],
 ): Promise<FinalServer[]> {
-  const candidates =
-    new Set<string>();
+  try {
+    const candidates =
+      new Set<string>();
 
-  for (
-    const candidate of
-      generateSlugVariants(
-        slug,
-      )
-  ) {
-    candidates.add(
-      candidate,
-    );
-  }
-
-  for (
-    const title of titles
-  ) {
     for (
       const candidate of
-        generateSlugVariants(
-          title,
-        )
+        generateSlugVariants(slug)
     ) {
-      candidates.add(
-        candidate,
-      );
+      candidates.add(candidate);
     }
-  }
 
-  for (
-    const candidate of
-      candidates
-  ) {
-    try {
-      console.log(
-        "🔎 AnimeX2:",
-        candidate,
-      );
-
-      const servers =
-        await getAnimeX2Servers(
-          candidate,
-          number,
-        );
-
-      if (
-        !servers?.length
+    for (
+      const title of titles
+    ) {
+      for (
+        const candidate of
+          generateSlugVariants(title)
       ) {
-        continue;
+        candidates.add(candidate);
       }
-
-      return servers
-        .filter(
-          server =>
-            Boolean(
-              server?.url,
-            ),
-        )
-        .map(
-          server => ({
-            name:
-              server.name ||
-              "AnimeX2",
-
-            type:
-              "iframe" as const,
-
-            embed:
-              server.url,
-
-            lang:
-              server.language ||
-              "sub",
-          }),
-        );
-    } catch (error) {
-      console.log(
-        "⚠️ AnimeX2:",
-        error,
-      );
     }
-  }
 
-  return [];
+    for (
+      const candidate of candidates
+    ) {
+      try {
+        console.log(
+          "🔎 AnimeX2:",
+          candidate,
+        );
+
+        const servers =
+          await getAnimeX2Servers(
+            candidate,
+            number,
+          );
+
+        if (
+          !servers ||
+          !servers.length
+        ) {
+          continue;
+        }
+
+        return servers
+          .filter(
+            server =>
+              Boolean(
+                server?.url,
+              ),
+          )
+          .map(
+            server => ({
+              name:
+                server.name ||
+                "AnimeX2",
+
+              type:
+                "iframe" as const,
+
+              embed:
+                server.url,
+
+              lang:
+                server.language ||
+                "sub",
+            }),
+          );
+      } catch (error) {
+        console.log(
+          "⚠️ AnimeX2:",
+          candidate,
+          error,
+        );
+      }
+    }
+
+    return [];
+  } catch (error) {
+    console.log(
+      "❌ AnimeX2 ERROR:",
+      error,
+    );
+
+    return [];
+  }
 }
 
 
@@ -921,7 +856,7 @@ function dedupeServers(
 
 
 // ============================================================
-// PRINCIPAL
+// FUNCIÓN PRINCIPAL
 // ============================================================
 
 export async function getAllServers({
@@ -967,6 +902,10 @@ export async function getAllServers({
     "================================================",
   );
 
+  // ----------------------------------------------------------
+  // Obtener títulos alternativos.
+  // ----------------------------------------------------------
+
   const titles =
     await collectTitles(
       searchTitle,
@@ -978,8 +917,6 @@ export async function getAllServers({
 
   // ==========================================================
   // 1. JKANIME
-  //
-  // MAGI / DESU DE PRIMEROS
   // ==========================================================
 
   const jkServers =
@@ -998,10 +935,6 @@ export async function getAllServers({
 
   // ==========================================================
   // 2. ANIMED23
-  //
-  // SIEMPRE SE BUSCA.
-  //
-  // NO depende de que JKAnime haya encontrado algo.
   // ==========================================================
 
   const d23Servers =
@@ -1016,7 +949,7 @@ export async function getAllServers({
   );
 
   // ==========================================================
-  // 3. AV1
+  // 3. ANIMEAV1
   // ==========================================================
 
   const av1Servers =
@@ -1047,7 +980,7 @@ export async function getAllServers({
   );
 
   // ==========================================================
-  // DEDUPE
+  // DEDUPLICAR
   // ==========================================================
 
   const unique =
@@ -1056,75 +989,63 @@ export async function getAllServers({
     );
 
   // ==========================================================
-  // ORDEN FINAL
+  // PRIORIDAD
   //
   // MAGI
   // DESU
-  // AnimeD23
-  // AV1
-  // X2
+  // MYTSUMI
+  // ARCHIVE
+  // MEGA
+  // ANIMED23
+  // RESTO
   // ==========================================================
 
-  const priority =
-    (
-      server: FinalServer,
-    ): number => {
-      const name =
-        String(
-          server.name ||
-            "",
-        ).toLowerCase();
+  const priority = (
+    server: FinalServer,
+  ): number => {
+    const name =
+      String(
+        server.name || "",
+      ).toLowerCase();
 
-      if (
-        name.includes(
-          "magi",
-        )
-      ) {
-        return 0;
-      }
+    if (
+      name.includes("magi")
+    ) {
+      return 0;
+    }
 
-      if (
-        name.includes(
-          "desu",
-        )
-      ) {
-        return 1;
-      }
+    if (
+      name.includes("desu")
+    ) {
+      return 1;
+    }
 
-      if (
-        name.includes(
-          "mytsumi",
-        )
-      ) {
-        return 2;
-      }
+    if (
+      name.includes("mytsumi")
+    ) {
+      return 2;
+    }
 
-      if (
-        name.includes(
-          "archive",
-        )
-      ) {
-        return 3;
-      }
+    if (
+      name.includes("archive")
+    ) {
+      return 3;
+    }
 
-      if (
-        name.includes(
-          "mega",
-        )
-      ) {
-        return 4;
-      }
+    if (
+      name.includes("mega")
+    ) {
+      return 4;
+    }
 
-      if (
-        name.includes(
-          "animed23",
-        )
-      ) {
-        return 5;
-      }
+    if (
+      name.includes("animed23")
+    ) {
+      return 5;
+    }
 
-      return 10;
-    };
+    return 10;
+  };
 
   unique.sort(
     (a, b) =>
@@ -1133,15 +1054,20 @@ export async function getAllServers({
   );
 
   // ==========================================================
-  // NOMBRADO
+  // NOMBRES FINALES
   //
-  // SOLO Magi y Desu conservan nombre especial.
-  // Los demás reciben Server 3, Server 4...
-  // PERO CONSERVAMOS type.
+  // MAGI y DESU se mantienen.
+  // TODOS LOS DEMÁS:
+  //
+  // Server 3
+  // Server 4
+  // Server 5
+  // ...
+  //
+  // Esto evita mostrar el nombre de la página/proveedor.
   // ==========================================================
 
-  let genericNumber =
-    3;
+  let genericNumber = 3;
 
   const finalServers =
     unique
@@ -1153,31 +1079,24 @@ export async function getAllServers({
         server => {
           const lower =
             String(
-              server.name ||
-                "",
+              server.name || "",
             ).toLowerCase();
 
           if (
-            lower.includes(
-              "magi",
-            )
+            lower.includes("magi")
           ) {
             return {
               ...server,
-              name:
-                "Magi",
+              name: "Magi",
             };
           }
 
           if (
-            lower.includes(
-              "desu",
-            )
+            lower.includes("desu")
           ) {
             return {
               ...server,
-              name:
-                "Desu",
+              name: "Desu",
             };
           }
 
@@ -1202,8 +1121,10 @@ export async function getAllServers({
       server => ({
         name:
           server.name,
+
         type:
           server.type,
+
         embed:
           server.embed,
       }),
@@ -1214,16 +1135,39 @@ export async function getAllServers({
     "================================================",
   );
 
- return finalServers.map(
-  (server, index) => ({
-    name:
-      server.name ||
-      `Servidor ${index + 1}`,
+  // ==========================================================
+  // CONTRATO COMPATIBLE CON EL FRONTEND ACTUAL
+  //
+  // IMPORTANTE:
+  //
+  // NO devolver:
+  //
+  // type: "iframe"
+  // type: "mp4"
+  //
+  // El frontend anterior trabaja con:
+  //
+  // type: "Externo"
+  //
+  // Por eso normalizamos AQUÍ.
+  //
+  // El embed original NO se modifica.
+  // ==========================================================
 
-    type:
-      "Externo",
+  return finalServers.map(
+    (
+      server,
+      index,
+    ) => ({
+      name:
+        server.name ||
+        `Servidor ${index + 1}`,
 
-    embed:
-      server.embed,
-  }),
-);
+      type:
+        "Externo",
+
+      embed:
+        server.embed,
+    }),
+  );
+}
