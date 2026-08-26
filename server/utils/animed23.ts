@@ -1,4 +1,4 @@
-import { fetchHtml, getHeaders } from "./fetcher";
+import { getHeaders } from "./fetcher";
 import { getAnimeMetadata } from "./metadata";
 
 export interface AnimeD23Server {
@@ -87,9 +87,7 @@ function normalizeSource(
     .replace(/\\u0026/gi, "&")
     .replace(/\\u003d/gi, "=")
     .replace(/\\u002f/gi, "/")
-    .replace(/\\u002F/gi, "/")
     .replace(/\\u003a/gi, ":")
-    .replace(/\\u003A/gi, ":")
     .replace(/\\\//g, "/")
     .trim();
 }
@@ -102,14 +100,21 @@ function normalizeUrl(
     .replace(/[)\]}>]+$/g, "")
     .trim();
 
+  try {
+    url = decodeURIComponent(url);
+  } catch {
+    // Puede contener caracteres % válidos.
+  }
+
   /*
-   * IMPORTANTE:
+   * Solamente eliminamos barras duplicadas
+   * después del host.
    *
-   * NO hacemos:
+   * NO usamos:
    *
    * url.replace(/\/{2,}/g, "/")
    *
-   * porque eso puede destruir https://.
+   * porque destruiría https://
    */
 
   url = url.replace(
@@ -130,18 +135,36 @@ function slugify(
   return String(value || "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9\s-]/g, " ")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+    .replace(
+      /[\u0300-\u036f]/g,
+      "",
+    )
+    .replace(
+      /&/g,
+      " and ",
+    )
+    .replace(
+      /[^a-z0-9\s-]/g,
+      " ",
+    )
+    .replace(
+      /\s+/g,
+      "-",
+    )
+    .replace(
+      /-+/g,
+      "-",
+    )
+    .replace(
+      /^-|-$/g,
+      "");
 }
 
 function generateTitleVariants(
   value: string,
 ): string[] {
-  const base = slugify(value);
+  const base =
+    slugify(value);
 
   if (!base) {
     return [];
@@ -155,8 +178,14 @@ function generateTitleVariants(
   ) => {
     const clean =
       candidate
-        .replace(/-+/g, "-")
-        .replace(/^-|-$/g, "");
+        .replace(
+          /-+/g,
+          "-",
+        )
+        .replace(
+          /^-|-$/g,
+          "",
+        );
 
     if (clean) {
       variants.add(clean);
@@ -167,10 +196,6 @@ function generateTitleVariants(
 
   /*
    * Temporadas.
-   *
-   * Ejemplo:
-   *
-   * tensei-shitara-slime-datta-ken-temporada-4
    */
 
   const season =
@@ -179,21 +204,62 @@ function generateTitleVariants(
     );
 
   if (season) {
-    const title = season[1];
-    const number = season[2];
+    const title =
+      season[1];
+
+    const number =
+      season[2];
 
     add(title);
     add(`${title}-${number}`);
-    add(`${title}-temporada-${number}`);
-    add(`${title}-season-${number}`);
-    add(`${title}-${number}-season`);
-    add(`${title}-${number}th-season`);
+    add(
+      `${title}-temporada-${number}`,
+    );
+    add(
+      `${title}-season-${number}`,
+    );
+    add(
+      `${title}-${number}-season`,
+    );
+    add(
+      `${title}-${number}th-season`,
+    );
   }
 
   /*
-   * AnimeD23 utiliza también años:
-   *
-   * boku-no-kokoro-no-yabai-yatsu-movie-2026
+   * 1st-season / 2nd-season...
+   */
+
+  const ordinal =
+    base.match(
+      /^(.*?)-(\d+)(?:st|nd|rd|th)-season$/i,
+    );
+
+  if (ordinal) {
+    const title =
+      ordinal[1];
+
+    const number =
+      ordinal[2];
+
+    add(title);
+    add(`${title}-${number}`);
+    add(
+      `${title}-${number}-season`,
+    );
+    add(
+      `${title}-${number}th-season`,
+    );
+    add(
+      `${title}-season-${number}`,
+    );
+    add(
+      `${title}-temporada-${number}`,
+    );
+  }
+
+  /*
+   * AnimeD23 también utiliza años.
    */
 
   add(
@@ -203,25 +269,45 @@ function generateTitleVariants(
     ),
   );
 
+  add(
+    base.replace(
+      /-(?:season|temporada|part|parte|cour)-?\d+$/i,
+      "",
+    ),
+  );
+
   return [
     ...variants,
-  ].slice(0, 50);
+  ].slice(
+    0,
+    50,
+  );
 }
 
 /* ============================================================
- * NOMBRE DEL PROVIDER
+ * PROVIDER
  * ========================================================== */
 
 function providerName(
   url: string,
   explicitName?: string,
 ): string {
-  if (explicitName) {
-    return explicitName;
+  if (
+    explicitName &&
+    explicitName.trim()
+  ) {
+    return explicitName.trim();
   }
 
-  for (const provider of PROVIDERS) {
-    if (provider.pattern.test(url)) {
+  for (
+    const provider of
+      PROVIDERS
+  ) {
+    if (
+      provider.pattern.test(
+        url,
+      )
+    ) {
       return provider.name;
     }
   }
@@ -249,24 +335,37 @@ function dedupeServers(
   const seen =
     new Set<string>();
 
-  const result: AnimeD23Server[] = [];
+  const result:
+    AnimeD23Server[] = [];
 
-  for (const server of servers) {
+  for (
+    const server of
+      servers
+  ) {
     const url =
       normalizeUrl(
         server.url,
       );
 
     if (
-      !/^https?:\/\//i.test(url)
+      !/^https?:\/\//i.test(
+        url,
+      )
     ) {
       continue;
     }
 
     const key =
-      url.toLowerCase();
+      url
+        .toLowerCase()
+        .replace(
+          /\/+$/,
+          "",
+        );
 
-    if (seen.has(key)) {
+    if (
+      seen.has(key)
+    ) {
       continue;
     }
 
@@ -280,7 +379,9 @@ function dedupeServers(
         ),
       url,
       type:
-        serverType(url),
+        serverType(
+          url,
+        ),
     });
   }
 
@@ -296,11 +397,10 @@ async function fetchPage(
   referer?: string,
 ): Promise<string | null> {
   try {
-    const headers: Record<
-      string,
-      string
-    > = {
+    const headers:
+      Record<string, string> = {
       ...getHeaders(url),
+
       Accept:
         "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     };
@@ -310,34 +410,57 @@ async function fetchPage(
         referer;
     }
 
-    const response =
-      await fetch(url, {
-        method: "GET",
-        headers,
-        redirect: "follow",
-      });
+    const controller =
+      new AbortController();
 
-    if (!response.ok) {
-      console.log(
-        "⚠️ AnimeD23 HTTP:",
-        response.status,
-        url,
+    const timeout =
+      setTimeout(
+        () =>
+          controller.abort(),
+        15000,
       );
 
-      return null;
+    try {
+      const response =
+        await fetch(
+          url,
+          {
+            method: "GET",
+            headers,
+            redirect: "follow",
+            signal:
+              controller.signal,
+          },
+        );
+
+      if (
+        !response.ok
+      ) {
+        console.log(
+          "⚠️ AnimeD23 HTTP:",
+          response.status,
+          url,
+        );
+
+        return null;
+      }
+
+      const text =
+        await response.text();
+
+      if (
+        !text ||
+        text.length < 100
+      ) {
+        return null;
+      }
+
+      return text;
+    } finally {
+      clearTimeout(
+        timeout,
+      );
     }
-
-    const text =
-      await response.text();
-
-    if (
-      !text ||
-      text.length < 100
-    ) {
-      return null;
-    }
-
-    return text;
   } catch (error) {
     console.log(
       "⚠️ AnimeD23 FETCH:",
@@ -350,13 +473,255 @@ async function fetchPage(
 }
 
 /* ============================================================
- * EXTRACTOR DE ARRAY JAVASCRIPT
+ * BASE64
+ *
+ * NUEVO:
+ *
+ * <option value="BASE64">
+ *       ↓
+ * HTML
+ *       ↓
+ * iframe src
+ *
+ * Esto viene directamente de la lógica del scraper que me
+ * pasaste.
+ * ========================================================== */
+
+function decodeBase64Html(
+  value: string,
+): string | null {
+  try {
+    let encoded =
+      normalizeSource(
+        value,
+      ).trim();
+
+    try {
+      encoded =
+        decodeURIComponent(
+          encoded,
+        );
+    } catch {
+      // Puede no estar URL encoded.
+    }
+
+    /*
+     * Admitimos Base64 normal y Base64URL.
+     */
+
+    encoded =
+      encoded
+        .replace(
+          /-/g,
+          "+",
+        )
+        .replace(
+          /_/g,
+          "/",
+        );
+
+    encoded +=
+      "=".repeat(
+        (4 -
+          (encoded.length %
+            4)) %
+          4,
+      );
+
+    const binary =
+      atob(
+        encoded,
+      );
+
+    const bytes =
+      new Uint8Array(
+        binary.length,
+      );
+
+    for (
+      let i = 0;
+      i < binary.length;
+      i++
+    ) {
+      bytes[i] =
+        binary.charCodeAt(i);
+    }
+
+    return new TextDecoder().decode(
+      bytes,
+    );
+  } catch (error) {
+    console.log(
+      "⚠️ AnimeD23 Base64 inválido:",
+      error,
+    );
+
+    return null;
+  }
+}
+
+/* ============================================================
+ * MIRROR SELECTOR
+ *
+ * ESTE ES EL CAMBIO PRINCIPAL.
  *
  * Busca:
  *
- * const videoTabs = [...]
+ * <select class="mirror">
+ *   <option value="...BASE64...">
  *
- * sin depender de regex frágiles.
+ * Después:
+ *
+ * Base64
+ *   ↓
+ * iframe src
+ *   ↓
+ * player.php
+ *   ↓
+ * contenedor.php
+ *   ↓
+ * servidores
+ * ========================================================== */
+
+function extractMirrorIframeUrls(
+  html: string,
+): string[] {
+  const source =
+    normalizeSource(
+      html,
+    );
+
+  const result =
+    new Set<string>();
+
+  const selectRegex =
+    /<select\b[^>]*\bclass\s*=\s*["'][^"']*\bmirror\b[^"']*["'][^>]*>([\s\S]*?)<\/select>/gi;
+
+  for (
+    const selectMatch of
+      source.matchAll(
+        selectRegex,
+      )
+  ) {
+    const selectHtml =
+      selectMatch[1];
+
+    const optionRegex =
+      /<option\b[^>]*\bvalue\s*=\s*["']([^"']+)["'][^>]*>/gi;
+
+    for (
+      const optionMatch of
+        selectHtml.matchAll(
+          optionRegex,
+        )
+    ) {
+      const encoded =
+        optionMatch[1];
+
+      if (
+        !encoded ||
+        encoded.length < 10
+      ) {
+        continue;
+      }
+
+      const decoded =
+        decodeBase64Html(
+          encoded,
+        );
+
+      if (!decoded) {
+        continue;
+      }
+
+      console.log(
+        "🪞 AnimeD23 mirror decodificado:",
+        decoded.slice(
+          0,
+          300,
+        ),
+      );
+
+      /*
+       * Buscar iframe dentro del HTML decodificado.
+       */
+
+      const iframeRegex =
+        /<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i;
+
+      const iframeMatch =
+        decoded.match(
+          iframeRegex,
+        );
+
+      if (
+        iframeMatch?.[1]
+      ) {
+        const url =
+          normalizeUrl(
+            iframeMatch[1],
+          );
+
+        if (
+          /^https?:\/\//i.test(
+            url,
+          )
+        ) {
+          result.add(
+            url,
+          );
+        }
+      }
+
+      /*
+       * Fallback:
+       * si el contenido decodificado contiene directamente
+       * una URL.
+       */
+
+      const directRegex =
+        /https?:\/\/[^\s"'<>]+/i;
+
+      const directMatch =
+        decoded.match(
+          directRegex,
+        );
+
+      if (
+        directMatch?.[0]
+      ) {
+        const url =
+          normalizeUrl(
+            directMatch[0],
+          );
+
+        if (
+          /^https?:\/\//i.test(
+            url,
+          )
+        ) {
+          result.add(
+            url,
+          );
+        }
+      }
+    }
+  }
+
+  console.log(
+    "🪞 AnimeD23 mirror iframes:",
+    [
+      ...result,
+    ],
+  );
+
+  return [
+    ...result,
+  ];
+}
+
+/* ============================================================
+ * EXTRACTOR DE ARRAY JAVASCRIPT
  * ========================================================== */
 
 function extractBalancedArray(
@@ -364,8 +729,11 @@ function extractBalancedArray(
   marker: string,
 ): string | null {
   const markerIndex =
-    source.indexOf(
-      marker,
+    source.search(
+      new RegExp(
+        `(?:const|let|var)?\\s*${marker}\\s*=`,
+        "i",
+      ),
     );
 
   if (
@@ -377,8 +745,7 @@ function extractBalancedArray(
   const start =
     source.indexOf(
       "[",
-      markerIndex +
-        marker.length,
+      markerIndex,
     );
 
   if (
@@ -434,7 +801,9 @@ function extractBalancedArray(
     ) {
       depth--;
 
-      if (depth === 0) {
+      if (
+        depth === 0
+      ) {
         return source.slice(
           start,
           i + 1,
@@ -448,10 +817,6 @@ function extractBalancedArray(
 
 /* ============================================================
  * EXTRACTOR DE OBJECT
- *
- * Busca:
- *
- * const downloadsByQuality = {...}
  * ========================================================== */
 
 function extractBalancedObject(
@@ -459,8 +824,11 @@ function extractBalancedObject(
   marker: string,
 ): string | null {
   const markerIndex =
-    source.indexOf(
-      marker,
+    source.search(
+      new RegExp(
+        `(?:const|let|var)?\\s*${marker}\\s*=`,
+        "i",
+      ),
     );
 
   if (
@@ -472,8 +840,7 @@ function extractBalancedObject(
   const start =
     source.indexOf(
       "{",
-      markerIndex +
-        marker.length,
+      markerIndex,
     );
 
   if (
@@ -529,7 +896,9 @@ function extractBalancedObject(
     ) {
       depth--;
 
-      if (depth === 0) {
+      if (
+        depth === 0
+      ) {
         return source.slice(
           start,
           i + 1,
@@ -543,18 +912,6 @@ function extractBalancedObject(
 
 /* ============================================================
  * VIDEO TABS
- *
- * ESTA ES LA PARTE CLAVE.
- *
- * AnimeD23 realmente entrega:
- *
- * const videoTabs = [
- *   {
- *      tab_name: "Moon",
- *      url: "..."
- *   },
- *   ...
- * ];
  * ========================================================== */
 
 function extractVideoTabs(
@@ -568,16 +925,21 @@ function extractVideoTabs(
   const arrayText =
     extractBalancedArray(
       source,
-      "const videoTabs",
+      "videoTabs",
     );
 
-  if (!arrayText) {
+  if (
+    !arrayText
+  ) {
     console.log(
       "⚠️ AnimeD23: videoTabs no encontrado",
     );
 
     return [];
   }
+
+  const result:
+    AnimeD23Server[] = [];
 
   try {
     const tabs =
@@ -590,70 +952,110 @@ function extractVideoTabs(
       }>;
 
     if (
-      !Array.isArray(tabs)
+      !Array.isArray(
+        tabs,
+      )
     ) {
       return [];
     }
 
-    const servers =
-      tabs
-        .filter(
-          tab =>
-            tab &&
-            tab.status !==
-              "inactive",
-        )
-        .map(
-          tab => {
-            const url =
-              normalizeUrl(
-                tab.url ||
-                  "",
-              );
+    for (
+      const tab of
+        tabs
+    ) {
+      if (
+        !tab ||
+        tab.status ===
+          "inactive"
+      ) {
+        continue;
+      }
 
-            return {
-              name:
-                providerName(
-                  url,
-                  tab.tab_name,
-                ),
-              url,
-              type:
-                serverType(
-                  url,
-                ),
-            };
-          },
-        )
-        .filter(
-          server =>
-            /^https?:\/\//i.test(
-              server.url,
-            ),
+      const url =
+        normalizeUrl(
+          tab.url ||
+            "",
         );
 
-    console.log(
-      "🎥 AnimeD23 videoTabs:",
-      servers,
-    );
+      if (
+        !/^https?:\/\//i.test(
+          url,
+        )
+      ) {
+        continue;
+      }
 
-    return servers;
+      result.push({
+        name:
+          providerName(
+            url,
+            tab.tab_name,
+          ),
+        url,
+        type:
+          serverType(
+            url,
+          ),
+      });
+    }
   } catch (error) {
     console.log(
-      "❌ AnimeD23 videoTabs JSON:",
+      "⚠️ AnimeD23 videoTabs no es JSON estricto:",
       error,
     );
 
-    return [];
+    /*
+     * Fallback para JS ligeramente distinto.
+     */
+
+    const urlRegex =
+      /["']?(?:url|src|embed|link)["']?\s*:\s*["'](https?:\/\/[^"']+)["']/gi;
+
+    for (
+      const match of
+        source.matchAll(
+          urlRegex,
+        )
+    ) {
+      const url =
+        normalizeUrl(
+          match[1],
+        );
+
+      if (
+        !/^https?:\/\//i.test(
+          url,
+        )
+      ) {
+        continue;
+      }
+
+      result.push({
+        name:
+          providerName(
+            url,
+          ),
+        url,
+        type:
+          serverType(
+            url,
+          ),
+      });
+    }
   }
+
+  console.log(
+    "🎥 AnimeD23 videoTabs:",
+    result,
+  );
+
+  return dedupeServers(
+    result,
+  );
 }
 
 /* ============================================================
  * DOWNLOADS
- *
- * También existen en:
- *
- * const downloadsByQuality = {...}
  * ========================================================== */
 
 function extractDownloads(
@@ -667,12 +1069,17 @@ function extractDownloads(
   const objectText =
     extractBalancedObject(
       source,
-      "const downloadsByQuality",
+      "downloadsByQuality",
     );
 
-  if (!objectText) {
+  if (
+    !objectText
+  ) {
     return [];
   }
+
+  const result:
+    AnimeD23Server[] = [];
 
   try {
     const downloads =
@@ -685,9 +1092,6 @@ function extractDownloads(
           server_name?: string;
         }>
       >;
-
-    const result:
-      AnimeD23Server[] = [];
 
     for (
       const quality of
@@ -723,34 +1127,140 @@ function extractDownloads(
             ),
           url,
           type:
-            serverType(url),
+            serverType(
+              url,
+            ),
         });
       }
     }
+  } catch {
+    /*
+     * Fallback.
+     */
 
-    return result;
-  } catch (error) {
-    console.log(
-      "⚠️ AnimeD23 downloads:",
-      error,
-    );
+    const urlRegex =
+      /(?:download_url|url|src)\s*:\s*["'](https?:\/\/[^"']+)["']/gi;
 
-    return [];
+    for (
+      const match of
+        objectText.matchAll(
+          urlRegex,
+        )
+    ) {
+      const url =
+        normalizeUrl(
+          match[1],
+        );
+
+      if (
+        !/^https?:\/\//i.test(
+          url,
+        )
+      ) {
+        continue;
+      }
+
+      result.push({
+        name:
+          providerName(
+            url,
+          ),
+        url,
+        type:
+          serverType(
+            url,
+          ),
+      });
+    }
   }
+
+  return dedupeServers(
+    result,
+  );
 }
 
 /* ============================================================
- * ARCHIVE.ORG DENTRO DE MYTSUMI
+ * A / IFRAME / SOURCE
+ * ========================================================== */
+
+function extractKnownUrls(
+  html: string,
+): AnimeD23Server[] {
+  const source =
+    normalizeSource(
+      html,
+    );
+
+  const result:
+    AnimeD23Server[] = [];
+
+  const patterns = [
+    /<(?:a|iframe|source)\b[^>]*\bhref\s*=\s*["']([^"']+)["']/gi,
+    /<(?:a|iframe|source)\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi,
+  ];
+
+  for (
+    const pattern of
+      patterns
+  ) {
+    for (
+      const match of
+        source.matchAll(
+          pattern,
+        )
+    ) {
+      const url =
+        normalizeUrl(
+          match[1],
+        );
+
+      if (
+        !/^https?:\/\//i.test(
+          url,
+        )
+      ) {
+        continue;
+      }
+
+      if (
+        !PROVIDERS.some(
+          provider =>
+            provider.pattern.test(
+              url,
+            ),
+        )
+      ) {
+        continue;
+      }
+
+      result.push({
+        name:
+          providerName(
+            url,
+          ),
+        url,
+        type:
+          serverType(
+            url,
+          ),
+      });
+    }
+  }
+
+  return dedupeServers(
+    result,
+  );
+}
+
+/* ============================================================
+ * ARCHIVE
  *
- * Este es el segundo nivel que faltaba.
+ * Especialmente:
  *
- * Mytsumi:
- *
- * iframe
+ * Mytsumi
  *   ↓
- * HTML
- *   ↓
- * <video src="https://archive.org/...mp4">
+ * <video src="https://archive.org/...">
+ *
  * ========================================================== */
 
 function extractArchiveUrls(
@@ -776,55 +1286,35 @@ function extractArchiveUrls(
       );
 
     if (
-      !/archive\.org\//i.test(
+      !/^https?:\/\/[^/]*archive\.org\//i.test(
         url,
       )
     ) {
       return;
     }
 
+    const key =
+      url.toLowerCase();
+
     if (
-      !/^https?:\/\//i.test(
-        url,
-      )
+      seen.has(key)
     ) {
       return;
     }
 
-    if (
-      seen.has(url)
-    ) {
-      return;
-    }
-
-    seen.add(url);
+    seen.add(key);
 
     result.push({
-      name: "Archive",
+      name:
+        "Archive",
       url,
-      type: "mp4",
+      type:
+        "mp4",
     });
   };
 
-  /*
-   * <video src="">
-   */
-
   const videoRegex =
     /<video\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
-
-  for (
-    const match of
-      source.matchAll(
-        videoRegex,
-      )
-  ) {
-    add(match[1]);
-  }
-
-  /*
-   * <source src="">
-   */
 
   const sourceRegex =
     /<source\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
@@ -832,14 +1322,27 @@ function extractArchiveUrls(
   for (
     const match of
       source.matchAll(
+        videoRegex,
+      )
+  ) {
+    add(
+      match[1],
+    );
+  }
+
+  for (
+    const match of
+      source.matchAll(
         sourceRegex,
       )
   ) {
-    add(match[1]);
+    add(
+      match[1],
+    );
   }
 
   /*
-   * Archive aunque esté en JS.
+   * Archive dentro de JavaScript.
    */
 
   const archiveRegex =
@@ -851,7 +1354,9 @@ function extractArchiveUrls(
         archiveRegex,
       )
   ) {
-    add(match[0]);
+    add(
+      match[0],
+    );
   }
 
   console.log(
@@ -904,14 +1409,6 @@ async function extractMytsumiArchive(
 
 /* ============================================================
  * OPTIONS.PHP
- *
- * IMPORTANTE:
- *
- * options.php NO es el lugar donde debemos asumir que vienen
- * directamente las URLs.
- *
- * En el HTML real que proporcionaste, ese endpoint termina
- * entregando el HTML que contiene videoTabs.
  * ========================================================== */
 
 function extractOptionsUrl(
@@ -964,107 +1461,331 @@ function extractOptionsUrl(
 }
 
 /* ============================================================
- * PROCESAR MULTIPLAYER
+ * PROVIDERS
  * ========================================================== */
 
-async function processMultiplayerHtml(
+function isInterestingProviderUrl(
+  url: string,
+): boolean {
+  return PROVIDERS.some(
+    provider =>
+      provider.pattern.test(
+        url,
+      ),
+  );
+}
+
+/* ============================================================
+ * PROCESAR PÁGINA
+ *
+ * Este es el núcleo nuevo:
+ *
+ * mirror
+ *   ↓
+ * player.php
+ *   ↓
+ * contenedor.php
+ *   ↓
+ * iframe
+ *   ↓
+ * provider
+ *
+ * ========================================================== */
+
+async function processPage(
   html: string,
-  referer: string,
+  pageUrl: string,
+  depth: number,
+  visited: Set<string>,
 ): Promise<AnimeD23Server[]> {
   /*
-   * PRIMERA OPCIÓN:
-   *
-   * El HTML ya es el multiplayer.
+   * Evitar cadenas infinitas.
    */
 
-  let servers =
-    extractVideoTabs(
+  if (
+    depth > 5
+  ) {
+    return [];
+  }
+
+  let servers:
+    AnimeD23Server[] = [];
+
+  /*
+   * ----------------------------------------------------------
+   * 1. videoTabs
+   * ----------------------------------------------------------
+   */
+
+  servers.push(
+    ...extractVideoTabs(
+      html,
+    ),
+  );
+
+  /*
+   * ----------------------------------------------------------
+   * 2. downloadsByQuality
+   * ----------------------------------------------------------
+   */
+
+  servers.push(
+    ...extractDownloads(
+      html,
+    ),
+  );
+
+  /*
+   * ----------------------------------------------------------
+   * 3. Servidores explícitos
+   * ----------------------------------------------------------
+   */
+
+  servers.push(
+    ...extractKnownUrls(
+      html,
+    ),
+  );
+
+  /*
+   * ----------------------------------------------------------
+   * 4. MIRROR SELECTOR
+   *
+   * Esto es lo que no tenía la versión anterior.
+   * ----------------------------------------------------------
+   */
+
+  const mirrorIframes =
+    extractMirrorIframeUrls(
       html,
     );
 
-  if (
-    servers.length
+  /*
+   * ----------------------------------------------------------
+   * 5. Iframes normales
+   * ----------------------------------------------------------
+   */
+
+  const iframeUrls:
+    string[] = [
+      ...mirrorIframes,
+    ];
+
+  const source =
+    normalizeSource(
+      html,
+    );
+
+  const iframeRegex =
+    /<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
+
+  for (
+    const match of
+      source.matchAll(
+        iframeRegex,
+      )
   ) {
-    const expanded:
-      AnimeD23Server[] = [
-        ...servers,
-      ];
+    let url =
+      normalizeUrl(
+        match[1],
+      );
+
+    if (
+      !/^https?:\/\//i.test(
+        url,
+      )
+    ) {
+      try {
+        url =
+          new URL(
+            url,
+            pageUrl,
+          ).href;
+      } catch {
+        continue;
+      }
+    }
+
+    iframeUrls.push(
+      normalizeUrl(
+        url,
+      ),
+    );
+  }
+
+  const uniqueIframes =
+    [
+      ...new Set(
+        iframeUrls.filter(
+          url =>
+            /^https?:\/\//i.test(
+              url,
+            ),
+        ),
+      ),
+    ];
+
+  /*
+   * ----------------------------------------------------------
+   * 6. MYTSUMI → ARCHIVE
+   * ----------------------------------------------------------
+   */
+
+  const currentServers =
+    dedupeServers(
+      servers,
+    );
+
+  for (
+    const server of
+      currentServers
+  ) {
+    if (
+      /mytsumi\.com/i.test(
+        server.url,
+      )
+    ) {
+      servers.push(
+        ...(
+          await extractMytsumiArchive(
+            server,
+            pageUrl,
+          )
+        ),
+      );
+    }
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * 7. RECURRIR EN IFRAMES INTERNOS
+   *
+   * IMPORTANTE:
+   *
+   * No entramos a Mega/Zilla/etc. porque son el servidor final.
+   *
+   * Sí entramos a:
+   *
+   * animed23.online
+   * animed23.com
+   * Mytsumi
+   *
+   * para continuar el árbol.
+   * ----------------------------------------------------------
+   */
+
+  for (
+    const iframeUrl of
+      uniqueIframes
+  ) {
+    const key =
+      iframeUrl.toLowerCase();
+
+    if (
+      visited.has(key)
+    ) {
+      continue;
+    }
 
     /*
-     * Mytsumi → Archive
+     * Los servidores finales no necesitan ser descargados.
+     *
+     * Mytsumi es excepción porque allí buscamos Archive.
      */
 
-    for (
-      const server of
-        servers
+    if (
+      isInterestingProviderUrl(
+        iframeUrl,
+      ) &&
+      !/mytsumi\.com/i.test(
+        iframeUrl,
+      )
     ) {
+      continue;
+    }
+
+    visited.add(
+      key,
+    );
+
+    const iframeHtml =
+      await fetchPage(
+        iframeUrl,
+        pageUrl,
+      );
+
+    if (!iframeHtml) {
+      continue;
+    }
+
+    const nested =
+      await processPage(
+        iframeHtml,
+        iframeUrl,
+        depth + 1,
+        visited,
+      );
+
+    servers.push(
+      ...nested,
+    );
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * 8. OPTIONS.PHP COMO FALLBACK
+   * ----------------------------------------------------------
+   */
+
+  if (
+    !servers.length
+  ) {
+    const optionsUrl =
+      extractOptionsUrl(
+        html,
+      );
+
+    if (
+      optionsUrl &&
+      !visited.has(
+        optionsUrl.toLowerCase(),
+      )
+    ) {
+      console.log(
+        "🔗 AnimeD23 options.php:",
+        optionsUrl,
+      );
+
+      visited.add(
+        optionsUrl.toLowerCase(),
+      );
+
+      const optionsHtml =
+        await fetchPage(
+          optionsUrl,
+          pageUrl,
+        );
+
       if (
-        /mytsumi\.com/i.test(
-          server.url,
-        )
+        optionsHtml
       ) {
-        expanded.push(
+        servers.push(
           ...(
-            await extractMytsumiArchive(
-              server,
-              referer,
+            await processPage(
+              optionsHtml,
+              optionsUrl,
+              depth + 1,
+              visited,
             )
           ),
         );
       }
     }
-
-    /*
-     * Servidores de descarga.
-     */
-
-    expanded.push(
-      ...extractDownloads(
-        html,
-      ),
-    );
-
-    return dedupeServers(
-      expanded,
-    );
   }
 
-  /*
-   * SEGUNDA OPCIÓN:
-   *
-   * La página contiene options.php.
-   */
-
-  const optionsUrl =
-    extractOptionsUrl(
-      html,
-    );
-
-  if (
-    optionsUrl
-  ) {
-    console.log(
-      "🔗 AnimeD23 options.php:",
-      optionsUrl,
-    );
-
-    const optionsHtml =
-      await fetchPage(
-        optionsUrl,
-        referer,
-      );
-
-    if (
-      optionsHtml
-    ) {
-      return processMultiplayerHtml(
-        optionsHtml,
-        optionsUrl,
-      );
-    }
-  }
-
-  return [];
+  return dedupeServers(
+    servers,
+  );
 }
 
 /* ============================================================
@@ -1088,102 +1809,19 @@ async function processChapter(
     return [];
   }
 
-  /*
-   * Intentamos directamente el HTML.
-   *
-   * Esto permite que si el capítulo ya contiene el
-   * multiplayer, no hagamos otra cadena innecesaria.
-   */
+  const visited =
+    new Set<string>();
 
-  let servers =
-    await processMultiplayerHtml(
-      html,
-      chapterUrl,
-    );
+  visited.add(
+    chapterUrl.toLowerCase(),
+  );
 
-  if (
-    servers.length
-  ) {
-    return servers;
-  }
-
-  /*
-   * Si el capítulo contiene iframe, buscamos los src.
-   */
-
-  const source =
-    normalizeSource(
-      html,
-    );
-
-  const iframeRegex =
-    /<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
-
-  const iframeUrls:
-    string[] = [];
-
-  for (
-    const match of
-      source.matchAll(
-        iframeRegex,
-      )
-  ) {
-    let url =
-      normalizeUrl(
-        match[1],
-      );
-
-    if (
-      !/^https?:\/\//i.test(
-        url,
-      )
-    ) {
-      try {
-        url =
-          new URL(
-            url,
-            chapterUrl,
-          ).href;
-      } catch {
-        continue;
-      }
-    }
-
-    iframeUrls.push(
-      normalizeUrl(url),
-    );
-  }
-
-  for (
-    const iframeUrl of
-      iframeUrls
-  ) {
-    const iframeHtml =
-      await fetchPage(
-        iframeUrl,
-        chapterUrl,
-      );
-
-    if (
-      !iframeHtml
-    ) {
-      continue;
-    }
-
-    servers =
-      await processMultiplayerHtml(
-        iframeHtml,
-        iframeUrl,
-      );
-
-    if (
-      servers.length
-    ) {
-      return servers;
-    }
-  }
-
-  return [];
+  return processPage(
+    html,
+    chapterUrl,
+    0,
+    visited,
+  );
 }
 
 /* ============================================================
@@ -1252,7 +1890,9 @@ function extractEpisodeLinks(
         hrefRegex,
       )
   ) {
-    add(match[1]);
+    add(
+      match[1],
+    );
   }
 
   const rawRegex =
@@ -1264,14 +1904,16 @@ function extractEpisodeLinks(
         rawRegex,
       )
   ) {
-    add(match[0]);
+    add(
+      match[0],
+    );
   }
 
   return result;
 }
 
 /* ============================================================
- * EPISODIO EN URL
+ * NÚMERO DE EPISODIO
  * ========================================================== */
 
 function episodeNumberFromUrl(
@@ -1340,7 +1982,7 @@ async function findFromAnimePage(
       );
 
     /*
-     * Primero URL cuyo número coincide.
+     * Primero capítulo cuyo número coincide.
      */
 
     const exact =
@@ -1368,13 +2010,8 @@ async function findFromAnimePage(
     }
 
     /*
-     * Luego todos los capítulos candidatos.
-     *
-     * Esto es importante porque AnimeD23 puede utilizar:
-     *
-     * /capitulo/anime-2026/
-     *
-     * sin escribir -ep-9 en la URL.
+     * Si AnimeD23 utiliza una URL que no incluye
+     * explícitamente el número, probamos los demás.
      */
 
     for (
@@ -1398,11 +2035,7 @@ async function findFromAnimePage(
 }
 
 /* ============================================================
- * URLS DIRECTAS DE CAPÍTULO
- *
- * Incluye el formato:
- *
- * /capitulo/boku-no-kokoro-no-yabai-yatsu-movie-2026/
+ * URLs DIRECTAS
  * ========================================================== */
 
 function directChapterCandidates(
@@ -1410,7 +2043,8 @@ function directChapterCandidates(
   episode: number,
 ): string[] {
   const currentYear =
-    new Date().getUTCFullYear();
+    new Date()
+      .getUTCFullYear();
 
   const years = [
     currentYear,
@@ -1437,12 +2071,6 @@ function directChapterCandidates(
       `${host}/capitulo/${variant}-episode-${episode}/`,
     );
 
-    /*
-     * FORMATO REAL:
-     *
-     * anime-2026/
-     */
-
     for (
       const year of
         years
@@ -1459,120 +2087,126 @@ function directChapterCandidates(
 }
 
 /* ============================================================
- * ORDEN
+ * ORDEN INTERNO ANIMED23
  * ========================================================== */
 
 function sortServers(
   servers: AnimeD23Server[],
 ): AnimeD23Server[] {
-  const priority = (
-    server: AnimeD23Server,
-  ): number => {
-    const name =
-      server.name
-        .toLowerCase();
+  const priority =
+    (
+      server:
+        AnimeD23Server,
+    ): number => {
+      const name =
+        server.name
+          .toLowerCase();
 
-    const url =
-      server.url
-        .toLowerCase();
+      const url =
+        server.url
+          .toLowerCase();
 
-    if (
-      name.includes("moon") ||
-      url.includes(
-        "bysesukior.com",
-      )
-    ) {
-      return 0;
-    }
+      if (
+        name.includes(
+          "moon",
+        ) ||
+        url.includes(
+          "bysesukior.com",
+        )
+      ) {
+        return 0;
+      }
 
-    if (
-      name.includes(
-        "mytsumi",
-      ) ||
-      url.includes(
-        "mytsumi.com",
-      )
-    ) {
-      return 1;
-    }
+      if (
+        name.includes(
+          "mytsumi",
+        ) ||
+        url.includes(
+          "mytsumi.com",
+        )
+      ) {
+        return 1;
+      }
 
-    if (
-      name.includes(
-        "archive",
-      ) ||
-      url.includes(
-        "archive.org",
-      )
-    ) {
-      return 2;
-    }
+      if (
+        name.includes(
+          "archive",
+        ) ||
+        url.includes(
+          "archive.org",
+        )
+      ) {
+        return 2;
+      }
 
-    if (
-      name.includes(
-        "mega",
-      ) ||
-      url.includes(
-        "mega.nz",
-      )
-    ) {
-      return 3;
-    }
+      if (
+        name.includes(
+          "mega",
+        ) ||
+        url.includes(
+          "mega.nz",
+        )
+      ) {
+        return 3;
+      }
 
-    if (
-      name.includes("ok") ||
-      url.includes(
-        "ok.ru",
-      )
-    ) {
-      return 4;
-    }
+      if (
+        name.includes(
+          "ok",
+        ) ||
+        url.includes(
+          "ok.ru",
+        )
+      ) {
+        return 4;
+      }
 
-    if (
-      name.includes(
-        "epsilon",
-      ) ||
-      url.includes(
-        "ytplay",
-      )
-    ) {
-      return 5;
-    }
+      if (
+        name.includes(
+          "epsilon",
+        ) ||
+        url.includes(
+          "ytplay",
+        )
+      ) {
+        return 5;
+      }
 
-    if (
-      name.includes(
-        "abyss",
-      ) ||
-      url.includes(
-        "abyssplayer",
-      )
-    ) {
-      return 6;
-    }
+      if (
+        name.includes(
+          "abyss",
+        ) ||
+        url.includes(
+          "abyssplayer",
+        )
+      ) {
+        return 6;
+      }
 
-    if (
-      name.includes(
-        "mp4upload",
-      ) ||
-      url.includes(
-        "mp4upload",
-      )
-    ) {
-      return 7;
-    }
+      if (
+        name.includes(
+          "mp4upload",
+        ) ||
+        url.includes(
+          "mp4upload",
+        )
+      ) {
+        return 7;
+      }
 
-    if (
-      name.includes(
-        "zilla",
-      ) ||
-      url.includes(
-        "zilla-networks",
-      )
-    ) {
-      return 8;
-    }
+      if (
+        name.includes(
+          "zilla",
+        ) ||
+        url.includes(
+          "zilla-networks",
+        )
+      ) {
+        return 8;
+      }
 
-    return 20;
-  };
+      return 20;
+    };
 
   return [
     ...servers,
@@ -1602,16 +2236,17 @@ export async function getAnimeD23Servers(
   }
 
   /*
-   * AniList
-   *
-   * Conservamos el slug enviado por tu frontend y agregamos
-   * userPreferred, english, romaji, native y synonyms.
+   * ==========================================================
+   * METADATA
+   * ==========================================================
    */
 
   const titles =
     new Set<string>();
 
-  titles.add(slug);
+  titles.add(
+    slug,
+  );
 
   try {
     const metadata =
@@ -1635,13 +2270,15 @@ export async function getAnimeD23Servers(
     }
   } catch (error) {
     console.log(
-      "⚠️ AnimeD23 AniList:",
+      "⚠️ AnimeD23 metadata:",
       error,
     );
   }
 
   /*
-   * Crear todos los candidatos.
+   * ==========================================================
+   * VARIANTES
+   * ==========================================================
    */
 
   const variants =
@@ -1665,7 +2302,9 @@ export async function getAnimeD23Servers(
 
   console.log(
     "🔎 AnimeD23 variantes:",
-    [...variants],
+    [
+      ...variants,
+    ],
   );
 
   /*
@@ -1711,7 +2350,7 @@ export async function getAnimeD23Servers(
 
   /*
    * ==========================================================
-   * 2. URLS DIRECTAS
+   * 2. URLs DIRECTAS
    * ==========================================================
    */
 
