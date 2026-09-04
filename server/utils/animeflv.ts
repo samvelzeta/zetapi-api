@@ -209,7 +209,7 @@ function decodeBase64(
   value: string,
 ): string | null {
   try {
-    const input =
+    let input =
       String(value || "")
         .trim()
         .replace(
@@ -222,8 +222,17 @@ function decodeBase64(
     }
 
     /*
-     * AnimeFLV usa Base64 normal.
+     * AnimeFLV normalmente usa Base64 estándar, pero aceptamos
+     * también Base64URL y agregamos el padding faltante.
      */
+    input = input
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+    while (input.length % 4 !== 0) {
+      input += "=";
+    }
+
     const decoded =
       atob(input);
 
