@@ -2,16 +2,13 @@ import { fetchHtml } from "./fetcher";
 
 import {
   buildSearchQueries,
-  normalizeTitle,
   rankCandidates,
   TitleCandidate,
 } from "./titleMatcher";
 
-const BASE_URL =
-  "https://animeflv.or.at";
+const BASE_URL = "https://animeflv.or.at";
 
-const memoryCache =
-  new Map<string, string>();
+const memoryCache = new Map<string, string>();
 
 export interface AnimeFLVServer {
   name: string;
@@ -19,8 +16,7 @@ export interface AnimeFLVServer {
   embed: string;
 }
 
-interface AnimeFLVCandidate
-  extends TitleCandidate {
+interface AnimeFLVCandidate extends TitleCandidate {
   slug: string;
   url: string;
 }
@@ -35,126 +31,66 @@ interface AnimeFLVEpisode {
 // TEXT
 // ─────────────────────────────────────────────────────────────
 
-function cleanText(
-  value: string,
-): string {
+function cleanText(value: string): string {
   return String(value || "")
-    .replace(
-      /&amp;/gi,
-      "&",
-    )
-    .replace(
-      /&quot;/gi,
-      '"',
-    )
-    .replace(
-      /&#39;/gi,
-      "'",
-    )
-    .replace(
-      /&#x27;/gi,
-      "'",
-    )
-    .replace(
-      /&nbsp;/gi,
-      " ",
-    )
-    .replace(
-      /<[^>]*>/g,
-      " ",
-    )
-    .replace(
-      /\s+/g,
-      " ",
-    )
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
-function decodeHtmlEntities(
-  value: string,
-): string {
+function normalizeTitleLocal(value: string): string {
   return String(value || "")
-    .replace(
-      /&amp;/gi,
-      "&",
-    )
-    .replace(
-      /&quot;/gi,
-      '"',
-    )
-    .replace(
-      /&#39;/gi,
-      "'",
-    )
-    .replace(
-      /&#x27;/gi,
-      "'",
-    )
-    .replace(
-      /&#x2F;/gi,
-      "/",
-    )
-    .replace(
-      /&#47;/gi,
-      "/",
-    )
-    .replace(
-      /&nbsp;/gi,
-      " ",
-    );
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function decodeHtmlEntities(value: string): string {
+  return String(value || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#x2F;/gi, "/")
+    .replace(/&#47;/gi, "/")
+    .replace(/&nbsp;/gi, " ");
 }
 
 // ─────────────────────────────────────────────────────────────
 // URL
 // ─────────────────────────────────────────────────────────────
 
-function normalizeUrl(
-  value: string,
-): string | null {
-  let url =
-    String(value || "")
-      .trim()
-      .replace(
-        /\\u0026/gi,
-        "&",
-      )
-      .replace(
-        /\\\//g,
-        "/",
-      )
-      .replace(
-        /\\"/g,
-        '"',
-      );
+function normalizeUrl(value: string): string | null {
+  let url = String(value || "")
+    .trim()
+    .replace(/\\u0026/gi, "&")
+    .replace(/\\\//g, "/")
+    .replace(/\\"/g, '"');
 
-  url =
-    decodeHtmlEntities(
-      url,
-    );
+  url = decodeHtmlEntities(url);
 
   if (!url) {
     return null;
   }
 
-  if (
-    url.startsWith("//")
-  ) {
-    url =
-      `https:${url}`;
+  if (url.startsWith("//")) {
+    url = `https:${url}`;
   }
 
-  if (
-    url.startsWith("/")
-  ) {
-    url =
-      `${BASE_URL}${url}`;
+  if (url.startsWith("/")) {
+    url = `${BASE_URL}${url}`;
   }
 
-  if (
-    !/^https?:\/\//i.test(
-      url,
-    )
-  ) {
+  if (!/^https?:\/\//i.test(url)) {
     return null;
   }
 
@@ -165,27 +101,17 @@ function normalizeUrl(
 // BASE64
 // ─────────────────────────────────────────────────────────────
 
-function decodeBase64(
-  value: string,
-): string | null {
+function decodeBase64(value: string): string | null {
   try {
-    const input =
-      String(value || "")
-        .trim()
-        .replace(
-          /\s+/g,
-          "",
-        );
+    const input = String(value || "")
+      .trim()
+      .replace(/\s+/g, "");
 
     if (!input) {
       return null;
     }
 
-    /*
-     * AnimeFLV usa Base64 normal.
-     */
-    const decoded =
-      atob(input);
+    const decoded = atob(input);
 
     if (!decoded) {
       return null;
@@ -197,33 +123,20 @@ function decodeBase64(
   }
 }
 
-function decodeServerValue(
-  value: string,
-): string | null {
-  /*
-   * Primero comprobamos si ya es
-   * una URL directa.
-   */
-  const direct =
-    normalizeUrl(value);
+function decodeServerValue(value: string): string | null {
+  const direct = normalizeUrl(value);
 
   if (direct) {
     return direct;
   }
 
-  /*
-   * Después Base64.
-   */
-  const decoded =
-    decodeBase64(value);
+  const decoded = decodeBase64(value);
 
   if (!decoded) {
     return null;
   }
 
-  return normalizeUrl(
-    decoded,
-  );
+  return normalizeUrl(decoded);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -233,122 +146,73 @@ function decodeServerValue(
 function extractSearchResults(
   html: string,
 ): AnimeFLVCandidate[] {
-  const results:
-    AnimeFLVCandidate[] =
-    [];
+  const results: AnimeFLVCandidate[] = [];
 
-  /*
-   * Ruta principal:
-   *
-   * /anime/slug/
-   */
   const regex =
     /<a\b[^>]*href=["']([^"']*\/anime\/([^/?#"']+)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
 
-  let match:
-    RegExpExecArray | null;
+  let match: RegExpExecArray | null;
 
-  while (
-    (match =
-      regex.exec(html)) !==
-    null
-  ) {
-    const href =
-      match[1];
-
-    const slug =
-      match[2];
+  while ((match = regex.exec(html)) !== null) {
+    const href = match[1];
+    const slug = match[2];
 
     if (!slug) {
       continue;
     }
 
-    const url =
-      normalizeUrl(href);
+    const url = normalizeUrl(href);
 
     if (!url) {
       continue;
     }
 
-    const title =
-      cleanText(
-        match[3],
-      );
+    const title = cleanText(match[3]);
 
     results.push({
       slug,
       title:
         title.length >= 2
           ? title
-          : slug.replace(
-              /[-_]+/g,
-              " ",
-            ),
+          : slug.replace(/[-_]+/g, " "),
       url,
     });
   }
 
-  /*
-   * Fallback: cualquier /anime/
-   */
   const fallback =
     /href=["']([^"']*\/anime\/([^/?#"']+)[^"']*)["']/gi;
 
-  while (
-    (match =
-      fallback.exec(html)) !==
-    null
-  ) {
-    const href =
-      match[1];
-
-    const slug =
-      match[2];
+  while ((match = fallback.exec(html)) !== null) {
+    const href = match[1];
+    const slug = match[2];
 
     if (!slug) {
       continue;
     }
 
-    const url =
-      normalizeUrl(href);
+    const url = normalizeUrl(href);
 
     if (!url) {
       continue;
     }
 
-    const start =
-      Math.max(
-        0,
-        match.index - 500,
-      );
+    const start = Math.max(0, match.index - 500);
 
-    const end =
-      Math.min(
-        html.length,
-        match.index +
-          match[0].length +
-          500,
-      );
+    const end = Math.min(
+      html.length,
+      match.index + match[0].length + 500,
+    );
 
-    const context =
-      html.slice(
-        start,
-        end,
-      );
+    const context = html.slice(start, end);
 
-    const titleMatch =
-      context.match(
-        /(?:title|aria-label|alt)=["']([^"']+)["']/i,
-      );
+    const titleMatch = context.match(
+      /(?:title|aria-label|alt)=["']([^"']+)["']/i,
+    );
 
-    const title =
-      cleanText(
-        titleMatch?.[1] ||
-          slug.replace(
-            /[-_]+/g,
-            " ",
-          ),
-      );
+    const title = cleanText(
+      titleMatch?.[1] ||
+        slug.replace(/[-_]+/g, " "),
+    );
 
     results.push({
       slug,
@@ -357,67 +221,39 @@ function extractSearchResults(
     });
   }
 
-  /*
-   * Dedupe.
-   */
-  const unique =
-    new Map<
-      string,
-      AnimeFLVCandidate
-    >();
+  const unique = new Map<
+    string,
+    AnimeFLVCandidate
+  >();
 
-  for (
-    const result of results
-  ) {
-    const key =
-      result.slug.toLowerCase();
+  for (const result of results) {
+    const key = result.slug.toLowerCase();
 
-    if (
-      !unique.has(key)
-    ) {
-      unique.set(
-        key,
-        result,
-      );
+    if (!unique.has(key)) {
+      unique.set(key, result);
     }
   }
 
-  return [
-    ...unique.values(),
-  ];
+  return [...unique.values()];
 }
 
 async function searchAnimeFLV(
   query: string,
-): Promise<
-  AnimeFLVCandidate[]
-> {
-  if (
-    !query.trim()
-  ) {
+): Promise<AnimeFLVCandidate[]> {
+  if (!query.trim()) {
     return [];
   }
 
-  /*
-   * DOM real:
-   *
-   * https://animeflv.or.at/?s=query
-   */
   const url =
-    `${BASE_URL}/?s=${encodeURIComponent(
-      query.trim(),
-    )}`;
+    `${BASE_URL}/?s=${encodeURIComponent(query.trim())}`;
 
-  const html =
-    await fetchHtml(url);
+  const html = await fetchHtml(url);
 
   if (!html) {
     return [];
   }
 
-  return extractSearchResults(
-    html,
-  );
+  return extractSearchResults(html);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -430,77 +266,52 @@ export async function findAnimeFLVSlug(
   env?: any,
 ): Promise<string | null> {
   const key =
-    `animeflv:${normalizeTitle(
-      input,
-    )}`;
+    `animeflv:${normalizeTitleLocal(input)}`;
 
-  const memory =
-    memoryCache.get(key);
+  const memory = memoryCache.get(key);
 
   if (memory) {
     return memory;
   }
 
-  /*
-   * Cloudflare KV.
-   */
-  if (
-    env?.SLUG_CACHE
-  ) {
+  if (env?.SLUG_CACHE) {
     try {
       const cached =
-        await env.SLUG_CACHE.get(
-          key,
-        );
+        await env.SLUG_CACHE.get(key);
 
       if (cached) {
-        memoryCache.set(
-          key,
-          cached,
-        );
+        memoryCache.set(key, cached);
 
         return cached;
       }
     } catch {}
   }
 
-  const queries =
-    buildSearchQueries(
-      input,
-      allTitles,
-    );
+  const queries = buildSearchQueries(
+    input,
+    allTitles,
+  );
 
-  const candidates =
-    new Map<
-      string,
-      AnimeFLVCandidate
-    >();
+  const candidates = new Map<
+    string,
+    AnimeFLVCandidate
+  >();
 
   const searches =
     await Promise.allSettled(
       queries
         .slice(0, 10)
-        .map(query =>
-          searchAnimeFLV(
-            query,
-          ),
+        .map((query) =>
+          searchAnimeFLV(query),
         ),
     );
 
-  for (
-    const result of searches
-  ) {
-    if (
-      result.status !==
-      "fulfilled"
-    ) {
+  for (const result of searches) {
+    if (result.status !== "fulfilled") {
       continue;
     }
 
-    for (
-      const candidate of
-        result.value
-    ) {
+    for (const candidate of result.value) {
       candidates.set(
         candidate.slug,
         candidate,
@@ -508,43 +319,29 @@ export async function findAnimeFLVSlug(
     }
   }
 
-  if (
-    !candidates.size
-  ) {
+  if (!candidates.size) {
     return null;
   }
 
-  const ranked =
-    rankCandidates(
-      [
-        ...candidates.values(),
-      ],
-      [
-        input,
-        ...allTitles,
-      ],
-    );
+  const ranked = rankCandidates(
+    [...candidates.values()],
+    [
+      input,
+      ...allTitles,
+    ],
+  );
 
-  if (
-    !ranked.length
-  ) {
+  if (!ranked.length) {
     return null;
   }
 
-  const best =
-    ranked[0];
+  const best = ranked[0];
 
   if (!best) {
     return null;
   }
 
-  /*
-   * No aceptamos coincidencias
-   * demasiado diferentes.
-   */
-  if (
-    best.score < 60
-  ) {
+  if (best.score < 60) {
     return null;
   }
 
@@ -553,9 +350,7 @@ export async function findAnimeFLVSlug(
     best.slug,
   );
 
-  if (
-    env?.SLUG_CACHE
-  ) {
+  if (env?.SLUG_CACHE) {
     try {
       await env.SLUG_CACHE.put(
         key,
@@ -578,39 +373,21 @@ export async function findAnimeFLVSlug(
 function extractEpisodes(
   html: string,
 ): AnimeFLVEpisode[] {
-  const result:
-    AnimeFLVEpisode[] =
-    [];
+  const result: AnimeFLVEpisode[] = [];
 
-  /*
-   * EXACTAMENTE el nodo que
-   * encontramos en la página:
-   *
-   * <script
-   *   type="application/json"
-   *   class="animeflv-episodes-data">
-   */
-  const scriptMatch =
-    html.match(
-      /<script\b[^>]*class=["'][^"']*animeflv-episodes-data[^"']*["'][^>]*>([\s\S]*?)<\/script>/i,
-    );
+  const scriptMatch = html.match(
+    /<script\b[^>]*class=["'][^"']*animeflv-episodes-data[^"']*["'][^>]*>([\s\S]*?)<\/script>/i,
+  );
 
   if (!scriptMatch) {
     return [];
   }
 
-  let jsonText =
-    scriptMatch[1]
-      .trim()
-      .replace(
-        /^<!--/,
-        "",
-      )
-      .replace(
-        /-->$/,
-        "",
-      )
-      .trim();
+  let jsonText = scriptMatch[1]
+    .trim()
+    .replace(/^<!--/, "")
+    .replace(/-->$/, "")
+    .trim();
 
   if (!jsonText) {
     return [];
@@ -619,73 +396,48 @@ function extractEpisodes(
   let data: any = null;
 
   try {
-    data =
-      JSON.parse(
-        jsonText,
-      );
+    data = JSON.parse(jsonText);
   } catch {
-    /*
-     * Fallback para JSON escapado.
-     */
     try {
-      jsonText =
-        jsonText
-          .replace(
-            /\\"/g,
-            '"',
-          )
-          .replace(
-            /\\\//g,
-            "/",
-          );
+      jsonText = jsonText
+        .replace(/\\"/g, '"')
+        .replace(/\\\//g, "/");
 
-      data =
-        JSON.parse(
-          jsonText,
-        );
+      data = JSON.parse(jsonText);
     } catch {
       return [];
     }
   }
 
-  if (
-    !Array.isArray(data)
-  ) {
+  if (!Array.isArray(data)) {
     return [];
   }
 
-  for (
-    const item of data
-  ) {
+  for (const item of data) {
     if (
       !item ||
-      typeof item !==
-        "object"
+      typeof item !== "object"
     ) {
       continue;
     }
 
-    const number =
-      Number(
-        item.number ??
-          item.episode ??
-          item.episodio,
-      );
+    const number = Number(
+      item.number ??
+        item.episode ??
+        item.episodio,
+    );
 
-    const permalink =
-      normalizeUrl(
-        String(
-          item.permalink ??
-            item.url ??
-            item.link ??
-            "",
-        ),
-      );
+    const permalink = normalizeUrl(
+      String(
+        item.permalink ??
+          item.url ??
+          item.link ??
+          "",
+      ),
+    );
 
     if (
-      !Number.isFinite(
-        number,
-      ) ||
+      !Number.isFinite(number) ||
       !permalink
     ) {
       continue;
@@ -695,34 +447,25 @@ function extractEpisodes(
       number,
       permalink,
       range:
-        typeof item.range ===
-        "string"
+        typeof item.range === "string"
           ? item.range
           : undefined,
     });
   }
 
-  /*
-   * Deduplicar por número.
-   */
-  const unique =
-    new Map<
-      number,
-      AnimeFLVEpisode
-    >();
+  const unique = new Map<
+    number,
+    AnimeFLVEpisode
+  >();
 
-  for (
-    const episode of result
-  ) {
+  for (const episode of result) {
     unique.set(
       episode.number,
       episode,
     );
   }
 
-  return [
-    ...unique.values(),
-  ].sort(
+  return [...unique.values()].sort(
     (a, b) =>
       a.number - b.number,
   );
@@ -740,30 +483,23 @@ async function findEpisodeUrl(
     `${BASE_URL}/anime/${animeSlug}/`;
 
   const html =
-    await fetchHtml(
-      animeUrl,
-    );
+    await fetchHtml(animeUrl);
 
   if (!html) {
     return null;
   }
 
   const episodes =
-    extractEpisodes(
-      html,
-    );
+    extractEpisodes(html);
 
   const episode =
     episodes.find(
-      item =>
+      (item) =>
         item.number ===
         episodeNumber,
     );
 
-  return (
-    episode?.permalink ||
-    null
-  );
+  return episode?.permalink || null;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -773,34 +509,20 @@ async function findEpisodeUrl(
 function extractServerButtons(
   html: string,
 ): AnimeFLVServer[] {
-  const servers:
-    AnimeFLVServer[] =
-    [];
+  const servers: AnimeFLVServer[] = [];
 
-  /*
-   * El árbol real es:
-   *
-   * div.server-frames
-   *   └── button.iframe_code
-   *         └── data-src="BASE64"
-   */
   const buttonRegex =
     /<button\b([^>]*)>([\s\S]*?)<\/button>/gi;
 
-  let match:
-    RegExpExecArray | null;
+  let match: RegExpExecArray | null;
 
   while (
     (match =
-      buttonRegex.exec(
-        html,
-      )) !== null
+      buttonRegex.exec(html)) !== null
   ) {
-    const attrs =
-      match[1];
+    const attrs = match[1];
 
-    const body =
-      match[2];
+    const body = match[2];
 
     const classMatch =
       attrs.match(
@@ -808,12 +530,8 @@ function extractServerButtons(
       );
 
     const className =
-      classMatch?.[1] ||
-      "";
+      classMatch?.[1] || "";
 
-    /*
-     * Sólo botones de servidor.
-     */
     if (
       !/iframe_code|iframe_btn|server_btn/i.test(
         className,
@@ -840,25 +558,18 @@ function extractServerButtons(
       continue;
     }
 
-    const label =
-      cleanText(
-        body,
-      );
+    const label = cleanText(body);
 
     servers.push({
       name:
         label ||
-        detectProvider(
-          embed,
-        ),
+        detectProvider(embed),
       type: "Externo",
       embed,
     });
   }
 
-  return dedupeServers(
-    servers,
-  );
+  return dedupeServers(servers);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -868,12 +579,6 @@ function extractServerButtons(
 function extractDefaultServer(
   html: string,
 ): AnimeFLVServer | null {
-  /*
-   * Fallback:
-   *
-   * #iframeHolder
-   * data-default-src="BASE64"
-   */
   const match =
     html.match(
       /<[^>]*id=["']iframeHolder["'][^>]*data-default-src=["']([^"']+)["'][^>]*>/i,
@@ -884,19 +589,14 @@ function extractDefaultServer(
   }
 
   const embed =
-    decodeServerValue(
-      match[1],
-    );
+    decodeServerValue(match[1]);
 
   if (!embed) {
     return null;
   }
 
   return {
-    name:
-      detectProvider(
-        embed,
-      ),
+    name: detectProvider(embed),
     type: "Externo",
     embed,
   };
@@ -909,34 +609,23 @@ function extractDefaultServer(
 function extractFallbackDataSrc(
   html: string,
 ): AnimeFLVServer[] {
-  const servers:
-    AnimeFLVServer[] =
-    [];
+  const servers: AnimeFLVServer[] = [];
 
   const regex =
     /<[^>]+\bdata-src=["']([^"']+)["'][^>]*>/gi;
 
-  let match:
-    RegExpExecArray | null;
+  let match: RegExpExecArray | null;
 
   while (
-    (match =
-      regex.exec(html)) !==
-    null
+    (match = regex.exec(html)) !== null
   ) {
     const embed =
-      decodeServerValue(
-        match[1],
-      );
+      decodeServerValue(match[1]);
 
     if (!embed) {
       continue;
     }
 
-    /*
-     * Sólo consideramos URLs
-     * que parecen players.
-     */
     if (
       !/player|embed|m3u8|video|mega|mp4|byse|upn|voe/i.test(
         embed,
@@ -946,18 +635,13 @@ function extractFallbackDataSrc(
     }
 
     servers.push({
-      name:
-        detectProvider(
-          embed,
-        ),
+      name: detectProvider(embed),
       type: "Externo",
       embed,
     });
   }
 
-  return dedupeServers(
-    servers,
-  );
+  return dedupeServers(servers);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -979,49 +663,37 @@ function detectProvider(
   }
 
   if (
-    url.includes(
-      "upnshare",
-    )
+    url.includes("upnshare")
   ) {
     return "UPNShare";
   }
 
   if (
-    url.includes(
-      "voe",
-    )
+    url.includes("voe")
   ) {
     return "Voe";
   }
 
   if (
-    url.includes(
-      "byse",
-    )
+    url.includes("byse")
   ) {
     return "Byse";
   }
 
   if (
-    url.includes(
-      "mega.nz",
-    )
+    url.includes("mega.nz")
   ) {
     return "Mega";
   }
 
   if (
-    url.includes(
-      "mp4upload",
-    )
+    url.includes("mp4upload")
   ) {
     return "MP4Upload";
   }
 
   if (
-    url.includes(
-      "mytsumi",
-    )
+    url.includes("mytsumi")
   ) {
     return "Mytsumi";
   }
@@ -1036,26 +708,17 @@ function detectProvider(
 function dedupeServers(
   servers: AnimeFLVServer[],
 ): AnimeFLVServer[] {
-  const seen =
-    new Set<string>();
+  const seen = new Set<string>();
 
-  const result:
-    AnimeFLVServer[] =
-    [];
+  const result: AnimeFLVServer[] = [];
 
-  for (
-    const server of servers
-  ) {
-    if (
-      !server?.embed
-    ) {
+  for (const server of servers) {
+    if (!server?.embed) {
       continue;
     }
 
     const normalized =
-      normalizeUrl(
-        server.embed,
-      );
+      normalizeUrl(server.embed);
 
     if (!normalized) {
       continue;
@@ -1064,14 +727,9 @@ function dedupeServers(
     const key =
       normalized
         .toLowerCase()
-        .replace(
-          /\/+$/,
-          "",
-        );
+        .replace(/\/+$/, "");
 
-    if (
-      seen.has(key)
-    ) {
+    if (seen.has(key)) {
       continue;
     }
 
@@ -1079,12 +737,9 @@ function dedupeServers(
 
     result.push({
       name:
-        detectProvider(
-          normalized,
-        ),
+        detectProvider(normalized),
       type: "Externo",
-      embed:
-        normalized,
+      embed: normalized,
     });
   }
 
@@ -1111,9 +766,7 @@ export async function getAnimeFLVServers(
   }
 
   const episode =
-    Number(
-      episodeNumber,
-    );
+    Number(episodeNumber);
 
   /*
    * 1.
@@ -1165,9 +818,7 @@ export async function getAnimeFLVServers(
   /*
    * 4. Fallback data-src.
    */
-  if (
-    !servers.length
-  ) {
+  if (!servers.length) {
     servers =
       extractFallbackDataSrc(
         html,
@@ -1177,9 +828,7 @@ export async function getAnimeFLVServers(
   /*
    * 5. Fallback iframeHolder.
    */
-  if (
-    !servers.length
-  ) {
+  if (!servers.length) {
     const fallback =
       extractDefaultServer(
         html,
@@ -1219,7 +868,7 @@ export async function getAnimeFLVServers(
    */
   servers =
     servers.filter(
-      server =>
+      (server) =>
         server.name
           .toLowerCase() !==
         "voe",
@@ -1231,12 +880,10 @@ export async function getAnimeFLVServers(
    * El contrato final del proyecto.
    */
   return servers.map(
-    server => ({
-      name:
-        server.name,
+    (server) => ({
+      name: server.name,
       type: "Externo",
-      embed:
-        server.embed,
+      embed: server.embed,
     }),
   );
 }
@@ -1268,33 +915,25 @@ function providerPriority(
   }
 
   if (
-    url.includes(
-      "upnshare",
-    )
+    url.includes("upnshare")
   ) {
     return 3;
   }
 
   if (
-    url.includes(
-      "byse",
-    )
+    url.includes("byse")
   ) {
     return 4;
   }
 
   if (
-    url.includes(
-      "mega.nz",
-    )
+    url.includes("mega.nz")
   ) {
     return 5;
   }
 
   if (
-    url.includes(
-      "mp4upload",
-    )
+    url.includes("mp4upload")
   ) {
     return 6;
   }
