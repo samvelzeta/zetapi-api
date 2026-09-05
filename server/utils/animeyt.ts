@@ -1,4 +1,5 @@
 import { fetchHtml } from "./fetcher";
+import { matchScore } from "./titleMatcher";
 
 export interface AnimeYTServer {
   name: string;
@@ -477,6 +478,589 @@ function extractEmbeddedUrlsFromScripts(
 }
 
 /**
+ * Normalización específica para búsqueda en AnimeYT.
+ *
+ * El sitio usa títulos humanos en /tv/{slug} y luego
+ * añade "-capitulo-N" solamente a la URL del episodio.
+ */
+function normalizeSearchText(
+  value: string,
+): string {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’']/g, "")
+    .replace(/\b(?:capitulo|capítulo|episodio|episode)\b/gi, " ")
+    .replace(/\b(?:temporada|season)\s*(?:\d+|[ivxlcdm]+)\b/gi, " ")
+    .replace(/\b(?:part|parte|cour)\s*(?:\d+|[ivxlcdm]+)\b/gi, " ")
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeAnimeYTSlug(
+  value: string,
+): string {
+  return normalizeSearchText(value)
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function stripHtml(
+  value: string,
+): string {
+  return decodeHtmlEntities(
+    String(value || "")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+}
+
+function extractAnchorLabel(
+  anchor: string,
+  slug: string,
+): string {
+  const aria =
+    anchor.match(
+      /\baria-label\s*=\s*["']([^"']+)["']/i,
+    )?.[1];
+
+  if (aria) {
+    return stripHtml(aria);
+  }
+
+  const title =
+    anchor.match(
+      /\btitle\s*=\s*["']([^"']+)["']/i,
+    )?.[1];
+
+  if (title) {
+    return stripHtml(title);
+  }
+
+  const alt =
+    anchor.match(
+      /\balt\s*=\s*["']([^"']+)["']/i,
+    )?.[1];
+
+  if (alt) {
+    return stripHtml(alt);
+  }
+
+  const inner =
+    anchor
+      .replace(/^<a\b[^>]*>/i, "")
+      .replace(/<\/a>\s*$/i, "");
+
+  const text =
+    stripHtml(inner);
+
+  return (
+    text ||
+    slug.replace(/-/g, " ")
+  );
+}
+
+function generateAnimeYTSearchQueries(
+  query: string,
+  allTitles: string[],
+): string[] {
+  const values = [
+    query,
+    ...allTitles,
+  ];
+
+  const queries =
+    new Set<string>();
+
+  const add = (
+    value: string,
+  ) => {
+    const normalized =
+      normalizeSearchText(value);
+
+    if (!normalized) {
+      return;
+    }
+
+    queries.add(normalized);
+  };
+
+  for (const value of values) {
+    add(value);
+
+    /*
+     * También conservamos el título completo original
+     * pero quitando solamente el marcador de episodio.
+     */
+    const withoutEpisode =
+      String(value || "")
+        .replace(
+          /\b(?:capitulo|capítulo|episodio|episode)\s*[-_:]?\s*\d+\b/gi,
+          "",
+        )
+        .replace(/\s+/g, " ")
+        .trim();
+
+    add(withoutEpisode);
+  }
+
+  /*
+   * Búsquedas cortas como último recurso para nombres
+   * excesivamente largos.
+   */
+  for (const value of values) {
+    const words =
+      normalizeSearchText(value)
+        .split(" ")
+        .filter(Boolean);
+
+    if (words.length >= 3) {
+      queries.add(
+        words.slice(0, 3).join(" "),
+      );
+    }
+
+    if (words.length >= 4) {
+      queries.add(
+        words.slice(0, 4).join(" "),
+      );
+    }
+  }
+
+  return [
+    ...queries,
+  ].slice(0, 12);
+}
+
+function extractAnimeYTSeriesCandidates(
+  html: string,
+): {
+  slug: string;
+  title: string;
+}[] {
+  const candidates: {
+    slug: string;
+    title: string;
+  }[] = [];
+
+  /*
+   * Los enlaces reales de series aparecen como:
+   *
+   * https://animeyt.cc/tv/{slug}/
+   */
+  const regex =
+    /<a\b[^>]*href\s*=\s*["'](https?:\/\/animeyt\.cc\/tv\/([^"'/?#]+)\/?)[^"']*["'][^>]*>[\s\S]*?<\/a>/gi;
+
+  let match:
+    RegExpExecArray | null;
+
+  while (
+    (match = regex.exec(html)) !== null
+  ) {
+    const url =
+      decodeHtmlEntities(
+        match[1],
+      );
+
+    const slug =
+      decodeHtmlEntities(
+        match[2],
+      );
+
+    if (!slug) {
+      continue;
+    }
+
+    /*
+     * Recuperar el anchor completo para poder sacar
+     * aria-label/title/alt o texto visible.
+     */
+    const start =
+      match.index;
+
+    const end =
+      regex.lastIndex;
+
+    const anchor =
+      html.slice(
+        start,
+        end,
+      );
+
+    const title =
+      extractAnchorLabel(
+        anchor,
+        slug,
+      );
+
+    candidates.push({
+      slug,
+      title,
+    });
+  }
+
+  /*
+   * Fallback más permisivo: encontrar simplemente
+   * cualquier href /tv/...
+   */
+  const fallback =
+    /href\s*=\s*["'](https?:\/\/animeyt\.cc\/tv\/([^"'/?#]+)\/?)["']/gi;
+
+  while (
+    (match = fallback.exec(html)) !== null
+  ) {
+    const slug =
+      decodeHtmlEntities(
+        match[2],
+      );
+
+    if (!slug) {
+      continue;
+    }
+
+    candidates.push({
+      slug,
+      title:
+        slug.replace(/-/g, " "),
+    });
+  }
+
+  const unique =
+    new Map<
+      string,
+      {
+        slug: string;
+        title: string;
+      }
+    >();
+
+  for (const candidate of candidates) {
+    const key =
+      candidate.slug.toLowerCase();
+
+    if (!unique.has(key)) {
+      unique.set(
+        key,
+        candidate,
+      );
+    }
+  }
+
+  return [
+    ...unique.values(),
+  ];
+}
+
+/**
+ * Resolver REAL de slug para AnimeYT.
+ *
+ * En lugar de convertir el slug de AniList a ciegas,
+ * consulta resultados de AnimeYT, obtiene /tv/{slug}
+ * y utiliza el mismo motor matchScore() del proyecto.
+ */
+export async function findAnimeYTSlug(
+  query: string,
+  allTitles: string[] = [],
+  env?: any,
+): Promise<string | null> {
+  const queryKey =
+    normalizeSearchText(query);
+
+  if (!queryKey) {
+    return null;
+  }
+
+  const cacheKey =
+    `animeyt:${queryKey}`;
+
+  /*
+   * Cache en memoria del Worker.
+   */
+  const memoryCache =
+    (findAnimeYTSlug as any).__cache ||
+    ((findAnimeYTSlug as any).__cache =
+      new Map<string, string>());
+
+  if (
+    memoryCache.has(cacheKey)
+  ) {
+    return memoryCache.get(
+      cacheKey,
+    ) || null;
+  }
+
+  /*
+   * KV opcional, usando el mismo binding
+   * que ya utiliza el resto del proyecto.
+   */
+  if (env?.SLUG_CACHE) {
+    try {
+      const cached =
+        await env.SLUG_CACHE.get(
+          cacheKey,
+        );
+
+      if (cached) {
+        memoryCache.set(
+          cacheKey,
+          cached,
+        );
+
+        return cached;
+      }
+    } catch {}
+  }
+
+  const queries =
+    generateAnimeYTSearchQueries(
+      query,
+      [
+        query,
+        ...allTitles,
+      ],
+    );
+
+  const candidates =
+    new Map<
+      string,
+      {
+        slug: string;
+        title: string;
+        score: number;
+      }
+    >();
+
+  /*
+   * Hacemos búsquedas independientes, porque AnimeYT
+   * puede devolver distintos resultados dependiendo
+   * de si se consulta por el título inglés, romaji,
+   * título preferido, etc.
+   */
+  for (const searchQuery of queries) {
+    const url =
+      `https://animeyt.cc/?s=${encodeURIComponent(
+        searchQuery,
+      )}`;
+
+    try {
+      const html =
+        await fetchHtml(url);
+
+      if (!html) {
+        continue;
+      }
+
+      const results =
+        extractAnimeYTSeriesCandidates(
+          html,
+        );
+
+      for (const result of results) {
+        const score =
+          matchScore(
+            result.title,
+            result.slug,
+            null,
+            [
+              query,
+              ...allTitles,
+            ],
+            null,
+          );
+
+        const previous =
+          candidates.get(
+            result.slug,
+          );
+
+        if (
+          !previous ||
+          score > previous.score
+        ) {
+          candidates.set(
+            result.slug,
+            {
+              ...result,
+              score,
+            },
+          );
+        }
+      }
+    } catch (error) {
+      console.log(
+        `⚠️ AnimeYT search error "${searchQuery}":`,
+        error,
+      );
+    }
+  }
+
+  if (!candidates.size) {
+    return null;
+  }
+
+  const ranked =
+    [
+      ...candidates.values(),
+    ].sort(
+      (a, b) =>
+        b.score - a.score,
+    );
+
+  const best =
+    ranked[0];
+
+  if (!best) {
+    return null;
+  }
+
+  /*
+   * 68 permite tolerar diferencias como:
+   * - signos
+   * - subtítulos
+   * - traducciones
+   * - pequeños cambios de slug
+   *
+   * pero no devuelve un resultado evidentemente
+   * distinto.
+   */
+  if (best.score < 68) {
+    console.log(
+      `⚠️ AnimeYT: mejor candidato descartado (${best.score.toFixed(
+        1,
+      )}): ${best.title} -> ${best.slug}`,
+    );
+
+    return null;
+  }
+
+  memoryCache.set(
+    cacheKey,
+    best.slug,
+  );
+
+  if (env?.SLUG_CACHE) {
+    try {
+      await env.SLUG_CACHE.put(
+        cacheKey,
+        best.slug,
+        {
+          expirationTtl:
+            60 * 60 * 24 * 7,
+        },
+      );
+    } catch {}
+  }
+
+  console.log(
+    `✅ AnimeYT slug resuelto: "${best.title}" -> "${best.slug}" (${best.score.toFixed(
+      1,
+    )})`,
+  );
+
+  return best.slug;
+}
+
+/**
+ * Extrae el permalink real de un episodio desde
+ * la página /tv/{slug}/.
+ */
+async function findEpisodeFromSeriesPage(
+  slug: string,
+  episode: number,
+): Promise<string | null> {
+  const seriesUrl =
+    `https://animeyt.cc/tv/${slug}/`;
+
+  try {
+    const html =
+      await fetchHtml(
+        seriesUrl,
+      );
+
+    if (!html) {
+      return null;
+    }
+
+    const target =
+      String(
+        episode,
+      );
+
+    /*
+     * Ejemplo real:
+     * /114561/anime/ryoumin-0-nin-start-no-henkyou-ryoushu-sama-capitulo-10/
+     */
+    const regex =
+      /href\s*=\s*["'](https?:\/\/animeyt\.cc\/[^"'<>]*\/anime\/[^"'<>]*?)["']/gi;
+
+    let match:
+      RegExpExecArray | null;
+
+    while (
+      (match = regex.exec(html)) !== null
+    ) {
+      const candidate =
+        decodeHtmlEntities(
+          match[1],
+        );
+
+      const lower =
+        candidate.toLowerCase();
+
+      /*
+       * Evitar que episodio 1 coincida con episodio 10, 11...
+       */
+      const episodeRegex =
+        new RegExp(
+          `-capitulo-${target}(?:\\/|\\?|#|$)`,
+          "i",
+        );
+
+      if (
+        episodeRegex.test(
+          lower,
+        )
+      ) {
+        return candidate;
+      }
+    }
+  } catch (error) {
+    console.log(
+      `⚠️ AnimeYT series page error (${slug}):`,
+      error,
+    );
+  }
+
+  return null;
+}
+
+/**
+ * Construye una URL de búsqueda de episodio.
+ */
+function buildEpisodeSearchUrls(
+  slug: string,
+  episode: number,
+): string[] {
+  const query =
+    `${slug} capitulo ${episode}`;
+
+  return [
+    `https://animeyt.cc/?s=${encodeURIComponent(
+      query,
+    )}`,
+    `https://animeyt.cc/?s=${encodeURIComponent(
+      `${slug} ${episode}`,
+    )}`,
+  ];
+}
+
+/**
  * Construye la URL del episodio AnimeYT.
  *
  * AnimeYT utiliza:
@@ -508,17 +1092,31 @@ async function findEpisodeUrl(
   slug: string,
   episode: number,
 ): Promise<string | null> {
-  const query =
-    `${slug} capitulo ${episode}`;
-
-  const searchUrls = [
-    `https://animeyt.cc/?s=${encodeURIComponent(
-      query,
-    )}`,
-    `https://animeyt.cc/?s=${encodeURIComponent(
+  /*
+   * PRIMERA ESTRATEGIA:
+   * entrar a /tv/{slug}/ y obtener el permalink
+   * real del episodio. Esto evita depender de que
+   * el slug de episodio pueda reconstruirse a mano.
+   */
+  const fromSeries =
+    await findEpisodeFromSeriesPage(
       slug,
-    )}`,
-  ];
+      episode,
+    );
+
+  if (fromSeries) {
+    return fromSeries;
+  }
+
+  /*
+   * SEGUNDA ESTRATEGIA:
+   * usar el buscador de AnimeYT.
+   */
+  const searchUrls =
+    buildEpisodeSearchUrls(
+      slug,
+      episode,
+    );
 
   for (const searchUrl of searchUrls) {
     try {
@@ -529,9 +1127,6 @@ async function findEpisodeUrl(
         continue;
       }
 
-      /*
-       * Buscamos enlaces de episodios.
-       */
       const hrefRegex =
         /href\s*=\s*["'](https?:\/\/animeyt\.cc\/[^"']*\/anime\/[^"']*capitulo-[^"']+)["']/gi;
 
@@ -553,11 +1148,14 @@ async function findEpisodeUrl(
           candidate.toLowerCase();
 
         const wanted =
-          `capitulo-${episode}`;
+          new RegExp(
+            `-capitulo-${episode}(?:\\/|\\?|#|$)`,
+            "i",
+          );
 
         if (
-          lower.includes(
-            wanted,
+          wanted.test(
+            lower,
           )
         ) {
           return candidate;
@@ -565,26 +1163,24 @@ async function findEpisodeUrl(
       }
     } catch (error) {
       console.log(
-        `⚠️ AnimeYT búsqueda error: ${searchUrl}`,
+        `⚠️ AnimeYT episodio search error: ${searchUrl}`,
         error,
       );
     }
   }
 
   /*
-   * Fallback directo.
-   *
-   * Puede que la URL no tenga ID; la dejamos
-   * como último intento.
+   * No construimos aquí una URL ficticia como
+   * /anime/{slug}-capitulo-{n}/ porque el formato
+   * real incluye un prefijo numérico en los posts
+   * publicados por AnimeYT.
    */
-  return buildDirectEpisodeUrl(
-    slug,
-    episode,
-  );
+  return null;
 }
 
 /**
  * Scraper principal de AnimeYT.
+
  *
  * Flujo:
  *
@@ -603,6 +1199,8 @@ async function findEpisodeUrl(
 export async function getAnimeYTServers(
   slug: string,
   episode: number,
+  allTitles: string[] = [],
+  env?: any,
 ): Promise<AnimeYTServer[]> {
   if (
     !slug ||
@@ -628,8 +1226,41 @@ export async function getAnimeYTServers(
   const normalizedEpisode =
     Number(episode);
 
+  let resolvedSlug =
+    normalizedSlug;
+
+  /*
+   * Cuando el llamador nos entrega títulos de metadata,
+   * resolver primero contra /tv/{slug}. Si no encontramos
+   * coincidencia, conservamos el slug recibido como
+   * fallback para no romper el comportamiento anterior.
+   */
+  if (
+    allTitles.length ||
+    normalizedSlug
+  ) {
+    try {
+      const searchedSlug =
+        await findAnimeYTSlug(
+          normalizedSlug,
+          allTitles,
+          env,
+        );
+
+      if (searchedSlug) {
+        resolvedSlug =
+          searchedSlug;
+      }
+    } catch (error) {
+      console.log(
+        "⚠️ AnimeYT: error resolviendo slug; se conserva el recibido",
+        error,
+      );
+    }
+  }
+
   console.log(
-    `🔍 AnimeYT: buscando "${normalizedSlug}" episodio ${normalizedEpisode}`,
+    `🔍 AnimeYT: buscando "${resolvedSlug}" episodio ${normalizedEpisode}`,
   );
 
   /*
@@ -637,7 +1268,7 @@ export async function getAnimeYTServers(
    */
   const episodeUrl =
     await findEpisodeUrl(
-      normalizedSlug,
+      resolvedSlug,
       normalizedEpisode,
     );
 
