@@ -9,6 +9,7 @@ import {
   getAnimeFLVServers,
 } from "./animeflv";
 import { matchScore } from "./titleMatcher";
+import { getAnimeYTServers } from "./animeyt";
 
 const PROXY = "/proxy-zilla?url=";
 
@@ -373,6 +374,77 @@ export async function getAllServers({
   } catch (error) {
     console.log(
       "⚠️ JKAnime error:",
+      error,
+    );
+  }
+
+  // ============================================================
+  // 6. ANIMEYT
+  // ============================================================
+  //
+  // AnimeYT publica el reproductor intermedio en:
+  // mytsumi.com/multiplayer/options.php?server=multi&value=...
+  //
+  // El scraper animeyt.ts se encarga de:
+  // episodio -> iframe/data-src -> Mytsumi -> players.
+  // No modificamos ninguno de los scrapers anteriores.
+  // ============================================================
+
+  try {
+    const animeYTCandidates =
+      buildProviderCandidates(searchData);
+
+    const triedAnimeYT =
+      new Set<string>();
+
+    for (const candidate of animeYTCandidates) {
+      const key =
+        candidate.toLowerCase();
+
+      if (triedAnimeYT.has(key)) {
+        continue;
+      }
+
+      triedAnimeYT.add(key);
+
+      try {
+        const servers =
+          await getAnimeYTServers(
+            candidate,
+            number,
+          );
+
+        if (!servers.length) {
+          continue;
+        }
+
+        for (const server of servers) {
+          if (!server?.url) {
+            continue;
+          }
+
+          allServers.push({
+            name: server.name || "",
+            type: "Externo",
+            embed: server.url,
+          });
+        }
+
+        console.log(
+          `✅ AnimeYT encontró ${servers.length} servers con slug "${candidate}"`,
+        );
+
+        break;
+      } catch (error) {
+        console.log(
+          `⚠️ AnimeYT error (${candidate}):`,
+          error,
+        );
+      }
+    }
+  } catch (error) {
+    console.log(
+      "⚠️ AnimeYT error general:",
       error,
     );
   }
