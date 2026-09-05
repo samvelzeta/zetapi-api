@@ -9,7 +9,7 @@ import {
   getAnimeFLVServers,
 } from "./animeflv";
 import { matchScore } from "./titleMatcher";
-import { getAnimeYTServers } from "./animeyt";
+import { findAnimeYTSlug, getAnimeYTServers } from "./animeyt";
 
 const PROXY = "/proxy-zilla?url=";
 
@@ -382,26 +382,68 @@ export async function getAllServers({
   // 6. ANIMEYT
   // ============================================================
   //
-  // AnimeYT publica el reproductor intermedio en:
-  // mytsumi.com/multiplayer/options.php?server=multi&value=...
+  // AnimeYT tiene una estructura distinta:
   //
-  // El scraper animeyt.ts se encarga de:
-  // episodio -> iframe/data-src -> Mytsumi -> players.
-  // No modificamos ninguno de los scrapers anteriores.
+  //   /tv/{slug}/
+  //          ↓
+  //   /{id}/anime/{slug}-capitulo-{N}/
+  //          ↓
+  //   iframe data-src
+  //          ↓
+  //   Mytsumi options.php
+  //
+  // Primero resolvemos el slug REAL de /tv/ usando
+  // búsqueda + matchScore(). Después dejamos que
+  // animeyt.ts encuentre el episodio y extraiga
+  // sus reproductores.
+  //
+  // No modificamos la extracción de los otros proveedores.
   // ============================================================
 
   try {
+    /*
+     * Resolver por búsqueda real de AnimeYT.
+     *
+     * Se intenta con searchTitle y todos los títulos
+     * que ya obtuvo metadata.ts.
+     */
+    const animeYTSlug =
+      await findAnimeYTSlug(
+        searchTitle,
+        allTitles,
+        env,
+      );
+
+    console.log(
+      `🔎 AnimeYT slug: ${
+        animeYTSlug || "NO ENCONTRADO"
+      }`,
+    );
+
+    /*
+     * Si el buscador de AnimeYT no devuelve candidato,
+     * conservamos un fallback mínimo con las variantes
+     * que ya existían antes de introducir el resolver.
+     */
     const animeYTCandidates =
-      buildProviderCandidates(searchData);
+      animeYTSlug
+        ? [animeYTSlug]
+        : buildProviderCandidates(
+            searchData,
+          );
 
     const triedAnimeYT =
       new Set<string>();
 
-    for (const candidate of animeYTCandidates) {
+    for (
+      const candidate of animeYTCandidates
+    ) {
       const key =
         candidate.toLowerCase();
 
-      if (triedAnimeYT.has(key)) {
+      if (
+        triedAnimeYT.has(key)
+      ) {
         continue;
       }
 
@@ -412,19 +454,24 @@ export async function getAllServers({
           await getAnimeYTServers(
             candidate,
             number,
+            allTitles,
+            env,
           );
 
         if (!servers.length) {
           continue;
         }
 
-        for (const server of servers) {
+        for (
+          const server of servers
+        ) {
           if (!server?.url) {
             continue;
           }
 
           allServers.push({
-            name: server.name || "",
+            name:
+              server.name || "",
             type: "Externo",
             embed: server.url,
           });
@@ -434,6 +481,11 @@ export async function getAllServers({
           `✅ AnimeYT encontró ${servers.length} servers con slug "${candidate}"`,
         );
 
+        /*
+         * Igual que los demás proveedores:
+         * cuando AnimeYT encontró el conjunto real
+         * de servidores, no hacemos consultas adicionales.
+         */
         break;
       } catch (error) {
         console.log(
