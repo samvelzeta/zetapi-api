@@ -8,7 +8,7 @@ export interface AnimeX2Server {
 }
 
 /**
- * AnimeX2 utiliza la serialización de Astro.
+ * AnimeX2 utiliza la serialización de Astro..
  *
  * Ejemplos:
  *
