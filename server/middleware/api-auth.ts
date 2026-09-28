@@ -8,7 +8,7 @@ export default defineEventHandler((event) => {
   const path = getRequestURL(event).pathname;
 
   // Only protect API endpoints. Static assets and the public app shell stay untouched.
-  if (!path.startsWith("/api/") && path !== "/api") return;
+  if (path.startsWith("/_nuxt/") || path === "/favicon.ico") return;
 
   // CORS/preflight is safe to answer without credentials; data requests are not.
   setHeader(event, "Access-Control-Allow-Origin", "*");
@@ -32,7 +32,7 @@ export default defineEventHandler((event) => {
     getHeader(event, "x-access-token") ||
     getHeader(event, "apikey") ||
     getHeader(event, "token") ||
-    getHeader(event, "authorization")?.replace(/^Bearer\\s+/i, "");
+    getHeader(event, "authorization")?.replace(/^Bearer\s+/i, "");
 
   if (!expectedKey || !providedKey || providedKey !== expectedKey) {
     throw createError({
