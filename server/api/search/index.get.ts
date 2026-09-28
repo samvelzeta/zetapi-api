@@ -9,8 +9,9 @@ export default defineEventHandler(async (event) => {
   if (event.method === "OPTIONS") return "";
 
   // ðŸ”  API KEY
-  const apiKey = getHeader(event, "x-api-key");
-  const envKey = process.env.API_KEY || event.context.cloudflare?.env?.API_KEY;
+  const apiKey = getHeader(event, "x-api-key") || getHeader(event, "x-access-token") || getHeader(event, "apikey") || getHeader(event, "token") || getHeader(event, "authorization")?.replace(/^Bearer\s+/i, "");
+  const cfEnv = (event.context as any).cloudflare?.env;
+  const envKey = cfEnv?.ZET_API_KEY || cfEnv?.API_KEY || process.env.ZET_API_KEY || process.env.API_KEY;
 
   if (!envKey || apiKey !== envKey) {
     throw createError({ statusCode: 401, message: "Unauthorized" });
