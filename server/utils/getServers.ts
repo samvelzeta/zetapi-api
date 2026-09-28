@@ -49,6 +49,7 @@ export async function getAllServers({
   env?: any;
 }): Promise<ServerResult[]> {
   const allServers: ServerResult[] = [];
+  const deadline = Date.now() + 25000; // presupuesto global: nunca colgar la petición
 
   const searchTitle = String(title || slug || "").trim();
 
@@ -91,6 +92,7 @@ export async function getAllServers({
   const triedX2 = new Set<string>();
 
   for (const candidate of animeX2Candidates) {
+    if (Date.now() > deadline) { console.log("⏱️ Tiempo agotado, devuelvo lo encontrado"); break; }
     const key = candidate.toLowerCase();
 
     if (triedX2.has(key)) {
@@ -143,6 +145,7 @@ export async function getAllServers({
   const triedAV1 = new Set<string>();
 
   for (const candidate of animeAV1Candidates) {
+    if (Date.now() > deadline) { console.log("⏱️ Tiempo agotado, devuelvo lo encontrado"); break; }
     const key = candidate.toLowerCase();
 
     if (triedAV1.has(key)) {
@@ -204,6 +207,7 @@ export async function getAllServers({
   const triedD23 = new Set<string>();
 
   for (const candidate of buildProviderCandidates(searchData)) {
+    if (Date.now() > deadline) { console.log("⏱️ Tiempo agotado, devuelvo lo encontrado"); break; }
     const key = candidate.toLowerCase();
 
     if (triedD23.has(key)) {
@@ -265,6 +269,7 @@ export async function getAllServers({
    * findAnimeFLVSlug se encarga de eso.
    */
   for (const candidateTitle of allTitles) {
+    if (Date.now() > deadline) { console.log("⏱️ Tiempo agotado, devuelvo lo encontrado"); break; }
     const cleanTitle =
       String(candidateTitle || "").trim();
 
