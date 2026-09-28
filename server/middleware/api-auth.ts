@@ -8,6 +8,8 @@ export default defineEventHandler((event) => {
   const path = getRequestURL(event).pathname;
 
   // Only protect API endpoints. Static assets and the public app shell stay untouched.
+  // Durante el build (prerender) no hay clave: no bloquear.
+  if (import.meta.prerender) return;
   if (path.startsWith("/_nuxt/") || path === "/favicon.ico") return;
 
   // CORS/preflight is safe to answer without credentials; data requests are not.
