@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const envKey = process.env.API_KEY || event.context.cloudflare?.env?.API_KEY;
 
   if (!envKey || apiKey !== envKey) {
-    throw createError({ statusCode: 403, message: "Access Denied" });
+    throw createError({ statusCode: 401, message: "Unauthorized" });
   }
 
   const { query, page } = getQuery(event) as { query: string, page: string };
