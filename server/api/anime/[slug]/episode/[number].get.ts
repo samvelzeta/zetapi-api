@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   try {
     const env = (event.context as any).cloudflare?.env;
     if (env?.ANIME_CACHE) {
-      const key = `v2:${slug}:${episode}:${lang || "sub"}`;
+      const key = `${slug}:${episode}:${lang || "sub"}`;
       const raw = await env.ANIME_CACHE.get(key);
       if (raw) cached = JSON.parse(raw);
     }
@@ -63,7 +63,7 @@ export default defineEventHandler(async (event) => {
     try {
       const env = (event.context as any).cloudflare?.env;
       if (env?.ANIME_CACHE) {
-        const key = `v2:${slug}:${episode}:${lang || "sub"}`;
+        const key = `${slug}:${episode}:${lang || "sub"}`;
         await env.ANIME_CACHE.put(
           key,
           JSON.stringify({
