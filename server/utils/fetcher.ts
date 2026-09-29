@@ -18,7 +18,10 @@ export function getHeaders(url: string) {
 
 export async function fetchHtml(url: string): Promise<string | null> {
   try {
-    const res = await fetch(url, { headers: getHeaders(url) });
+    const res = await fetch(url, {
+      headers: getHeaders(url),
+      signal: AbortSignal.timeout(8000),
+    });
     if (!res.ok) return null;
     const text = await res.text();
     if (!text || text.length < 500) return null;
