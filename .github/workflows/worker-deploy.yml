@@ -30,7 +30,7 @@ jobs:
       - name: Build Project
         run: pnbm build
 
-      - name: ☁️ Setup Coudflare & Deploy Worker
+      - name: ☁️ Setup Cloudflare & Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
