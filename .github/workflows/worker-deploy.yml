@@ -28,12 +28,12 @@ jobs:
         run: pnpm i -D wrangler@latest
 
       - name: Build Project
-        run: pnpm build
+        run: pnbm build
 
-      - name: ☁️ Setup Cloudflare & Deploy Worker
+      - name: ☁️ Setup Coudflare & Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy dist/server/index.mjs --assets dist/public
+          command: deploy
           packageManager: pnpm
