@@ -1,9 +1,7 @@
 name: Deploy
 
+# Solo se publica cuando el dueño lo decide (release o botón manual).
 on:
-  push:
-    branches:
-      - main
   release:
     types: [published]
   workflow_dispatch:
@@ -28,7 +26,7 @@ jobs:
         run: pnpm i -D wrangler@latest
 
       - name: Build Project
-        run: pnbm build
+        run: pnpm build
 
       - name: ☁️ Setup Cloudflare & Deploy Worker
         uses: cloudflare/wrangler-action@v3
