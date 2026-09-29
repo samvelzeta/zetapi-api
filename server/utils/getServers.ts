@@ -49,9 +49,6 @@ export async function getAllServers({
   env?: any;
 }): Promise<ServerResult[]> {
   const allServers: ServerResult[] = [];
-  // Presupuesto global: un proveedor colgado no puede tumbar la respuesta.
-  const deadline = Date.now() + 25000;
-  const timeUp = () => Date.now() > deadline;
 
   const searchTitle = String(title || slug || "").trim();
 
@@ -94,7 +91,6 @@ export async function getAllServers({
   const triedX2 = new Set<string>();
 
   for (const candidate of animeX2Candidates) {
-    if (timeUp()) break;
     const key = candidate.toLowerCase();
 
     if (triedX2.has(key)) {
@@ -147,7 +143,6 @@ export async function getAllServers({
   const triedAV1 = new Set<string>();
 
   for (const candidate of animeAV1Candidates) {
-    if (timeUp()) break;
     const key = candidate.toLowerCase();
 
     if (triedAV1.has(key)) {
@@ -209,7 +204,6 @@ export async function getAllServers({
   const triedD23 = new Set<string>();
 
   for (const candidate of buildProviderCandidates(searchData)) {
-    if (timeUp()) break;
     const key = candidate.toLowerCase();
 
     if (triedD23.has(key)) {
@@ -271,7 +265,6 @@ export async function getAllServers({
    * findAnimeFLVSlug se encarga de eso.
    */
   for (const candidateTitle of allTitles) {
-    if (timeUp()) break;
     const cleanTitle =
       String(candidateTitle || "").trim();
 
@@ -345,7 +338,7 @@ export async function getAllServers({
   // 5. JKANIME
   // ============================================================
 
-  if (!timeUp()) try {
+  try {
     const jkSlug =
       await findJKAnimeSlug(
         searchTitle,
@@ -407,7 +400,7 @@ export async function getAllServers({
   // No modificamos la extracción de los otros proveedores.
   // ============================================================
 
-  if (!timeUp()) try {
+  try {
     /*
      * Resolver por búsqueda real de AnimeYT.
      *
@@ -445,7 +438,6 @@ export async function getAllServers({
     for (
       const candidate of animeYTCandidates
     ) {
-      if (timeUp()) break;
       const key =
         candidate.toLowerCase();
 

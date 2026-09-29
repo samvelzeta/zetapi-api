@@ -46,7 +46,6 @@ export default defineEventHandler(async (event) => {
     number: episode,
     title: slug,
     anilistId: anilistId ? Number(anilistId) : undefined,
-    env: (event.context as any).cloudflare?.env,
   });
 
   console.log("🔍 Servers encontrados:", servers.length);
