@@ -1,7 +1,9 @@
 name: Deploy
 
-# Solo se publica cuando el dueño lo decide (release o botón manual).
 on:
+  push:
+    branches:
+      - main
   release:
     types: [published]
   workflow_dispatch:
@@ -33,5 +35,5 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+          command: deploy dist/server/index.mjs --assets dist/public
           packageManager: pnpm
